@@ -1,4 +1,5 @@
 use std::{
+    ffi::OsStr,
     env, fs,
     path::PathBuf,
     sync::{Mutex, OnceLock},
@@ -24,12 +25,20 @@ fn set_pending_open_path(path: String) {
 fn take_pending_open_path() -> Option<String> {
     pending_open_path().lock().ok().and_then(|mut guard| guard.take())
 }
+fn path_to_string(path: &PathBuf) -> String {
+    path.as_os_str().to_string_lossy().into_owned()
+}
 
-fn first_existing_file_arg(args: &[String]) -> Option<String> {
-    args.iter().skip(1).find_map(|arg| {
+fn first_existing_file_arg_from_iter<I, S>(args: I) -> Option<String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    args.into_iter().find_map(|arg| {
+        let path = PathBuf::from(arg.as_ref());
         let path = PathBuf::from(arg);
         if path.is_file() {
-            path.to_str().map(ToOwned::to_owned)
+            Some(path_to_string(&path))
         } else {
             None
         }
@@ -43,14 +52,7 @@ fn read_file_text(path: String) -> Result<String, String> {
 
 #[tauri::command]
 fn get_launch_file_path() -> Option<String> {
-    let arg_path = env::args_os().skip(1).find_map(|arg| {
-        let path = PathBuf::from(arg);
-        if path.is_file() {
-            path.to_str().map(ToOwned::to_owned)
-        } else {
-            None
-        }
-    });
+    let arg_path = first_existing_file_arg_from_iter(env::args_os().skip(1));
     arg_path.or_else(take_pending_open_path)
 }
 
@@ -58,7 +60,7 @@ fn get_launch_file_path() -> Option<String> {
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
-            if let Some(path) = first_existing_file_arg(&args) {
+            if let Some(path) = first_existing_file_arg_from_iter(args.iter().skip(1)) {
                 set_pending_open_path(path.clone());
                 let _ = app.emit("hubble://open-file", OpenFilePayload { path });
             }
@@ -74,14 +76,13 @@ pub fn run() {
         if let tauri::RunEvent::Opened { urls } = event {
             for url in urls {
                 if let Ok(path) = url.to_file_path() {
-                    if let Some(path_string) = path.to_str().map(ToOwned::to_owned) {
-                        set_pending_open_path(path_string.clone());
-                        let _ = app_handle.emit(
-                            "hubble://open-file",
-                            OpenFilePayload { path: path_string },
-                        );
-                        break;
-                    }
+                    let path_string = path_to_string(&path);
+                    set_pending_open_path(path_string.clone());
+                    let _ = app_handle.emit(
+                        "hubble://open-file",
+                        OpenFilePayload { path: path_string },
+                    );
+                    break;
                 }
             }
         }

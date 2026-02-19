@@ -37,17 +37,24 @@ function App() {
   }, []);
 
   useEffect(() => {
+    let disposed = false;
     let unlisten: (() => void) | null = null;
     const setup = async () => {
-      unlisten = await listen<{ path?: string }>("hubble://open-file", async (event) => {
+      const nextUnlisten = await listen<{ path?: string }>("hubble://open-file", async (event) => {
         const path = event.payload?.path;
         if (path) {
           await loadPath(path);
         }
       });
+      if (disposed) {
+        nextUnlisten();
+        return;
+      }
+      unlisten = nextUnlisten;
     };
     void setup();
     return () => {
+      disposed = true;
       if (unlisten) {
         unlisten();
       }

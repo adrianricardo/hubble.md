@@ -12,18 +12,22 @@ type ViewerState = {
 };
 
 const STORAGE_KEY = "hubble-desktop-viewer";
+type PersistedViewerState = Pick<ViewerState, "lastOpenedPath">;
 
 const persistentStateMiddleware: StoreMiddleware<ViewerState> = () => ({
   set: (next) => (setter) => {
     next((currentState) => {
       const nextState =
         typeof setter === "function" ? setter(currentState) : setter;
-      const stateToPersist: ViewerState = {
-        ...nextState,
-        lastOpenedPath: nextState.currentPath ?? nextState.lastOpenedPath,
+      const lastOpenedPath = nextState.currentPath ?? nextState.lastOpenedPath;
+      const persistedState: PersistedViewerState = {
+        lastOpenedPath,
       };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToPersist));
-      return stateToPersist;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(persistedState));
+      return {
+        ...nextState,
+        lastOpenedPath,
+      };
     });
   },
 });
@@ -41,14 +45,10 @@ function getInitialState(): ViewerState {
   if (!raw) return emptyState;
 
   try {
-    const parsed = JSON.parse(raw) as Partial<ViewerState>;
+    const parsed = JSON.parse(raw) as Partial<PersistedViewerState>;
     return {
       ...emptyState,
-      ...parsed,
-      currentPath: null,
-      content: "",
-      status: "idle",
-      error: null,
+      lastOpenedPath: parsed.lastOpenedPath ?? null,
     };
   } catch {
     return emptyState;
