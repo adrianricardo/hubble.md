@@ -44,6 +44,18 @@ function toggleLinkAtSelection() {
 			const range = selection.empty
 				? findWordRangeAtCursor(state)
 				: { from: selection.from, to: selection.to };
+
+			// Empty selection with no word under cursor: toggle the stored
+			// link mark so subsequent typing inherits it, matching bold/italic.
+			if (selection.empty && (!range || range.from >= range.to)) {
+				if (dispatch) {
+					const tr = state.tr.addStoredMark(linkType.create({ href: "" }));
+					dispatch(tr);
+				}
+				window.dispatchEvent(new CustomEvent(FOCUS_LINK_POPOVER_EVENT));
+				return true;
+			}
+
 			if (!range || range.from >= range.to) return false;
 
 			const hasLink = state.doc.rangeHasMark(range.from, range.to, linkType);
