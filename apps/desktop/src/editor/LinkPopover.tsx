@@ -5,7 +5,7 @@ import { keymatch } from "keymatch";
 import { type RefObject, useEffect, useReducer, useRef, useState } from "react";
 import { FOCUS_LINK_POPOVER_EVENT } from "./SmartLinkExtension";
 
-type PopoverMode = "hidden" | "preview" | "actionsFocused" | "actions";
+type PopoverMode = "hidden" | "preview" | "actions";
 type MachineState = {
 	mode: PopoverMode;
 	activeKey: string | null;
@@ -13,10 +13,9 @@ type MachineState = {
 };
 type MachineEvent =
 	| { type: "LINK_SESSION_CHANGED"; activeKey: string | null }
-	| { type: "OPEN_ACTIONS" }
-	| { type: "ESC" }
-	| { type: "CMD_K" }
-	| { type: "INPUT_BLUR" };
+	| { type: "EXPAND_REQUESTED" }
+	| { type: "TOGGLE_ACTIONS_REQUESTED" }
+	| { type: "ESCAPE_REQUESTED" };
 
 const INITIAL_MACHINE_STATE: MachineState = {
 	mode: "hidden",
@@ -31,20 +30,28 @@ function machineReducer(
 	switch (event.type) {
 		case "LINK_SESSION_CHANGED": {
 			const { activeKey } = event;
-			if (!activeKey) {
-				return INITIAL_MACHINE_STATE;
-			}
+			if (!activeKey) return INITIAL_MACHINE_STATE;
 			if (state.activeKey !== activeKey) {
 				return { mode: "preview", activeKey, dismissedKey: null };
 			}
 			return { ...state, activeKey };
 		}
-		case "OPEN_ACTIONS": {
+		case "EXPAND_REQUESTED": {
 			if (!state.activeKey) return state;
-			return { ...state, mode: "actionsFocused", dismissedKey: null };
+			return { ...state, mode: "actions", dismissedKey: null };
 		}
-		case "ESC": {
-			if (state.mode === "actionsFocused" || state.mode === "actions") {
+		case "TOGGLE_ACTIONS_REQUESTED": {
+			if (!state.activeKey) return state;
+			if (state.mode === "preview") {
+				return { ...state, mode: "actions", dismissedKey: null };
+			}
+			if (state.mode === "actions") {
+				return { ...state, mode: "preview" };
+			}
+			return state;
+		}
+		case "ESCAPE_REQUESTED": {
+			if (state.mode === "actions") {
 				return { ...state, mode: "preview" };
 			}
 			if (state.mode === "preview" && state.activeKey) {
@@ -55,17 +62,6 @@ function machineReducer(
 				};
 			}
 			return state;
-		}
-		case "CMD_K": {
-			if (!state.activeKey) return state;
-			if (state.mode === "actionsFocused" || state.mode === "actions") {
-				return { ...state, mode: "preview" };
-			}
-			return { ...state, mode: "actionsFocused", dismissedKey: null };
-		}
-		case "INPUT_BLUR": {
-			if (state.mode !== "actionsFocused") return state;
-			return { ...state, mode: "actions" };
 		}
 		default:
 			return state;
@@ -99,9 +95,7 @@ export function LinkPopover({
 		const update = () => {
 			const link = getActiveLinkRange(editor.state);
 			setActiveLink(link);
-			if (link) {
-				setHrefValue(link.href);
-			}
+			if (link) setHrefValue(link.href);
 			const nextActiveKey = link ? `${link.from}:${link.to}` : null;
 			dispatch({ type: "LINK_SESSION_CHANGED", activeKey: nextActiveKey });
 			const container = containerRef.current;
@@ -144,7 +138,7 @@ export function LinkPopover({
 
 	useEffect(() => {
 		const onFocusRequest = () => {
-			dispatch({ type: "OPEN_ACTIONS" });
+			dispatch({ type: "EXPAND_REQUESTED" });
 		};
 		window.addEventListener(
 			FOCUS_LINK_POPOVER_EVENT,
@@ -159,7 +153,7 @@ export function LinkPopover({
 	}, []);
 
 	useEffect(() => {
-		if (machineState.mode !== "actionsFocused") return;
+		if (machineState.mode !== "actions") return;
 		queueMicrotask(() => {
 			inputRef.current?.focus();
 			inputRef.current?.select();
@@ -174,7 +168,7 @@ export function LinkPopover({
 
 			if (isInputFocused && keymatch(event, "Enter")) {
 				event.preventDefault();
-				dispatch({ type: "ESC" });
+				dispatch({ type: "ESCAPE_REQUESTED" });
 				editor.commands.focus(undefined, { scrollIntoView: false });
 				return;
 			}
@@ -182,10 +176,8 @@ export function LinkPopover({
 			if ((isVisible || editor.isFocused) && keymatch(event, "Escape")) {
 				event.preventDefault();
 				const shouldReturnFocusToEditor =
-					machineState.mode === "preview" ||
-					machineState.mode === "actions" ||
-					machineState.mode === "actionsFocused";
-				dispatch({ type: "ESC" });
+					machineState.mode === "preview" || machineState.mode === "actions";
+				dispatch({ type: "ESCAPE_REQUESTED" });
 				if (shouldReturnFocusToEditor) {
 					queueMicrotask(() => {
 						editor.commands.focus(undefined, { scrollIntoView: false });
@@ -193,27 +185,16 @@ export function LinkPopover({
 				}
 				return;
 			}
+
 			if (keymatch(event, "CmdOrCtrl+K")) {
-				if (editor.isFocused) {
-					// Let SmartLinkExtension own Cmd+K when editor has focus.
-					return;
-				}
 				if (!isVisible) return;
 				event.preventDefault();
-				if (machineState.mode === "preview") {
-					dispatch({ type: "OPEN_ACTIONS" });
-				} else if (machineState.mode === "actions") {
-					dispatch({ type: "CMD_K" });
-				}
+				event.stopPropagation();
+				dispatch({ type: "TOGGLE_ACTIONS_REQUESTED" });
 				return;
 			}
 
-			if (
-				machineState.mode !== "actions" &&
-				machineState.mode !== "actionsFocused"
-			) {
-				return;
-			}
+			if (machineState.mode !== "actions") return;
 			if (keymatch(event, "CmdOrCtrl+Enter")) {
 				event.preventDefault();
 				void visitLink(activeLink.href);
@@ -230,8 +211,8 @@ export function LinkPopover({
 			}
 		};
 
-		window.addEventListener("keydown", onKeyDown);
-		return () => window.removeEventListener("keydown", onKeyDown);
+		window.addEventListener("keydown", onKeyDown, true);
+		return () => window.removeEventListener("keydown", onKeyDown, true);
 	}, [editor, activeLink, machineState.mode]);
 
 	if (!editor || !activeLink || machineState.mode === "hidden") return null;
@@ -262,7 +243,7 @@ export function LinkPopover({
 				<button
 					type="button"
 					className="flex h-7 w-[165px] cursor-pointer overflow-hidden rounded-[2px] border border-zinc-300 bg-gradient-to-b from-white to-zinc-50 text-left shadow-[0_1px_3px_rgba(0,0,0,0.1)]"
-					onClick={() => dispatch({ type: "OPEN_ACTIONS" })}
+					onClick={() => dispatch({ type: "EXPAND_REQUESTED" })}
 				>
 					<span className="min-w-0 flex-1 overflow-hidden px-2 py-[5px] text-[11px] leading-[16px] text-zinc-700 text-clip whitespace-nowrap">
 						{activeLink.href}
@@ -278,7 +259,6 @@ export function LinkPopover({
 						type="text"
 						value={hrefValue}
 						onChange={(event) => handleInput(event.target.value)}
-						onBlur={() => dispatch({ type: "INPUT_BLUR" })}
 						className="block w-full border-none bg-transparent px-2 py-[5px] text-[11px] leading-[16px] text-black outline-none"
 					/>
 					<div className="border-block-start border-zinc-300">
