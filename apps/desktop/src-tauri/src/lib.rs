@@ -104,20 +104,17 @@ fn extension_from_image(bytes: &[u8], mime_type: Option<&str>) -> &'static str {
     "png"
 }
 
-fn note_assets_dir(note_path: &Path) -> Result<PathBuf, String> {
-    let note_parent = note_path
-        .parent()
-        .ok_or_else(|| format!("Unable to resolve parent folder for note: {}", note_path.display()))?;
-    let note_stem = note_path
+fn file_assets_dir(file_path: &Path, file_parent: &Path) -> Result<PathBuf, String> {
+    let file_stem = file_path
         .file_stem()
-        .ok_or_else(|| format!("Unable to resolve note filename for path: {}", note_path.display()))?
+        .ok_or_else(|| format!("Unable to resolve file name for path: {}", file_path.display()))?
         .to_string_lossy();
-    Ok(note_parent.join(format!("{}.assets", note_stem)))
+    Ok(file_parent.join(format!("{}.assets", file_stem)))
 }
 
 #[tauri::command]
 fn persist_pasted_image(
-    note_path: String,
+    file_path: String,
     bytes: Vec<u8>,
     mime_type: Option<String>,
 ) -> Result<PersistPastedImageOutput, String> {
@@ -125,11 +122,11 @@ fn persist_pasted_image(
         return Err("Clipboard image bytes are empty".to_string());
     }
 
-    let note_path = PathBuf::from(&note_path);
-    let note_parent = note_path
+    let file_path = PathBuf::from(&file_path);
+    let file_parent = file_path
         .parent()
-        .ok_or_else(|| format!("Unable to resolve parent folder for note: {}", note_path.display()))?;
-    let assets_dir = note_assets_dir(&note_path)?;
+        .ok_or_else(|| format!("Unable to resolve parent folder for file: {}", file_path.display()))?;
+    let assets_dir = file_assets_dir(&file_path, file_parent)?;
     fs::create_dir_all(&assets_dir).map_err(|err| {
         format!(
             "Failed to create attachment directory at {}: {}",
@@ -155,6 +152,9 @@ fn persist_pasted_image(
         if existing == bytes {
             deduped = true;
         } else {
+            // If the short-hash filename collides with different bytes, retry with
+            // the full hash filename. If the full hash path also exists with
+            // different bytes, fail explicitly rather than overwriting.
             image_path = assets_dir.join(format!("{}.{}", hash, ext));
             if image_path.exists() {
                 let existing_full = fs::read(&image_path).map_err(|err| {
@@ -183,11 +183,11 @@ fn persist_pasted_image(
     }
 
     let relative_image_path = image_path
-        .strip_prefix(note_parent)
+        .strip_prefix(file_parent)
         .map_err(|err| {
             format!(
                 "Failed to compute relative image path from {} to {}: {}",
-                note_parent.display(),
+                file_parent.display(),
                 image_path.display(),
                 err
             )

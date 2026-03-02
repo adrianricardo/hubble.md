@@ -192,7 +192,7 @@ function MarkdownEditor({
 				if (!currentEditor) return false;
 				return handleImagePaste({
 					editor: currentEditor,
-					notePath: path,
+					filePath: path,
 					event,
 				});
 			},

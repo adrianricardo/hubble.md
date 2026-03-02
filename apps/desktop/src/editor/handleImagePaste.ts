@@ -9,18 +9,18 @@ type PersistPastedImageResponse = {
 
 async function persistAndInsertImage({
 	editor,
-	notePath,
+	filePath,
 	imageFile,
 }: {
 	editor: Editor;
-	notePath: string;
+	filePath: string;
 	imageFile: File;
 }) {
 
 	try {
 		const bytes = Array.from(new Uint8Array(await imageFile.arrayBuffer()));
 		const result = await invoke<PersistPastedImageResponse>("persist_pasted_image", {
-			notePath,
+			filePath,
 			bytes,
 			mimeType: imageFile.type || null,
 		});
@@ -45,11 +45,11 @@ async function persistAndInsertImage({
 
 export function handleImagePaste({
 	editor,
-	notePath,
+	filePath,
 	event,
 }: {
 	editor: Editor | null;
-	notePath: string;
+	filePath: string;
 	event: ClipboardEvent;
 }): boolean {
 	if (!editor) return false;
@@ -59,6 +59,6 @@ export function handleImagePaste({
 	const imageFile = imageItem?.getAsFile();
 	if (!imageFile) return false;
 	event.preventDefault();
-	void persistAndInsertImage({ editor, notePath, imageFile });
+	void persistAndInsertImage({ editor, filePath, imageFile });
 	return true;
 }
