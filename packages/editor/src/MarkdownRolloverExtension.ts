@@ -93,15 +93,22 @@ function maybeHandleEscapeAtBoundary(view: EditorView): boolean {
 	if (!canEscapeBoundaryAtCursor(state, escapedBoundary)) return false;
 
 	const boundaryMatch = getBoundaryMatchAtPos(state, state.selection.from);
-	if (!boundaryMatch) return false;
+	if (boundaryMatch) {
+		const tr = state.tr.removeStoredMark(boundaryMatch.markType);
+		tr.setMeta(MarkdownRolloverKey, {
+			pos: state.selection.from,
+			markName: boundaryMatch.markType.name,
+		} satisfies NonNullable<EscapedBoundaryState>);
+		view.dispatch(tr);
+		return true;
+	}
 
-	const tr = state.tr.removeStoredMark(boundaryMatch.markType);
-	tr.setMeta(MarkdownRolloverKey, {
-		pos: state.selection.from,
-		markName: boundaryMatch.markType.name,
-	} satisfies NonNullable<EscapedBoundaryState>);
-	view.dispatch(tr);
-	return true;
+	// No text boundary — fall back to clearing any active stored marks
+	if (hasActiveStoredMarks(state)) {
+		view.dispatch(state.tr.setStoredMarks([]));
+		return true;
+	}
+	return false;
 }
 
 function canEscapeBoundaryAtCursor(
@@ -111,19 +118,22 @@ function canEscapeBoundaryAtCursor(
 	if (!state.selection.empty) return false;
 
 	const boundaryMatch = getBoundaryMatchAtPos(state, state.selection.from);
-	if (!boundaryMatch) return false;
-	if (boundaryMatch.boundary !== "end") return false;
-	if (
-		isBoundaryEscaped(
-			escapedBoundary,
-			state.selection.from,
-			boundaryMatch.markType.name,
-		)
-	) {
-		return false;
+	if (boundaryMatch) {
+		if (boundaryMatch.boundary !== "end") return false;
+		if (
+			isBoundaryEscaped(
+				escapedBoundary,
+				state.selection.from,
+				boundaryMatch.markType.name,
+			)
+		) {
+			return false;
+		}
+		return isMarkEffectivelyActiveAtCursor(state, boundaryMatch.markType);
 	}
 
-	return isMarkEffectivelyActiveAtCursor(state, boundaryMatch.markType);
+	// No text boundary — fall back to checking for active stored marks
+	return hasActiveStoredMarks(state);
 }
 
 function getBoundaryMatchAtPos(
@@ -172,6 +182,14 @@ function getActiveMarkNamesAtCursor(
 	}
 
 	return MARK_PRIORITY.filter((name) => names.has(name));
+}
+
+function hasActiveStoredMarks(state: EditorState): boolean {
+	const { storedMarks } = state;
+	if (!storedMarks || storedMarks.length === 0) return false;
+	return storedMarks.some((mark) =>
+		MARK_PRIORITY.includes(mark.type.name as (typeof MARK_PRIORITY)[number]),
+	);
 }
 
 function isMarkActiveForInsertion(state: EditorState, markType: MarkType) {

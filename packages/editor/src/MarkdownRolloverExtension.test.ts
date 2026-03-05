@@ -103,6 +103,28 @@ describe("markdown rollover esc-only behavior", () => {
 		]);
 	});
 
+	it("reports canEscapeBoundary true when stored marks exist with no adjacent text boundary", () => {
+		// Simulate cmd+B on an empty line: no adjacent marked text, but storedMarks are set
+		const base = stateAt(BOLD_END + 1);
+		const withStored = base.apply(
+			base.tr.addStoredMark(schema.marks.bold.create()),
+		);
+		expect(getCaretFormattingState(withStored).canEscapeBoundary).toBe(true);
+	});
+
+	it("reports canEscapeBoundary false with no stored marks and no text boundary", () => {
+		const state = stateAt(BOLD_END + 1);
+		expect(getCaretFormattingState(state).canEscapeBoundary).toBe(false);
+	});
+
+	it("canEscapeBoundaryAtCursor returns true for stored marks on empty position", () => {
+		const base = stateAt(BOLD_END + 1);
+		const withStored = base.apply(
+			base.tr.addStoredMark(schema.marks.italic.create()),
+		);
+		expect(__testing.canEscapeBoundaryAtCursor(withStored, null)).toBe(true);
+	});
+
 	it("reports canEscapeBoundary false for non-empty selections", () => {
 		const doc = buildDoc();
 		const state = EditorState.create({
