@@ -93,13 +93,22 @@ function maybeHandleEscapeAtBoundary(view: EditorView): boolean {
 	if (!canEscapeBoundaryAtCursor(state, escapedBoundary)) return false;
 
 	const boundaryMatch = getBoundaryMatchAtPos(state, state.selection.from);
-	if (!boundaryMatch) return false;
+	if (boundaryMatch) {
+		const tr = state.tr.removeStoredMark(boundaryMatch.markType);
+		tr.setMeta(MarkdownRolloverKey, {
+			pos: state.selection.from,
+			markName: boundaryMatch.markType.name,
+		} satisfies NonNullable<EscapedBoundaryState>);
+		view.dispatch(tr);
+		return true;
+	}
 
-	const tr = state.tr.removeStoredMark(boundaryMatch.markType);
-	tr.setMeta(MarkdownRolloverKey, {
-		pos: state.selection.from,
-		markName: boundaryMatch.markType.name,
-	} satisfies NonNullable<EscapedBoundaryState>);
+	// No boundary: clear all stored marks (e.g. Cmd+B on empty line)
+	const tr = state.tr;
+	for (const markName of MARK_PRIORITY) {
+		const markType = state.schema.marks[markName];
+		if (markType) tr.removeStoredMark(markType);
+	}
 	view.dispatch(tr);
 	return true;
 }
@@ -111,19 +120,22 @@ function canEscapeBoundaryAtCursor(
 	if (!state.selection.empty) return false;
 
 	const boundaryMatch = getBoundaryMatchAtPos(state, state.selection.from);
-	if (!boundaryMatch) return false;
-	if (boundaryMatch.boundary !== "end") return false;
-	if (
-		isBoundaryEscaped(
-			escapedBoundary,
-			state.selection.from,
-			boundaryMatch.markType.name,
-		)
-	) {
-		return false;
+	if (boundaryMatch) {
+		if (boundaryMatch.boundary !== "end") return false;
+		if (
+			isBoundaryEscaped(
+				escapedBoundary,
+				state.selection.from,
+				boundaryMatch.markType.name,
+			)
+		) {
+			return false;
+		}
+		return isMarkEffectivelyActiveAtCursor(state, boundaryMatch.markType);
 	}
 
-	return isMarkEffectivelyActiveAtCursor(state, boundaryMatch.markType);
+	// No boundary: allow escape when stored marks exist (e.g. Cmd+B on empty line)
+	return hasStoredMarksAtEmptyCursor(state);
 }
 
 function getBoundaryMatchAtPos(
@@ -210,6 +222,18 @@ function getAdjacentInsertionMark(
 	const before = markType.isInSet($pos.nodeBefore?.marks ?? []);
 	if (before) return before;
 	return null;
+}
+
+/**
+ * Returns true when stored marks contain a priority mark at an empty cursor
+ * with no adjacent marked text (e.g. Cmd+B on an empty line).
+ */
+function hasStoredMarksAtEmptyCursor(state: EditorState): boolean {
+	const { storedMarks } = state;
+	if (!storedMarks || storedMarks.length === 0) return false;
+	return storedMarks.some((mark) =>
+		MARK_PRIORITY.includes(mark.type.name as (typeof MARK_PRIORITY)[number]),
+	);
 }
 
 function findByPriority(

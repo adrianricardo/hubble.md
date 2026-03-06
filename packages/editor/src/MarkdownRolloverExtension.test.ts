@@ -121,4 +121,52 @@ describe("markdown rollover esc-only behavior", () => {
 		expect(atStart.canEscapeBoundary).toBe(false);
 		expect(atEnd.canEscapeBoundary).toBe(true);
 	});
+
+	it("can escape when stored marks exist on empty line with no adjacent text", () => {
+		const emptyDoc = schema.node("doc", null, [
+			schema.node("paragraph", null, []),
+		]);
+		const base = EditorState.create({
+			schema,
+			doc: emptyDoc,
+			selection: TextSelection.create(emptyDoc, 1),
+		});
+		const withBold = base.apply(
+			base.tr.addStoredMark(schema.marks.bold.create()),
+		);
+		const result = getCaretFormattingState(withBold);
+		expect(result.canEscapeBoundary).toBe(true);
+		expect(result.activeMarkNames).toContain("bold");
+	});
+
+	it("cannot escape on empty line without stored marks", () => {
+		const emptyDoc = schema.node("doc", null, [
+			schema.node("paragraph", null, []),
+		]);
+		const state = EditorState.create({
+			schema,
+			doc: emptyDoc,
+			selection: TextSelection.create(emptyDoc, 1),
+		});
+		expect(getCaretFormattingState(state).canEscapeBoundary).toBe(false);
+	});
+
+	it("can escape when multiple stored marks on empty line", () => {
+		const emptyDoc = schema.node("doc", null, [
+			schema.node("paragraph", null, []),
+		]);
+		const base = EditorState.create({
+			schema,
+			doc: emptyDoc,
+			selection: TextSelection.create(emptyDoc, 1),
+		});
+		const withMarks = base.apply(
+			base.tr
+				.addStoredMark(schema.marks.bold.create())
+				.addStoredMark(schema.marks.italic.create()),
+		);
+		const result = getCaretFormattingState(withMarks);
+		expect(result.canEscapeBoundary).toBe(true);
+		expect(result.activeMarkNames).toEqual(["bold", "italic"]);
+	});
 });
