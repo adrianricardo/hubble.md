@@ -34,6 +34,63 @@ const schema = new Schema({
 	},
 });
 
+describe("empty line escape behavior", () => {
+	function buildDocWithEmptyLine() {
+		const bold = schema.marks.bold.create();
+		return schema.node("doc", null, [
+			schema.node("paragraph", null, [schema.text("bolded", [bold])]),
+			schema.node("paragraph", null, []),
+		]);
+	}
+
+	// Position 9 = inside the empty second paragraph
+	const EMPTY_LINE_POS = 9;
+
+	it("canEscapeBoundary true on empty line with stored bold mark", () => {
+		const doc = buildDocWithEmptyLine();
+		const base = EditorState.create({
+			schema,
+			doc,
+			selection: TextSelection.create(doc, EMPTY_LINE_POS),
+		});
+		const state = base.apply(base.tr.addStoredMark(schema.marks.bold.create()));
+		const caret = getCaretFormattingState(state);
+		expect(caret.canEscapeBoundary).toBe(true);
+		expect(caret.activeMarkNames).toContain("bold");
+	});
+
+	it("canEscapeBoundary false on empty line without stored marks", () => {
+		const doc = schema.node("doc", null, [
+			schema.node("paragraph", null, [schema.text("plain text")]),
+			schema.node("paragraph", null, []),
+		]);
+		// Position 13 = inside the empty second paragraph (1 + 10 + 1 + 1)
+		const state = EditorState.create({
+			schema,
+			doc,
+			selection: TextSelection.create(doc, 13),
+		});
+		expect(getCaretFormattingState(state).canEscapeBoundary).toBe(false);
+	});
+
+	it("hasStoredMarksOnEmptyLine true with stored marks", () => {
+		const doc = buildDocWithEmptyLine();
+		const base = EditorState.create({
+			schema,
+			doc,
+			selection: TextSelection.create(doc, EMPTY_LINE_POS),
+		});
+		const state = base.apply(base.tr.addStoredMark(schema.marks.bold.create()));
+		expect(__testing.hasStoredMarksOnEmptyLine(state)).toBe(true);
+	});
+
+	it("hasStoredMarksOnEmptyLine false on non-empty line", () => {
+		const base = stateAt(BOLD_END);
+		const state = base.apply(base.tr.addStoredMark(schema.marks.bold.create()));
+		expect(__testing.hasStoredMarksOnEmptyLine(state)).toBe(false);
+	});
+});
+
 function buildDoc() {
 	const bold = schema.marks.bold.create();
 	const link = schema.marks.link.create({ href: "https://example.com" });

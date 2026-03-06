@@ -93,7 +93,18 @@ function maybeHandleEscapeAtBoundary(view: EditorView): boolean {
 	if (!canEscapeBoundaryAtCursor(state, escapedBoundary)) return false;
 
 	const boundaryMatch = getBoundaryMatchAtPos(state, state.selection.from);
-	if (!boundaryMatch) return false;
+	if (!boundaryMatch) {
+		// Empty line: clear all formatting stored marks
+		const tr = state.tr;
+		for (const mark of state.storedMarks ?? []) {
+			if ((MARK_PRIORITY as readonly string[]).includes(mark.type.name)) {
+				tr.removeStoredMark(mark.type);
+			}
+		}
+		tr.setMeta(MarkdownRolloverKey, null);
+		view.dispatch(tr);
+		return true;
+	}
 
 	const tr = state.tr.removeStoredMark(boundaryMatch.markType);
 	tr.setMeta(MarkdownRolloverKey, {
@@ -111,7 +122,7 @@ function canEscapeBoundaryAtCursor(
 	if (!state.selection.empty) return false;
 
 	const boundaryMatch = getBoundaryMatchAtPos(state, state.selection.from);
-	if (!boundaryMatch) return false;
+	if (!boundaryMatch) return hasStoredMarksOnEmptyLine(state);
 	if (boundaryMatch.boundary !== "end") return false;
 	if (
 		isBoundaryEscaped(
@@ -199,6 +210,16 @@ function isBoundaryEscaped(
 	);
 }
 
+function hasStoredMarksOnEmptyLine(state: EditorState): boolean {
+	const $pos = state.doc.resolve(state.selection.from);
+	if ($pos.parent.content.size !== 0) return false;
+	const storedMarks = state.storedMarks;
+	if (!storedMarks || storedMarks.length === 0) return false;
+	return storedMarks.some((m) =>
+		(MARK_PRIORITY as readonly string[]).includes(m.type.name),
+	);
+}
+
 function getAdjacentInsertionMark(
 	state: EditorState,
 	markType: MarkType,
@@ -227,5 +248,6 @@ export const __testing = {
 	canEscapeBoundaryAtCursor,
 	findByPriority,
 	getBoundaryMatchAtPos,
+	hasStoredMarksOnEmptyLine,
 	isBoundaryEscaped,
 };
