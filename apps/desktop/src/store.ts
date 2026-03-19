@@ -1,13 +1,34 @@
+import {
+	type ApplyTrackedMarkdownEditRequest,
+	applyTrackedMarkdownEdit,
+	buildTrackedMarkdownSnapshot,
+	type TrackedMarkdownDocument,
+	updateTrackedMarkdownDocument,
+} from "@hubble.md/editor";
 import { type StoreMiddleware, store } from "@simplestack/store";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 
 type ViewerStatus = "idle" | "loading" | "ready" | "error";
+export type AgentPresenceState = {
+	status: string;
+	agentId?: string;
+	summary?: string;
+	details?: string;
+	name?: string;
+	color?: string;
+	avatar?: string;
+	updatedAt: string;
+};
 
 type ViewerState = {
 	currentPath: string | null;
 	lastOpenedPath: string | null;
 	content: string;
+	revision: number | null;
+	contentHash: string | null;
+	updatedAt: string | null;
+	agentPresence: AgentPresenceState | null;
 	status: ViewerStatus;
 	error: string | null;
 };
@@ -38,6 +59,10 @@ function getInitialState(): ViewerState {
 		currentPath: null,
 		lastOpenedPath: null,
 		content: "",
+		revision: null,
+		contentHash: null,
+		updatedAt: null,
+		agentPresence: null,
 		status: "idle",
 		error: null,
 	};
@@ -56,15 +81,70 @@ function getInitialState(): ViewerState {
 	}
 }
 
-export async function savePathContent(path: string, content: string) {
+function toTrackedMarkdownDocument(
+	state: Pick<
+		ViewerState,
+		"currentPath" | "content" | "revision" | "contentHash" | "updatedAt"
+	>,
+): TrackedMarkdownDocument | null {
+	if (
+		!state.currentPath ||
+		state.revision === null ||
+		state.contentHash === null ||
+		state.updatedAt === null
+	) {
+		return null;
+	}
+
+	return {
+		path: state.currentPath,
+		markdown: state.content,
+		revision: state.revision,
+		contentHash: state.contentHash,
+		updatedAt: state.updatedAt,
+	};
+}
+
+function applyTrackedMarkdownDocument(
+	state: ViewerState,
+	document: TrackedMarkdownDocument,
+): ViewerState {
+	return {
+		...state,
+		currentPath: document.path,
+		content: document.markdown,
+		revision: document.revision,
+		contentHash: document.contentHash,
+		updatedAt: document.updatedAt,
+		status: "ready",
+		error: null,
+	};
+}
+
+function resolveTrackedMarkdownDocument(
+	state: ViewerState,
+	path: string,
+	markdown: string,
+): TrackedMarkdownDocument {
+	return updateTrackedMarkdownDocument(toTrackedMarkdownDocument(state), {
+		path,
+		markdown,
+	});
+}
+
+export async function savePathContent(
+	path: string,
+	content: string,
+	options?: {
+		trackedDocument?: TrackedMarkdownDocument;
+	},
+) {
 	viewerStore.set((current) => {
 		if (current.currentPath !== path) return current;
-		return {
-			...current,
-			content,
-			status: "ready",
-			error: null,
-		};
+		const trackedDocument =
+			options?.trackedDocument ??
+			resolveTrackedMarkdownDocument(current, path, content);
+		return applyTrackedMarkdownDocument(current, trackedDocument);
 	});
 
 	try {
@@ -96,12 +176,14 @@ export async function loadPath(path: string) {
 
 	try {
 		const content = await invoke<string>("read_file_text", { path });
-		viewerStore.set((current) => ({
-			...current,
-			currentPath: path,
+		const trackedDocument = resolveTrackedMarkdownDocument(
+			viewerStore.get(),
+			path,
 			content,
-			status: "ready",
-			error: null,
+		);
+		viewerStore.set((current) => ({
+			...applyTrackedMarkdownDocument(current, trackedDocument),
+			agentPresence: null,
 		}));
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
@@ -110,8 +192,66 @@ export async function loadPath(path: string) {
 			...current,
 			currentPath: null,
 			content: "",
+			revision: null,
+			contentHash: null,
+			updatedAt: null,
+			agentPresence: null,
 			status: "error",
 			error: message,
 		}));
 	}
+}
+
+export function getCurrentTrackedMarkdownDocument(): TrackedMarkdownDocument | null {
+	return toTrackedMarkdownDocument(viewerStore.get());
+}
+
+export function getCurrentTrackedMarkdownSnapshot() {
+	const document = getCurrentTrackedMarkdownDocument();
+	return document ? buildTrackedMarkdownSnapshot(document) : null;
+}
+
+export async function applyCurrentTrackedMarkdownEdit(
+	request: ApplyTrackedMarkdownEditRequest,
+) {
+	const current = getCurrentTrackedMarkdownDocument();
+	if (!current) {
+		return {
+			success: false as const,
+			code: "NOT_READY",
+			error: "No markdown document is currently open.",
+			snapshot: null,
+		};
+	}
+
+	const result = applyTrackedMarkdownEdit(current, request);
+	if (!result.success) {
+		return result;
+	}
+
+	await savePathContent(current.path, result.nextState.markdown, {
+		trackedDocument: result.nextState,
+	});
+	return result;
+}
+
+export function setAgentPresence(
+	presence: Omit<AgentPresenceState, "updatedAt">,
+): AgentPresenceState {
+	const nextPresence: AgentPresenceState = {
+		...presence,
+		updatedAt: new Date().toISOString(),
+	};
+	viewerStore.set((current) => ({
+		...current,
+		agentPresence: nextPresence,
+	}));
+	return nextPresence;
+}
+
+export function clearAgentPresence() {
+	viewerStore.set((current) => ({
+		...current,
+		agentPresence: null,
+	}));
 }

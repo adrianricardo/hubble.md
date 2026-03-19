@@ -1,3 +1,19 @@
+export {
+	type ApplyTrackedMarkdownEditFailure,
+	type ApplyTrackedMarkdownEditRequest,
+	type ApplyTrackedMarkdownEditResult,
+	type ApplyTrackedMarkdownEditSuccess,
+	applyTrackedMarkdownEdit,
+	buildMarkdownBlockSnapshot,
+	buildTrackedMarkdownSnapshot,
+	createTrackedMarkdownDocument,
+	hashMarkdownContent,
+	type MarkdownBlockSnapshot,
+	type MarkdownEditOperation,
+	type TrackedMarkdownDocument,
+	type TrackedMarkdownSnapshot,
+	updateTrackedMarkdownDocument,
+} from "./AgentBlockEditing";
 export { FakeSelectionExtension } from "./FakeSelectionExtension";
 export {
 	createLinkMark,
