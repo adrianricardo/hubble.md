@@ -34,13 +34,13 @@ function getInitialState(): WorkspaceState {
 	try {
 		const parsed = JSON.parse(raw) as Partial<WorkspaceState>;
 		return {
+			...empty,
 			workspacePath: parsed.workspacePath ?? null,
 			recentWorkspaces: Array.isArray(parsed.recentWorkspaces)
 				? parsed.recentWorkspaces
 				: [],
 			sidebarOpen: parsed.sidebarOpen ?? true,
 			sortMode: parsed.sortMode === "recent" ? "recent" : "alpha",
-			files: [],
 		};
 	} catch {
 		return empty;
