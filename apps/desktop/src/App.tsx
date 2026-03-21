@@ -13,7 +13,13 @@ import { TaskItem } from "@tiptap/extension-list";
 import { EditorContent, type JSONContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { keymatch } from "keymatch";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { createAppMenu } from "./appMenu";
 import { FormattingStatusBar } from "./editor/FormattingStatusBar";
 import { handleImagePaste } from "./editor/handleImagePaste";
@@ -39,6 +45,8 @@ function App() {
 	const state = useStoreValue(viewerStore);
 	const workspace = useStoreValue(workspaceStore);
 	const hasWorkspace = workspace.workspacePath !== null;
+	const [scrollContainerEl, setScrollContainerEl] =
+		useState<HTMLDivElement | null>(null);
 
 	const openFilePicker = useCallback(async () => {
 		const defaultPath = workspaceStore.get().workspacePath ?? undefined;
@@ -142,7 +150,11 @@ function App() {
 
 	return (
 		<main className="app">
-			<Toolbar hasWorkspace={hasWorkspace} sidebarOpen={workspace.sidebarOpen} />
+		<Toolbar
+			hasWorkspace={hasWorkspace}
+			sidebarOpen={workspace.sidebarOpen}
+			scrollContainer={scrollContainerEl}
+		/>
 			<div className="appBody">
 				{hasWorkspace && workspace.sidebarOpen && workspace.workspacePath && (
 					<Sidebar
@@ -164,6 +176,7 @@ function App() {
 							key={`${state.currentPath}:${HMR_REV}`}
 							path={state.currentPath}
 							initialMarkdown={state.content}
+							onScrollContainerChange={setScrollContainerEl}
 						/>
 					)}
 				</section>
@@ -176,9 +189,11 @@ const SAVE_DEBOUNCE_MS = 120;
 function MarkdownEditor({
 	path,
 	initialMarkdown,
+	onScrollContainerChange,
 }: {
 	path: string;
 	initialMarkdown: string;
+	onScrollContainerChange?: (el: HTMLDivElement | null) => void;
 }) {
 	const latestMarkdownRef = useRef(initialMarkdown);
 	const saveTimerRef = useRef<number | null>(null);
@@ -186,10 +201,14 @@ function MarkdownEditor({
 	const editorViewportRef = useRef<HTMLDivElement | null>(null);
 	const [editorViewportEl, setEditorViewportEl] =
 		useState<HTMLDivElement | null>(null);
-	const setEditorViewport = useCallback((node: HTMLDivElement | null) => {
-		editorViewportRef.current = node;
-		setEditorViewportEl(node);
-	}, []);
+	const setEditorViewport = useCallback(
+		(node: HTMLDivElement | null) => {
+			editorViewportRef.current = node;
+			setEditorViewportEl(node);
+			onScrollContainerChange?.(node);
+		},
+		[onScrollContainerChange],
+	);
 	const initialDoc = useMemo(
 		() => markdownToTiptapDoc(initialMarkdown),
 		[initialMarkdown],

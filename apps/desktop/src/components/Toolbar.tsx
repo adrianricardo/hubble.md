@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
+import { useEffect, useState } from "react";
 import MingcuteAddLine from "~icons/mingcute/add-line";
 import MingcuteLayoutLeftLine from "~icons/mingcute/layout-left-line";
 import { loadPath } from "../store";
@@ -9,10 +10,25 @@ import { Button } from "./ui/button";
 export function Toolbar({
 	hasWorkspace,
 	sidebarOpen,
+	scrollContainer,
 }: {
 	hasWorkspace: boolean;
 	sidebarOpen: boolean;
+	scrollContainer: HTMLDivElement | null;
 }) {
+	const [showBorder, setShowBorder] = useState(false);
+
+	useEffect(() => {
+		if (!scrollContainer) {
+			setShowBorder(false);
+			return;
+		}
+		const update = () => setShowBorder(scrollContainer.scrollTop > 0);
+		update();
+		scrollContainer.addEventListener("scroll", update, { passive: true });
+		return () => scrollContainer.removeEventListener("scroll", update);
+	}, [scrollContainer]);
+
 	if (!hasWorkspace) return null;
 
 	const toggleSidebar = () => {
@@ -35,7 +51,7 @@ export function Toolbar({
 
 	return (
 		<div
-			className="flex items-center gap-1 border-b border-border px-2 py-1"
+		className={`flex items-center gap-1 px-2 py-1 ${sidebarOpen ? "border-b border-border" : showBorder ? "[border-block-end:1px_dashed_var(--border)]" : "border-transparent"}`}
 			data-tauri-drag-region
 		>
 			<Button
