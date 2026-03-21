@@ -1,12 +1,10 @@
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
-
-const SIDEBAR_ITEM_SELECTOR = "[data-sidebar-index]";
+import { EDITOR_INPUT_SELECTOR } from "../selectors";
 
 function isEditableElement(el: Element | null): boolean {
 	if (!el) return false;
 	if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return true;
-	if ((el as HTMLElement).isContentEditable) return true;
-	return false;
+	return (el as HTMLElement).isContentEditable;
 }
 
 export function useSidebarKeyboardNav<T>({
@@ -22,30 +20,23 @@ export function useSidebarKeyboardNav<T>({
 	const focusedIndexRef = useRef(focusedIndex);
 	focusedIndexRef.current = focusedIndex;
 
-	// Scroll the focused item into view
 	useEffect(() => {
 		if (focusedIndex === null) return;
-		const nav = navRef.current;
-		if (!nav) return;
-		const el = nav.querySelector(
-			`${SIDEBAR_ITEM_SELECTOR}[data-sidebar-index="${focusedIndex}"]`,
-		);
-		el?.scrollIntoView({ block: "nearest" });
+		navRef.current
+			?.querySelector(`[data-sidebar-index="${focusedIndex}"]`)
+			?.scrollIntoView({ block: "nearest" });
 	}, [focusedIndex, navRef]);
 
-	// Global Enter listener: opens hovered item even when nav isn't focused
+	// Enter opens hovered item even when nav isn't focused
 	useEffect(() => {
 		const onGlobalEnter = (event: KeyboardEvent) => {
 			if (event.key !== "Enter") return;
 			const idx = focusedIndexRef.current;
 			if (idx === null) return;
-			// Skip if nav already has focus (handled by onKeyDown)
 			if (navRef.current?.contains(document.activeElement)) return;
-			// Skip if user is typing in an editable field
 			if (isEditableElement(document.activeElement)) return;
 			event.preventDefault();
-			const item = items[idx];
-			if (item) onSelect(item);
+			if (items[idx]) onSelect(items[idx]);
 		};
 		window.addEventListener("keydown", onGlobalEnter);
 		return () => window.removeEventListener("keydown", onGlobalEnter);
@@ -56,19 +47,13 @@ export function useSidebarKeyboardNav<T>({
 			if (items.length === 0) return;
 
 			switch (event.key) {
-				case "ArrowDown": {
-					event.preventDefault();
-					setFocusedIndex((prev) => {
-						if (prev === null) return 0;
-						return Math.min(prev + 1, items.length - 1);
-					});
-					break;
-				}
+				case "ArrowDown":
 				case "ArrowUp": {
 					event.preventDefault();
+					const delta = event.key === "ArrowDown" ? 1 : -1;
 					setFocusedIndex((prev) => {
 						if (prev === null) return 0;
-						return Math.max(prev - 1, 0);
+						return Math.max(0, Math.min(prev + delta, items.length - 1));
 					});
 					break;
 				}
@@ -82,9 +67,7 @@ export function useSidebarKeyboardNav<T>({
 				case "Escape": {
 					event.preventDefault();
 					setFocusedIndex(null);
-					// Return focus to the editor
-					const editor = document.querySelector<HTMLElement>(".editorInput");
-					editor?.focus();
+					document.querySelector<HTMLElement>(EDITOR_INPUT_SELECTOR)?.focus();
 					break;
 				}
 			}

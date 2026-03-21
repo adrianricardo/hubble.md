@@ -25,6 +25,7 @@ import { Sidebar } from "./components/Sidebar";
 import { Toolbar } from "./components/Toolbar";
 import { loadPath, savePathContent, viewerStore } from "./store";
 import { openWorkspace, workspaceStore } from "./workspaceStore";
+import { EDITOR_INPUT_ATTR, SIDEBAR_NAV_SELECTOR } from "./selectors";
 import "./App.css";
 
 // Forces editor refresh when underlying TipTap extensions change
@@ -34,6 +35,10 @@ const HMR_REV = (() => {
 	hotData.__editorRev = (hotData.__editorRev ?? 0) + 1;
 	return hotData.__editorRev;
 })();
+
+function focusSidebarNav() {
+	document.querySelector<HTMLElement>(SIDEBAR_NAV_SELECTOR)?.focus();
+}
 
 function App() {
 	const state = useStoreValue(viewerStore);
@@ -86,18 +91,14 @@ function App() {
 				await openFilePicker();
 			} else if (keymatch(event, "CmdOrCtrl+Shift+E")) {
 				event.preventDefault();
-				const wasOpen = workspaceStore.get().sidebarOpen;
-				workspaceStore.set((s) => ({ ...s, sidebarOpen: !s.sidebarOpen }));
-				if (!wasOpen) {
-					// Focus the sidebar nav after it renders
-					requestAnimationFrame(() => {
-						document.querySelector<HTMLElement>("[data-sidebar-nav]")?.focus();
-					});
+				const opening = !workspaceStore.get().sidebarOpen;
+				workspaceStore.set((s) => ({ ...s, sidebarOpen: opening }));
+				if (opening) {
+					requestAnimationFrame(() => focusSidebarNav());
 				}
 			} else if (keymatch(event, "CmdOrCtrl+0")) {
 				event.preventDefault();
-				const nav = document.querySelector<HTMLElement>("[data-sidebar-nav]");
-				nav?.focus();
+				focusSidebarNav();
 			}
 		};
 		window.addEventListener("keydown", onKeyDown);
@@ -240,6 +241,7 @@ function MarkdownEditor({
 		editorProps: {
 			attributes: {
 				class: "editorInput",
+				[EDITOR_INPUT_ATTR]: "",
 			},
 			handlePaste: (_view, event): boolean => {
 				const currentEditor = editor;

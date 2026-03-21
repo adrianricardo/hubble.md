@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { loadPath } from "../store";
 import { type SortMode, workspaceStore } from "../workspaceStore";
 import { Button } from "./ui/button";
+import { SIDEBAR_NAV_ATTR } from "../selectors";
 import { useSidebarKeyboardNav } from "./useSidebarKeyboardNav";
 
 type FileEntry = {
@@ -99,7 +100,7 @@ export function Sidebar({
 				className="flex-1 overflow-y-auto py-1 outline-none"
 				tabIndex={0}
 				onKeyDown={onKeyDown}
-				data-sidebar-nav
+				{...{ [SIDEBAR_NAV_ATTR]: true }}
 			>
 				{sorted.map((f, index) => {
 					const rel = relativePath(f.path);
