@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import type { Id } from "../convex/_generated/dataModel";
+import type { Id } from "@hubble.md/sync-backend/types";
 
 export const WorkspaceConfigSchema = z.object({
 	workspaceId: z.string(),

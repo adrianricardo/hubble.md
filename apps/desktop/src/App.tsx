@@ -23,7 +23,11 @@ import { createImageExtension } from "./editor/ImageExtension";
 import { LinkPopover } from "./editor/LinkPopover";
 import { SmartLinkExtension } from "./editor/SmartLinkExtension";
 import { VirtualCursor } from "./editor/VirtualCursor";
+import { api } from "@hubble.md/sync-backend";
+import { ConvexHttpClient } from "convex/browser";
 import { loadPath, savePathContent, viewerStore } from "./store";
+import { type SyncConfig, startSync, stopSync } from "./syncManager";
+import { useSyncSubscription } from "./useSyncSubscription";
 import { openWorkspace, workspaceStore } from "./workspaceStore";
 import "./App.css";
 
@@ -41,6 +45,68 @@ function App() {
 	const hasWorkspace = workspace.workspacePath !== null;
 	const [scrollContainerEl, setScrollContainerEl] =
 		useState<HTMLDivElement | null>(null);
+	const [syncConfig, setSyncConfig] = useState<SyncConfig | null>(null);
+
+	// Read .hubble/config.json when workspace changes, start/stop sync
+	useEffect(() => {
+		const ws = workspace.workspacePath;
+		if (!ws) {
+			stopSync();
+			setSyncConfig(null);
+			return;
+		}
+		let cancelled = false;
+		const load = async () => {
+			const config = await invoke<SyncConfig | null>("read_hubble_config", {
+				workspacePath: ws,
+			});
+			if (cancelled) return;
+			if (config) {
+				startSync(config);
+				setSyncConfig(config);
+			} else {
+				stopSync();
+				setSyncConfig(null);
+			}
+		};
+		void load();
+		return () => {
+			cancelled = true;
+			stopSync();
+		};
+	}, [workspace.workspacePath]);
+
+	useSyncSubscription(workspace.workspacePath, syncConfig);
+
+	const enableSync = useCallback(async () => {
+		const ws = workspace.workspacePath;
+		if (!ws || syncConfig) return;
+		const convexUrl = "http://127.0.0.1:3210";
+		const name = ws.split("/").pop() ?? "workspace";
+		const client = new ConvexHttpClient(convexUrl);
+		try {
+			let wsDoc = await client.query(api.sync.getWorkspace, { name });
+			if (!wsDoc) {
+				const id = await client.mutation(api.sync.createWorkspace, { name });
+				wsDoc = { _id: id, _creationTime: Date.now(), name, createdAt: Date.now() };
+			}
+			const config: SyncConfig = {
+				workspaceId: wsDoc._id as string,
+				workspaceName: name,
+				deviceId: crypto.randomUUID(),
+				convexUrl,
+			};
+			await invoke("ensure_directory", { path: `${ws}/.hubble` });
+			await invoke("write_file_text", {
+				path: `${ws}/.hubble/config.json`,
+				content: JSON.stringify(config, null, "\t"),
+			});
+			startSync(config);
+			setSyncConfig(config);
+		} catch (err) {
+			console.error("Failed to enable sync:", err);
+		}
+	}, [workspace.workspacePath, syncConfig]);
 
 	const openFilePicker = useCallback(async () => {
 		const defaultPath = workspaceStore.get().workspacePath ?? undefined;
@@ -148,6 +214,8 @@ function App() {
 				hasWorkspace={hasWorkspace}
 				sidebarOpen={workspace.sidebarOpen}
 				scrollContainer={scrollContainerEl}
+				syncActive={syncConfig !== null}
+				onEnableSync={() => void enableSync()}
 			/>
 			<div className="appBody">
 				{hasWorkspace && workspace.sidebarOpen && workspace.workspacePath && (

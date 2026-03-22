@@ -1,0 +1,25 @@
+{
+	"name": "@hubble.md/sync-backend",
+	"version": "0.0.1",
+	"license": "MIT",
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./convex/_generated/api.d.ts",
+			"default": "./convex/_generated/api.js"
+		},
+		"./types": {
+			"types": "./convex/_generated/dataModel.d.ts"
+		}
+	},
+	"files": [
+		"convex"
+	],
+	"scripts": {
+		"convex:dev": "convex dev",
+		"convex:codegen": "convex codegen"
+	},
+	"dependencies": {
+		"convex": "^1.21.0"
+	}
+}

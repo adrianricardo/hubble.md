@@ -1,7 +1,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { ConvexHttpClient } from "convex/browser";
-import { api } from "../convex/_generated/api";
+import { api } from "@hubble.md/sync-backend";
+import type { Id } from "@hubble.md/sync-backend/types";
 import {
 	generateDeviceId,
 	isInitialized,
@@ -11,7 +12,6 @@ import {
 	writeSyncState,
 } from "./config";
 import { scanWorkspace } from "./scan";
-import type { Id } from "../convex/_generated/dataModel";
 import type {
 	FileState,
 	RemoteFile,

@@ -24,6 +24,13 @@ coverage/
 **/.astro/
 **/*.tsbuildinfo
 
+# convex
+**/convex/_generated/
+**/convex/*.js
+**/convex/*.js.map
+**/convex/*.d.ts
+**/convex/*.d.ts.map
+
 # tauri / rust build artifacts
 **/src-tauri/target/
 **/src-tauri/gen/schemas/

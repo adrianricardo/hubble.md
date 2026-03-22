@@ -2,7 +2,8 @@ import { store } from "@simplestack/store";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { localStoragePersist } from "./lib/localStoragePersist";
-import { touchFile } from "./workspaceStore";
+import { isSyncActive, pushLocalChange } from "./syncManager";
+import { touchFile, workspaceStore } from "./workspaceStore";
 
 type ViewerStatus = "idle" | "loading" | "ready" | "error";
 
@@ -53,6 +54,15 @@ export async function savePathContent(path: string, content: string) {
 	try {
 		await invoke("write_file_text", { path, content });
 		touchFile(path);
+
+		if (isSyncActive()) {
+			const ws = workspaceStore.get().workspacePath;
+			if (ws && path.startsWith(ws)) {
+				const relativePath = path.slice(ws.length + 1);
+				const hash = await sha256(content);
+				void pushLocalChange(relativePath, content, hash);
+			}
+		}
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		toast.error("Failed to save file", { description: message });
@@ -74,6 +84,13 @@ export const viewerStore = store<ViewerState>(getInitialState(), {
 		})),
 	],
 });
+
+async function sha256(text: string): Promise<string> {
+	const data = new TextEncoder().encode(text);
+	const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+	const hashArray = Array.from(new Uint8Array(hashBuffer));
+	return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 
 export async function loadPath(path: string) {
 	viewerStore.set((current) => ({
