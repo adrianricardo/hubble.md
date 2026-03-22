@@ -26,7 +26,12 @@ import { VirtualCursor } from "./editor/VirtualCursor";
 import { api } from "@hubble.md/sync-backend";
 import { ConvexHttpClient } from "convex/browser";
 import { loadPath, savePathContent, viewerStore } from "./store";
-import { type SyncConfig, startSync, stopSync } from "./syncManager";
+import {
+	type SyncConfig,
+	runFullSync,
+	startSync,
+	stopSync,
+} from "./syncManager";
 import { useSyncSubscription } from "./useSyncSubscription";
 import { openWorkspace, workspaceStore } from "./workspaceStore";
 import "./App.css";
@@ -64,6 +69,7 @@ function App() {
 			if (config) {
 				startSync(config);
 				setSyncConfig(config);
+				await runFullSync(ws);
 			} else {
 				stopSync();
 				setSyncConfig(null);
@@ -103,6 +109,8 @@ function App() {
 			});
 			startSync(config);
 			setSyncConfig(config);
+			// Push all existing files on first sync
+			await runFullSync(ws);
 		} catch (err) {
 			console.error("Failed to enable sync:", err);
 		}
@@ -322,6 +330,15 @@ function MarkdownEditor({
 			},
 		},
 	});
+
+	useEffect(() => {
+		if (!editor) return;
+		const current = tiptapDocToMarkdown(editor.getJSON() as JSONContent);
+		if (current === initialMarkdown) return;
+		editor.commands.setContent(markdownToTiptapDoc(initialMarkdown), {
+			emitUpdate: false,
+		});
+	}, [editor, initialMarkdown]);
 
 	useEffect(() => {
 		return () => {

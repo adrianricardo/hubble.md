@@ -1,37 +1,36 @@
-import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
+import { loadPath, viewerStore } from "./store";
 import type { SyncConfig } from "./syncManager";
-import { subscribeToFiles } from "./syncManager";
+import { runFullSync, subscribeToFiles } from "./syncManager";
 import { refreshFiles } from "./workspaceStore";
 
 /**
  * Subscribes to remote file changes via Convex reactive query.
- * Writes incoming changes to disk and refreshes the sidebar.
+ * Triggers a full sync when remote changes are detected.
  */
 export function useSyncSubscription(
 	workspacePath: string | null,
 	syncConfig: SyncConfig | null,
 ) {
-	const knownHashesRef = useRef<Map<string, string>>(new Map());
-
 	useEffect(() => {
 		if (!workspacePath || !syncConfig) return;
 
 		return subscribeToFiles(async (files) => {
-			let wrote = false;
-			for (const f of files) {
-				if (f.deleted) continue;
-				// Skip if we already wrote this exact version
-				if (knownHashesRef.current.get(f.path) === f.contentHash) continue;
-
-				await invoke("write_file_text", {
-					path: `${workspacePath}/${f.path}`,
-					content: f.content,
-				});
-				knownHashesRef.current.set(f.path, f.contentHash);
-				wrote = true;
-			}
-			if (wrote) void refreshFiles();
+			if (files.length === 0) return;
+			const result = await runFullSync(workspacePath);
+			void refreshFiles();
+			if (!result || result.pulled.length === 0) return;
+			const currentPath = viewerStore.get().currentPath;
+			if (!currentPath) return;
+			const prefix = workspacePath.endsWith("/")
+				? workspacePath
+				: `${workspacePath}/`;
+			const relativeCurrent = currentPath.startsWith(prefix)
+				? currentPath.slice(prefix.length)
+				: null;
+			if (!relativeCurrent) return;
+			if (!result.pulled.includes(relativeCurrent)) return;
+			await loadPath(currentPath);
 		});
 	}, [workspacePath, syncConfig]);
 }
