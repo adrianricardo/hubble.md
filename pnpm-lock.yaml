@@ -23,6 +23,9 @@ importers:
       '@hubble.md/editor':
         specifier: workspace:*
         version: link:../../packages/editor
+      '@hubble.md/sync':
+        specifier: workspace:*
+        version: link:../../packages/sync
       '@hubble.md/sync-backend':
         specifier: workspace:*
         version: link:../../packages/sync-backend

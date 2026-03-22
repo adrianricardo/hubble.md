@@ -1,7 +1,7 @@
 export { init, sync, status } from "./sync";
-export { subscribe } from "./subscribe";
 export { isInitialized, readConfig } from "./config";
-export type { SubscribeOptions } from "./subscribe";
+export { contentHash } from "./fs";
+export type { FileSystem, LocalFile } from "./fs";
 export type {
 	WorkspaceConfig,
 	SyncState,

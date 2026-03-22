@@ -1,17 +1,13 @@
-import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@hubble.md/sync-backend";
-import type { Id } from "@hubble.md/sync-backend/types";
 import {
-	generateDeviceId,
 	isInitialized,
 	readConfig,
 	readSyncState,
 	writeConfig,
 	writeSyncState,
 } from "./config";
-import { scanWorkspace } from "./scan";
+import type { FileSystem } from "./fs";
 import type {
 	FileState,
 	RemoteFile,
@@ -20,13 +16,16 @@ import type {
 } from "./types";
 
 /** Initialize a workspace for syncing. Creates .hubble/ config. */
-export async function init(opts: {
-	workspacePath: string;
-	workspaceName: string;
-	convexUrl: string;
-}): Promise<WorkspaceConfig> {
-	if (isInitialized(opts.workspacePath)) {
-		return readConfig(opts.workspacePath);
+export async function init(
+	fs: FileSystem,
+	opts: {
+		workspacePath: string;
+		workspaceName: string;
+		convexUrl: string;
+	},
+): Promise<WorkspaceConfig> {
+	if (await isInitialized(fs, opts.workspacePath)) {
+		return readConfig(fs, opts.workspacePath);
 	}
 
 	const client = new ConvexHttpClient(opts.convexUrl);
@@ -42,27 +41,29 @@ export async function init(opts: {
 	const config: WorkspaceConfig = {
 		workspaceId: workspaceId as string,
 		workspaceName: opts.workspaceName,
-		deviceId: generateDeviceId(),
+		deviceId: crypto.randomUUID(),
 		convexUrl: opts.convexUrl,
 	};
-	writeConfig(opts.workspacePath, config);
-	writeSyncState(opts.workspacePath, { lastSyncedAt: 0, files: {} });
+	await writeConfig(fs, opts.workspacePath, config);
+	await writeSyncState(fs, opts.workspacePath, { lastSyncedAt: 0, files: {} });
 	return config;
 }
 
 /** Run a full sync: push local changes, pull remote changes, detect conflicts. */
-export async function sync(workspacePath: string): Promise<SyncResult> {
-	const config = readConfig(workspacePath);
-	const state = readSyncState(workspacePath);
+export async function sync(
+	fs: FileSystem,
+	workspacePath: string,
+): Promise<SyncResult> {
+	const config = await readConfig(fs, workspacePath);
+	const state = await readSyncState(fs, workspacePath);
 	const client = new ConvexHttpClient(config.convexUrl);
 
-	const localFiles = scanWorkspace(workspacePath);
+	const localFiles = await fs.listMarkdownFiles(workspacePath);
 	const localByPath = new Map(localFiles.map((f) => [f.relativePath, f]));
 
-	const workspaceId = config.workspaceId as Id<"workspaces">;
 	const remoteFiles = (await client.query(api.sync.getFilesByWorkspace, {
-		workspaceId,
-		since: state.lastSyncedAt > 0 ? state.lastSyncedAt : undefined,
+		workspaceId: config.workspaceId as any,
+		since: undefined,
 	})) as RemoteFile[];
 	const remoteByPath = new Map(remoteFiles.map((f) => [f.path, f]));
 
@@ -75,45 +76,54 @@ export async function sync(workspacePath: string): Promise<SyncResult> {
 	const nextFiles: Record<string, FileState> = { ...state.files };
 	const now = Date.now();
 
-	// Push: local files that changed since last sync
 	for (const local of localFiles) {
 		const prev = state.files[local.relativePath];
 		const remote = remoteByPath.get(local.relativePath);
-        // Local differs from what has been synced, as recorded in the state file
 		const localChanged = !prev || prev.hash !== local.hash;
-
-		if (!localChanged && !remote) {
-			result.unchanged++;
-			continue;
-		}
-
-		if (localChanged && remote && remote.contentHash !== local.hash) {
-			// Both changed with different content → conflict
-			const conflictName = toConflictName(local.relativePath);
-			writeFileSync(join(workspacePath, conflictName), local.content);
-			// Pull remote as primary
-			writeFileSync(join(workspacePath, local.relativePath), remote.content);
-			nextFiles[local.relativePath] = {
-				hash: remote.contentHash,
-				lastSyncedAt: now,
-			};
-			result.conflicts.push(local.relativePath);
-			continue;
-		}
-
-		if (localChanged) {
-			// TODO: batch into a single pushFiles mutation to avoid sequential round trips
+		const remoteChanged = !!remote && (!prev || prev.hash !== remote.contentHash);
+		if (!remote) {
 			await client.mutation(api.sync.pushFile, {
-				workspaceId,
+				workspaceId: config.workspaceId as any,
 				path: local.relativePath,
 				contentHash: local.hash,
 				content: local.content,
 				deviceId: config.deviceId,
 			});
-			nextFiles[local.relativePath] = {
-				hash: local.hash,
-				lastSyncedAt: now,
-			};
+			nextFiles[local.relativePath] = { hash: local.hash, lastSyncedAt: now };
+			result.pushed.push(local.relativePath);
+			continue;
+		}
+
+		if (
+			localChanged &&
+			remoteChanged &&
+			remote &&
+			remote.contentHash !== local.hash
+		) {
+			const conflictName = toConflictName(local.relativePath);
+			await fs.writeFile(`${workspacePath}/${conflictName}`, local.content);
+			await fs.writeFile(`${workspacePath}/${local.relativePath}`, remote.content);
+			nextFiles[local.relativePath] = { hash: remote.contentHash, lastSyncedAt: now };
+			result.conflicts.push(local.relativePath);
+			continue;
+		}
+		if (!localChanged && remoteChanged && remote && remote.contentHash !== local.hash) {
+			await fs.writeFile(`${workspacePath}/${local.relativePath}`, remote.content);
+			nextFiles[local.relativePath] = { hash: remote.contentHash, lastSyncedAt: now };
+			result.pulled.push(local.relativePath);
+			continue;
+		}
+
+		if (localChanged) {
+			// TODO: batch into a single pushFiles mutation
+			await client.mutation(api.sync.pushFile, {
+				workspaceId: config.workspaceId as any,
+				path: local.relativePath,
+				contentHash: local.hash,
+				content: local.content,
+				deviceId: config.deviceId,
+			});
+			nextFiles[local.relativePath] = { hash: local.hash, lastSyncedAt: now };
 			result.pushed.push(local.relativePath);
 			continue;
 		}
@@ -121,34 +131,32 @@ export async function sync(workspacePath: string): Promise<SyncResult> {
 		result.unchanged++;
 	}
 
-	// Pull: remote files not handled above
 	for (const remote of remoteFiles) {
 		if (remote.deleted) continue;
-		if (localByPath.has(remote.path)) continue; // already handled
+		const local = localByPath.get(remote.path);
+		if (local) continue;
 
-		// New file from remote — pull it
-		const absPath = join(workspacePath, remote.path);
-		mkdirSync(dirname(absPath), { recursive: true });
-		writeFileSync(absPath, remote.content);
-		nextFiles[remote.path] = {
-			hash: remote.contentHash,
-			lastSyncedAt: now,
-		};
+		const dir = remote.path.includes("/")
+			? `${workspacePath}/${remote.path.slice(0, remote.path.lastIndexOf("/"))}`
+			: null;
+		if (dir) await fs.ensureDir(dir);
+		await fs.writeFile(`${workspacePath}/${remote.path}`, remote.content);
+		nextFiles[remote.path] = { hash: remote.contentHash, lastSyncedAt: now };
 		result.pulled.push(remote.path);
 	}
 
-	writeSyncState(workspacePath, { lastSyncedAt: now, files: nextFiles });
+	await writeSyncState(fs, workspacePath, { lastSyncedAt: now, files: nextFiles });
 	return result;
 }
 
 /** Get current sync status without performing a sync. */
-export function status(workspacePath: string) {
-	if (!isInitialized(workspacePath)) {
+export async function status(fs: FileSystem, workspacePath: string) {
+	if (!(await isInitialized(fs, workspacePath))) {
 		return { initialized: false as const };
 	}
-	const config = readConfig(workspacePath);
-	const state = readSyncState(workspacePath);
-	const localFiles = scanWorkspace(workspacePath);
+	const config = await readConfig(fs, workspacePath);
+	const state = await readSyncState(fs, workspacePath);
+	const localFiles = await fs.listMarkdownFiles(workspacePath);
 
 	let pendingChanges = 0;
 	for (const f of localFiles) {

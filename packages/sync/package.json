@@ -9,6 +9,10 @@
 		".": {
 			"types": "./dist/index.d.ts",
 			"default": "./dist/index.js"
+		},
+		"./node": {
+			"types": "./dist/fs-node.d.ts",
+			"default": "./dist/fs-node.js"
 		}
 	},
 	"files": [

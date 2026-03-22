@@ -1,6 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import type { FileSystem } from "./fs";
 import {
 	SyncStateSchema,
 	type SyncState,
@@ -9,55 +7,54 @@ import {
 } from "./types";
 
 const HUBBLE_DIR = ".hubble";
-const CONFIG_FILE = "config.json";
-const STATE_FILE = "state.json";
 
-export function hubbleDir(workspacePath: string): string {
-	return join(workspacePath, HUBBLE_DIR);
+function configPath(ws: string): string {
+	return `${ws}/${HUBBLE_DIR}/config.json`;
 }
 
-export function isInitialized(workspacePath: string): boolean {
-	return existsSync(join(hubbleDir(workspacePath), CONFIG_FILE));
+function statePath(ws: string): string {
+	return `${ws}/${HUBBLE_DIR}/state.json`;
 }
 
-export function readConfig(workspacePath: string): WorkspaceConfig {
-	const raw = readFileSync(
-		join(hubbleDir(workspacePath), CONFIG_FILE),
-		"utf-8",
-	);
+export async function isInitialized(
+	fs: FileSystem,
+	workspacePath: string,
+): Promise<boolean> {
+	return (await fs.readFileOrNull(configPath(workspacePath))) !== null;
+}
+
+export async function readConfig(
+	fs: FileSystem,
+	workspacePath: string,
+): Promise<WorkspaceConfig> {
+	const raw = await fs.readFile(configPath(workspacePath));
 	return WorkspaceConfigSchema.parse(JSON.parse(raw));
 }
 
-export function writeConfig(
+export async function writeConfig(
+	fs: FileSystem,
 	workspacePath: string,
 	config: WorkspaceConfig,
-): void {
-	const dir = hubbleDir(workspacePath);
-	mkdirSync(dir, { recursive: true });
-	writeFileSync(join(dir, CONFIG_FILE), JSON.stringify(config, null, "\t"));
+): Promise<void> {
+	await fs.ensureDir(`${workspacePath}/${HUBBLE_DIR}`);
+	await fs.writeFile(configPath(workspacePath), JSON.stringify(config, null, "\t"));
 }
 
-export function readSyncState(workspacePath: string): SyncState {
-	const path = join(hubbleDir(workspacePath), STATE_FILE);
-	if (!existsSync(path)) return { lastSyncedAt: 0, files: {} };
-	const raw = readFileSync(path, "utf-8");
+const EMPTY_STATE: SyncState = { lastSyncedAt: 0, files: {} };
+
+export async function readSyncState(
+	fs: FileSystem,
+	workspacePath: string,
+): Promise<SyncState> {
+	const raw = await fs.readFileOrNull(statePath(workspacePath));
+	if (!raw) return EMPTY_STATE;
 	return SyncStateSchema.parse(JSON.parse(raw));
 }
 
-export function writeSyncState(
+export async function writeSyncState(
+	fs: FileSystem,
 	workspacePath: string,
 	state: SyncState,
-): void {
-	writeFileSync(
-		join(hubbleDir(workspacePath), STATE_FILE),
-		JSON.stringify(state, null, "\t"),
-	);
-}
-
-export function generateDeviceId(): string {
-	return randomUUID();
-}
-
-export function contentHash(content: string): string {
-	return createHash("sha256").update(content, "utf-8").digest("hex");
+): Promise<void> {
+	await fs.writeFile(statePath(workspacePath), JSON.stringify(state, null, "\t"));
 }
