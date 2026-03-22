@@ -244,6 +244,36 @@ fn persist_pasted_image(
     })
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct HubbleConfig {
+    #[serde(rename = "workspaceId")]
+    workspace_id: String,
+    #[serde(rename = "workspaceName")]
+    workspace_name: String,
+    #[serde(rename = "deviceId")]
+    device_id: String,
+    #[serde(rename = "convexUrl")]
+    convex_url: String,
+}
+
+#[tauri::command]
+fn read_hubble_config(workspace_path: String) -> Result<Option<HubbleConfig>, String> {
+    let config_path = PathBuf::from(&workspace_path).join(".hubble").join("config.json");
+    if !config_path.exists() {
+        return Ok(None);
+    }
+    let raw = fs::read_to_string(&config_path)
+        .map_err(|e| format!("Failed to read .hubble/config.json: {}", e))?;
+    let config: HubbleConfig = serde_json::from_str(&raw)
+        .map_err(|e| format!("Invalid .hubble/config.json: {}", e))?;
+    Ok(Some(config))
+}
+
+#[tauri::command]
+fn ensure_directory(path: String) -> Result<(), String> {
+    fs::create_dir_all(&path).map_err(|e| format!("Failed to create directory {}: {}", path, e))
+}
+
 #[tauri::command]
 fn get_launch_file_path() -> Option<String> {
     let arg_path = first_existing_file_arg_from_iter(env::args_os().skip(1));
@@ -266,6 +296,8 @@ pub fn run() {
             read_file_text,
             write_file_text,
             persist_pasted_image,
+            read_hubble_config,
+            ensure_directory,
             get_launch_file_path
         ])
         .build(tauri::generate_context!())
