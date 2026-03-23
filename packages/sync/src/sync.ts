@@ -6,14 +6,14 @@ import {
 	readSyncState,
 	writeConfig,
 	writeSyncState,
-} from "./config";
-import type { FileSystem } from "./fs";
+} from "./config.js";
+import type { FileSystem } from "./fs.js";
 import type {
 	FileState,
 	RemoteFile,
 	SyncResult,
 	WorkspaceConfig,
-} from "./types";
+} from "./types.js";
 
 /** Initialize a workspace for syncing. Creates .hubble/ config. */
 export async function init(

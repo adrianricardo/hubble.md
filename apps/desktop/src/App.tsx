@@ -9,6 +9,7 @@ import { useStoreValue } from "@simplestack/store/react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
+import { watch } from "@tauri-apps/plugin-fs";
 import { TaskItem } from "@tiptap/extension-list";
 import { EditorContent, type JSONContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -23,17 +24,8 @@ import { createImageExtension } from "./editor/ImageExtension";
 import { LinkPopover } from "./editor/LinkPopover";
 import { SmartLinkExtension } from "./editor/SmartLinkExtension";
 import { VirtualCursor } from "./editor/VirtualCursor";
-import { api } from "@hubble.md/sync-backend";
-import { ConvexHttpClient } from "convex/browser";
 import { loadPath, savePathContent, viewerStore } from "./store";
-import {
-	type SyncConfig,
-	runFullSync,
-	startSync,
-	stopSync,
-} from "./syncManager";
-import { useSyncSubscription } from "./useSyncSubscription";
-import { openWorkspace, workspaceStore } from "./workspaceStore";
+import { openWorkspace, refreshFiles, workspaceStore } from "./workspaceStore";
 import "./App.css";
 
 // Forces editor refresh when underlying TipTap extensions change
@@ -50,71 +42,66 @@ function App() {
 	const hasWorkspace = workspace.workspacePath !== null;
 	const [scrollContainerEl, setScrollContainerEl] =
 		useState<HTMLDivElement | null>(null);
-	const [syncConfig, setSyncConfig] = useState<SyncConfig | null>(null);
 
-	// Read .hubble/config.json when workspace changes, start/stop sync
 	useEffect(() => {
 		const ws = workspace.workspacePath;
-		if (!ws) {
-			stopSync();
-			setSyncConfig(null);
-			return;
-		}
-		let cancelled = false;
-		const load = async () => {
-			const config = await invoke<SyncConfig | null>("read_hubble_config", {
-				workspacePath: ws,
-			});
-			if (cancelled) return;
-			if (config) {
-				startSync(config);
-				setSyncConfig(config);
-				await runFullSync(ws);
-			} else {
-				stopSync();
-				setSyncConfig(null);
+		if (!ws) return;
+
+		let disposed = false;
+		let unwatch: null | (() => void) = null;
+
+		const isIgnoredPath = (path: string) =>
+			path.includes("/.hubble/") ||
+			path.endsWith("/.hubble") ||
+			path.includes("\\.hubble\\");
+
+		const handleChange = async (paths: string[]) => {
+			const changedPaths = paths.filter((path) => !isIgnoredPath(path));
+			if (changedPaths.length === 0) return;
+
+			void refreshFiles();
+			const currentPath = viewerStore.get().currentPath;
+			if (!currentPath) return;
+			if (!changedPaths.includes(currentPath)) return;
+
+			try {
+				const nextContent = await invoke<string>("read_file_text", {
+					path: currentPath,
+				});
+				const current = viewerStore.get();
+				if (
+					current.currentPath === currentPath &&
+					current.content !== nextContent
+				) {
+					await loadPath(currentPath);
+				}
+			} catch {
+				await loadPath(currentPath);
 			}
 		};
-		void load();
+
+		const setup = async () => {
+			unwatch = await watch(
+				ws,
+				(event) => {
+					const paths = Array.isArray(event.paths) ? event.paths : [];
+					void handleChange(paths);
+				},
+				{ recursive: true },
+			);
+			if (disposed && unwatch) {
+				unwatch();
+			}
+		};
+
+		void setup();
 		return () => {
-			cancelled = true;
-			stopSync();
+			disposed = true;
+			if (unwatch) {
+				unwatch();
+			}
 		};
 	}, [workspace.workspacePath]);
-
-	useSyncSubscription(workspace.workspacePath, syncConfig);
-
-	const enableSync = useCallback(async () => {
-		const ws = workspace.workspacePath;
-		if (!ws || syncConfig) return;
-		const convexUrl = "http://127.0.0.1:3210";
-		const name = ws.split("/").pop() ?? "workspace";
-		const client = new ConvexHttpClient(convexUrl);
-		try {
-			let wsDoc = await client.query(api.sync.getWorkspace, { name });
-			if (!wsDoc) {
-				const id = await client.mutation(api.sync.createWorkspace, { name });
-				wsDoc = { _id: id, _creationTime: Date.now(), name, createdAt: Date.now() };
-			}
-			const config: SyncConfig = {
-				workspaceId: wsDoc._id as string,
-				workspaceName: name,
-				deviceId: crypto.randomUUID(),
-				convexUrl,
-			};
-			await invoke("ensure_directory", { path: `${ws}/.hubble` });
-			await invoke("write_file_text", {
-				path: `${ws}/.hubble/config.json`,
-				content: JSON.stringify(config, null, "\t"),
-			});
-			startSync(config);
-			setSyncConfig(config);
-			// Push all existing files on first sync
-			await runFullSync(ws);
-		} catch (err) {
-			console.error("Failed to enable sync:", err);
-		}
-	}, [workspace.workspacePath, syncConfig]);
 
 	const openFilePicker = useCallback(async () => {
 		const defaultPath = workspaceStore.get().workspacePath ?? undefined;
@@ -222,8 +209,6 @@ function App() {
 				hasWorkspace={hasWorkspace}
 				sidebarOpen={workspace.sidebarOpen}
 				scrollContainer={scrollContainerEl}
-				syncActive={syncConfig !== null}
-				onEnableSync={() => void enableSync()}
 			/>
 			<div className="appBody">
 				{hasWorkspace && workspace.sidebarOpen && workspace.workspacePath && (

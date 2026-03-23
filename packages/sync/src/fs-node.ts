@@ -6,7 +6,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join, relative } from "node:path";
-import { contentHash, type FileSystem, type LocalFile } from "./fs";
+import { contentHash, type FileSystem, type LocalFile } from "./fs.js";
 
 const MD_EXTENSIONS = new Set(["md", "markdown", "mdown"]);
 

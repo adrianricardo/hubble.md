@@ -2,8 +2,7 @@ import { store } from "@simplestack/store";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { localStoragePersist } from "./lib/localStoragePersist";
-import { isSyncActive, runFullSync } from "./syncManager";
-import { touchFile, workspaceStore } from "./workspaceStore";
+import { touchFile } from "./workspaceStore";
 
 type ViewerStatus = "idle" | "loading" | "ready" | "error";
 
@@ -54,11 +53,6 @@ export async function savePathContent(path: string, content: string) {
 	try {
 		await invoke("write_file_text", { path, content });
 		touchFile(path);
-
-		if (isSyncActive()) {
-			const ws = workspaceStore.get().workspacePath;
-			if (ws) void runFullSync(ws);
-		}
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		toast.error("Failed to save file", { description: message });

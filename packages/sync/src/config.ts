@@ -1,10 +1,10 @@
-import type { FileSystem } from "./fs";
+import type { FileSystem } from "./fs.js";
 import {
 	SyncStateSchema,
 	type SyncState,
 	WorkspaceConfigSchema,
 	type WorkspaceConfig,
-} from "./types";
+} from "./types.js";
 
 const HUBBLE_DIR = ".hubble";
 

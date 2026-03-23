@@ -2,7 +2,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
 import MingcuteAddLine from "~icons/mingcute/add-line";
-import MingcuteCloudLine from "~icons/mingcute/cloud-line";
 import MingcuteLayoutLeftLine from "~icons/mingcute/layout-left-line";
 import { loadPath } from "../store";
 import { workspaceStore } from "../workspaceStore";
@@ -12,14 +11,10 @@ export function Toolbar({
 	hasWorkspace,
 	sidebarOpen,
 	scrollContainer,
-	syncActive,
-	onEnableSync,
 }: {
 	hasWorkspace: boolean;
 	sidebarOpen: boolean;
 	scrollContainer: HTMLDivElement | null;
-	syncActive: boolean;
-	onEnableSync: () => void;
 }) {
 	const [showBorder, setShowBorder] = useState(false);
 
@@ -69,23 +64,6 @@ export function Toolbar({
 				<MingcuteLayoutLeftLine className="size-4" />
 			</Button>
 			<div className="flex-1" data-tauri-drag-region />
-			{!syncActive && (
-				<Button
-					variant="ghost"
-					size="icon-sm"
-					onClick={onEnableSync}
-					aria-label="Enable sync"
-					title="Enable sync"
-				>
-					<MingcuteCloudLine className="size-4" />
-				</Button>
-			)}
-			{syncActive && (
-				<MingcuteCloudLine
-					className="size-4 text-brand"
-					title="Sync active"
-				/>
-			)}
 			<Button
 				variant="ghost"
 				size="icon-sm"
