@@ -61,9 +61,8 @@ export function useSidebarKeyboardNav<T>({
 					event.preventDefault();
 					const delta = event.key === "ArrowDown" ? 1 : -1;
 					setFocusedIndex((prev) => {
-						if (prev === null)
-							return Math.max(0, activeIndex >= 0 ? activeIndex : 0);
-						return Math.max(0, Math.min(prev + delta, items.length - 1));
+						const start = prev ?? (activeIndex >= 0 ? activeIndex : -1);
+						return Math.max(0, Math.min(start + delta, items.length - 1));
 					});
 					break;
 				}
