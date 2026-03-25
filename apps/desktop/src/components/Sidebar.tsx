@@ -1,7 +1,8 @@
-import { cn } from "@/lib/utils";
 import { useCallback, useRef } from "react";
+import { cn } from "@/lib/utils";
 import MingcuteAzSortAscendingLettersLine from "~icons/mingcute/az-sort-ascending-letters-line";
 import MingcuteSortDescendingLine from "~icons/mingcute/sort-descending-line";
+import { SIDEBAR_NAV_ATTR } from "../selectors";
 import { loadPath } from "../store";
 import {
 	type FileEntry,
@@ -9,7 +10,6 @@ import {
 	workspaceStore,
 } from "../workspaceStore";
 import { Button } from "./ui/button";
-import { SIDEBAR_NAV_ATTR } from "../selectors";
 import { useSidebarKeyboardNav } from "./useSidebarKeyboardNav";
 
 export function Sidebar({
@@ -40,12 +40,11 @@ export function Sidebar({
 
 	const selectFile = useCallback((f: FileEntry) => void loadPath(f.path), []);
 
-	const { focusedIndex, setFocusedIndex, onKeyDown } =
-		useSidebarKeyboardNav({
-			items: sorted,
-			onSelect: selectFile,
-			navRef,
-		});
+	const { focusedIndex, setFocusedIndex, onKeyDown } = useSidebarKeyboardNav({
+		items: sorted,
+		onSelect: selectFile,
+		navRef,
+	});
 
 	const relativePath = (absPath: string) => {
 		const prefix = workspacePath.endsWith("/")
@@ -96,14 +95,15 @@ export function Sidebar({
 							aria-selected={isFocused}
 							className={cn(
 								"block w-full truncate border-none bg-transparent px-2.5 py-1 text-start text-[13px] text-sidebar-foreground hover:bg-sidebar-accent",
-								isActive && "bg-sidebar-accent text-sidebar-accent-foreground font-medium",
+								isActive &&
+									"bg-sidebar-accent text-sidebar-accent-foreground font-medium",
 								isFocused && "bg-sidebar-accent",
 							)}
-						onClick={() => {
-							void loadPath(f.path);
-							// Keep focus on nav so arrow keys continue working
-							requestAnimationFrame(() => navRef.current?.focus());
-						}}
+							onClick={() => {
+								void loadPath(f.path);
+								// Keep focus on nav so arrow keys continue working
+								requestAnimationFrame(() => navRef.current?.focus());
+							}}
 							onPointerEnter={() => setFocusedIndex(index)}
 							onPointerLeave={() => setFocusedIndex(null)}
 							title={rel}
