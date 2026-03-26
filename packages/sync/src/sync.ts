@@ -10,7 +10,9 @@ import {
 } from "./config.js";
 import type { FileSystem } from "./fs.js";
 import type {
+	AssetState,
 	FileState,
+	RemoteAsset,
 	RemoteFile,
 	SyncResult,
 	WorkspaceConfig,
@@ -75,6 +77,9 @@ export async function sync(
 		deleted: [],
 		conflicts: [],
 		unchanged: 0,
+		assetsPushed: 0,
+		assetsPulled: 0,
+		assetsDeleted: 0,
 	};
 	const nextFiles: Record<string, FileState> = { ...state.files };
 	const now = Date.now();
@@ -190,9 +195,120 @@ export async function sync(
 		result.pulled.push(remote.path);
 	}
 
+	// --- Asset sync ---
+	const prevAssets = state.assets ?? {};
+	const nextAssets: Record<string, AssetState> = { ...prevAssets };
+
+	const localAssets = await fs.listAssetFiles(workspacePath);
+	const localAssetByPath = new Map(localAssets.map((a) => [a.relativePath, a]));
+
+	const remoteAssets = (await client.query(api.sync.getAssetsByWorkspace, {
+		workspaceId,
+		since: undefined,
+	})) as RemoteAsset[];
+	const remoteAssetByPath = new Map(remoteAssets.map((a) => [a.path, a]));
+
+	async function pushAsset(path: string, hash: string) {
+		const uploadUrl = await client.mutation(
+			api.sync.generateAssetUploadUrl,
+			{},
+		);
+		const data = await fs.readBinaryFile(`${workspacePath}/${path}`);
+		const res = await fetch(uploadUrl, {
+			method: "POST",
+			headers: { "Content-Type": "application/octet-stream" },
+			body: data,
+		});
+		const { storageId } = (await res.json()) as { storageId: string };
+		await client.mutation(api.sync.pushAsset, {
+			workspaceId,
+			path,
+			storageId: storageId as Id<"_storage">,
+			contentHash: hash,
+			deviceId: config.deviceId,
+		});
+		nextAssets[path] = { hash, lastSyncedAt: now };
+		result.assetsPushed++;
+	}
+
+	async function pullAsset(remote: RemoteAsset) {
+		const url = await client.query(api.sync.getAssetDownloadUrl, {
+			storageId: remote.storageId,
+		});
+		if (!url) return;
+		const res = await fetch(url);
+		const buf = new Uint8Array(await res.arrayBuffer());
+		await ensureParentDir(remote.path);
+		await fs.writeBinaryFile(`${workspacePath}/${remote.path}`, buf);
+		nextAssets[remote.path] = {
+			hash: remote.contentHash,
+			lastSyncedAt: now,
+		};
+		result.assetsPulled++;
+	}
+
+	// Process locally present assets
+	for (const local of localAssets) {
+		const prev = prevAssets[local.relativePath];
+		const remote = remoteAssetByPath.get(local.relativePath);
+		const localChanged = !prev || prev.hash !== local.hash;
+
+		if (remote?.deleted) {
+			if (localChanged) {
+				await pushAsset(local.relativePath, local.hash);
+			} else {
+				await fs.deleteFile(`${workspacePath}/${local.relativePath}`);
+				delete nextAssets[local.relativePath];
+				result.assetsDeleted++;
+			}
+			continue;
+		}
+
+		if (!remote) {
+			await pushAsset(local.relativePath, local.hash);
+			continue;
+		}
+
+		const remoteChanged = !prev || prev.hash !== remote.contentHash;
+		const diverged = remoteChanged && remote.contentHash !== local.hash;
+
+		if (diverged) {
+			// Last-write-wins for binary assets — pull remote
+			await pullAsset(remote);
+		} else if (localChanged) {
+			await pushAsset(local.relativePath, local.hash);
+		}
+	}
+
+	// Detect local asset deletions
+	for (const [path, _prev] of Object.entries(prevAssets)) {
+		if (localAssetByPath.has(path)) continue;
+		const remote = remoteAssetByPath.get(path);
+		if (remote && !remote.deleted) {
+			await client.mutation(api.sync.softDeleteAsset, {
+				workspaceId,
+				path,
+				deviceId: config.deviceId,
+			});
+			delete nextAssets[path];
+			result.assetsDeleted++;
+		} else {
+			delete nextAssets[path];
+		}
+	}
+
+	// Pull new remote assets not present locally
+	for (const remote of remoteAssets) {
+		if (remote.deleted) continue;
+		if (localAssetByPath.has(remote.path)) continue;
+		if (prevAssets[remote.path]) continue;
+		await pullAsset(remote);
+	}
+
 	await writeSyncState(fs, workspacePath, {
 		lastSyncedAt: now,
 		files: nextFiles,
+		assets: nextAssets,
 	});
 	return result;
 }

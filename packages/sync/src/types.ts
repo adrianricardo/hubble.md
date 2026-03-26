@@ -15,9 +15,16 @@ export const FileStateSchema = z.object({
 });
 export type FileState = z.infer<typeof FileStateSchema>;
 
+export const AssetStateSchema = z.object({
+	hash: z.string(),
+	lastSyncedAt: z.number(),
+});
+export type AssetState = z.infer<typeof AssetStateSchema>;
+
 export const SyncStateSchema = z.object({
 	lastSyncedAt: z.number(),
 	files: z.record(z.string(), FileStateSchema),
+	assets: z.record(z.string(), AssetStateSchema).optional(),
 });
 export type SyncState = z.infer<typeof SyncStateSchema>;
 
@@ -27,6 +34,9 @@ export type SyncResult = {
 	deleted: string[];
 	conflicts: string[];
 	unchanged: number;
+	assetsPushed: number;
+	assetsPulled: number;
+	assetsDeleted: number;
 };
 
 export type RemoteFile = {
@@ -34,6 +44,16 @@ export type RemoteFile = {
 	path: string;
 	contentHash: string;
 	content: string;
+	updatedAt: number;
+	deviceId: string;
+	deleted: boolean;
+};
+
+export type RemoteAsset = {
+	_id: Id<"assets">;
+	path: string;
+	storageId: Id<"_storage">;
+	contentHash: string;
 	updatedAt: number;
 	deviceId: string;
 	deleted: boolean;

@@ -129,6 +129,126 @@ export const softDeleteFile = mutation({
 	},
 });
 
+// --- Asset sync ---
+
+async function upsertAsset(
+	ctx: MutationCtx,
+	args: {
+		workspaceId: Id<"workspaces">;
+		path: string;
+		storageId: Id<"_storage">;
+		contentHash: string;
+		deviceId: string;
+	},
+) {
+	const { workspaceId, path, storageId, contentHash, deviceId } = args;
+	const existing = await ctx.db
+		.query("assets")
+		.withIndex("by_workspace_path", (q) =>
+			q.eq("workspaceId", workspaceId).eq("path", path),
+		)
+		.unique();
+
+	const now = Date.now();
+	if (existing) {
+		if (existing.storageId !== storageId) {
+			await ctx.storage.delete(existing.storageId);
+		}
+		await ctx.db.patch(existing._id, {
+			storageId,
+			contentHash,
+			updatedAt: now,
+			deviceId,
+			deleted: false,
+		});
+		return existing._id;
+	}
+	return ctx.db.insert("assets", {
+		workspaceId,
+		path,
+		storageId,
+		contentHash,
+		updatedAt: now,
+		deviceId,
+		deleted: false,
+	});
+}
+
+export const generateAssetUploadUrl = mutation({
+	args: {},
+	handler: async (ctx) => {
+		return ctx.storage.generateUploadUrl();
+	},
+});
+
+export const pushAsset = mutation({
+	args: {
+		workspaceId: v.id("workspaces"),
+		path: v.string(),
+		storageId: v.id("_storage"),
+		contentHash: v.string(),
+		deviceId: v.string(),
+	},
+	handler: async (
+		ctx,
+		{ workspaceId, path, storageId, contentHash, deviceId },
+	) => {
+		return upsertAsset(ctx, {
+			workspaceId,
+			path,
+			storageId,
+			contentHash,
+			deviceId,
+		});
+	},
+});
+
+export const getAssetsByWorkspace = query({
+	args: {
+		workspaceId: v.id("workspaces"),
+		since: v.optional(v.number()),
+	},
+	handler: async (ctx, { workspaceId, since }) => {
+		const q = ctx.db.query("assets").withIndex("by_workspace", (q) => {
+			const base = q.eq("workspaceId", workspaceId);
+			return since !== undefined ? base.gt("updatedAt", since) : base;
+		});
+		return q.collect();
+	},
+});
+
+export const getAssetDownloadUrl = query({
+	args: { storageId: v.id("_storage") },
+	handler: async (ctx, { storageId }) => {
+		return ctx.storage.getUrl(storageId);
+	},
+});
+
+export const softDeleteAsset = mutation({
+	args: {
+		workspaceId: v.id("workspaces"),
+		path: v.string(),
+		deviceId: v.string(),
+	},
+	handler: async (ctx, { workspaceId, path, deviceId }) => {
+		const existing = await ctx.db
+			.query("assets")
+			.withIndex("by_workspace_path", (q) =>
+				q.eq("workspaceId", workspaceId).eq("path", path),
+			)
+			.unique();
+		if (!existing) return;
+		// Eagerly delete blob — unlike markdown files (content stored inline),
+		// keeping orphaned blobs in storage has real cost with no restore path.
+		await ctx.storage.delete(existing.storageId);
+		await ctx.db.patch(existing._id, {
+			deleted: true,
+			updatedAt: Date.now(),
+			deviceId,
+		});
+	},
+});
+
 export const debugRemoteEdit = mutation({
 	args: {
 		workspaceId: v.id("workspaces"),

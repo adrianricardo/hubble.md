@@ -18,4 +18,16 @@ export default defineSchema({
 	})
 		.index("by_workspace", ["workspaceId", "updatedAt"])
 		.index("by_workspace_path", ["workspaceId", "path"]),
+
+	assets: defineTable({
+		workspaceId: v.id("workspaces"),
+		path: v.string(),
+		storageId: v.id("_storage"),
+		contentHash: v.string(),
+		updatedAt: v.number(),
+		deviceId: v.string(),
+		deleted: v.boolean(),
+	})
+		.index("by_workspace", ["workspaceId", "updatedAt"])
+		.index("by_workspace_path", ["workspaceId", "path"]),
 });
