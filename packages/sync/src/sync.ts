@@ -109,7 +109,9 @@ export async function sync(
 
 		// Remote was soft-deleted
 		if (remote?.deleted) {
-			if (localChanged) {
+			// Only re-push if genuinely modified since last sync.
+			// When prev is missing (untracked), honor the tombstone.
+			if (prev && prev.hash !== local.hash) {
 				await pushLocal(local.relativePath, local.hash, local.content);
 			} else {
 				await fs.deleteFile(`${workspacePath}/${local.relativePath}`);
@@ -253,7 +255,7 @@ export async function sync(
 		const localChanged = !prev || prev.hash !== local.hash;
 
 		if (remote?.deleted) {
-			if (localChanged) {
+			if (prev && prev.hash !== local.hash) {
 				await pushAsset(local.relativePath, local.hash);
 			} else {
 				await fs.deleteFile(`${workspacePath}/${local.relativePath}`);

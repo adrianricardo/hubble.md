@@ -182,18 +182,9 @@ function logResult(
 	reason: string,
 	result: Awaited<ReturnType<typeof runSync>>,
 ) {
-	console.log(
-		`sync ${reason}: pushed=${result.pushed.length} pulled=${result.pulled.length} deleted=${result.deleted.length} conflicts=${result.conflicts.length} unchanged=${result.unchanged}`,
-	);
-	if (result.pushed.length > 0) {
-		console.log(`  pushed: ${result.pushed.join(", ")}`);
-	}
-	if (result.pulled.length > 0) {
-		console.log(`  pulled: ${result.pulled.join(", ")}`);
-	}
-	if (result.deleted.length > 0) {
-		console.log(`  deleted: ${result.deleted.join(", ")}`);
-	}
+	const files = `files(+${result.pushed.length} -${result.deleted.length} ↓${result.pulled.length})`;
+	const assets = `assets(+${result.assetsPushed} -${result.assetsDeleted} ↓${result.assetsPulled})`;
+	console.log(`sync ${reason}: ${files} ${assets}`);
 	if (result.conflicts.length > 0) {
 		console.log(`  conflicts: ${result.conflicts.join(", ")}`);
 	}
