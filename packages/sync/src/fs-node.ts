@@ -9,7 +9,6 @@ import {
 } from "node:fs";
 import { join, relative } from "node:path";
 import {
-	binaryContentHash,
 	contentHash,
 	type FileSystem,
 	type LocalAsset,
@@ -106,7 +105,7 @@ async function walkAssets(
 			const data = readFileSync(full);
 			out.push({
 				relativePath: relative(root, full),
-				hash: await binaryContentHash(new Uint8Array(data)),
+				hash: await contentHash(new Uint8Array(data)),
 			});
 		}
 	}

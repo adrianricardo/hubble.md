@@ -10,7 +10,6 @@ import {
 } from "./config.js";
 import type { FileSystem } from "./fs.js";
 import type {
-	AssetState,
 	FileState,
 	RemoteAsset,
 	RemoteFile,
@@ -197,7 +196,7 @@ export async function sync(
 
 	// --- Asset sync ---
 	const prevAssets = state.assets ?? {};
-	const nextAssets: Record<string, AssetState> = { ...prevAssets };
+	const nextAssets: Record<string, FileState> = { ...prevAssets };
 
 	const localAssets = await fs.listAssetFiles(workspacePath);
 	const localAssetByPath = new Map(localAssets.map((a) => [a.relativePath, a]));
@@ -281,7 +280,7 @@ export async function sync(
 	}
 
 	// Detect local asset deletions
-	for (const [path, _prev] of Object.entries(prevAssets)) {
+	for (const path of Object.keys(prevAssets)) {
 		if (localAssetByPath.has(path)) continue;
 		const remote = remoteAssetByPath.get(path);
 		if (remote && !remote.deleted) {
