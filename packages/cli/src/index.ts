@@ -1,5 +1,10 @@
 #!/usr/bin/env node
-import { isInitialized, readConfig, sync as runSync } from "@hubble.md/sync";
+import {
+	init,
+	isInitialized,
+	readConfig,
+	sync as runSync,
+} from "@hubble.md/sync";
 import { createNodeFileSystem } from "@hubble.md/sync/node";
 import { api } from "@hubble.md/sync-backend";
 import chokidar from "chokidar";
@@ -9,16 +14,22 @@ const fs = createNodeFileSystem();
 
 async function main() {
 	const [command, ...args] = process.argv.slice(2);
+	const workspacePath = process.cwd();
+
+	if (command === "init") {
+		await runInit(workspacePath);
+		return;
+	}
+
 	if (command !== "sync") {
 		printUsage();
 		process.exitCode = 1;
 		return;
 	}
 
-	const workspacePath = process.cwd();
 	if (!(await isInitialized(fs, workspacePath))) {
 		console.error(
-			`No valid Hubble workspace in ${workspacePath}. Expected .hubble/config.json.`,
+			`No valid Hubble workspace in ${workspacePath}. Run \`hubble init\` first.`,
 		);
 		process.exitCode = 1;
 		return;
@@ -36,6 +47,23 @@ async function main() {
 
 	printUsage();
 	process.exitCode = 1;
+}
+
+async function runInit(workspacePath: string) {
+	const convexUrl = process.env.CONVEX_URL;
+	if (!convexUrl) {
+		console.error("CONVEX_URL environment variable is required.");
+		process.exitCode = 1;
+		return;
+	}
+	const workspaceName =
+		workspacePath.split("/").pop() ??
+		workspacePath.split("\\").pop() ??
+		"default";
+	const config = await init(fs, { workspacePath, workspaceName, convexUrl });
+	console.log(`Initialized workspace "${config.workspaceName}"`);
+	console.log(`  device: ${config.deviceId}`);
+	console.log(`  convex: ${config.convexUrl}`);
 }
 
 async function syncOnce(workspacePath: string, reason: string) {
@@ -173,6 +201,7 @@ function logResult(
 
 function printUsage() {
 	console.error("Usage:");
+	console.error("  hubble init");
 	console.error("  hubble sync");
 	console.error("  hubble sync --continuous");
 }
