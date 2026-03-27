@@ -6,14 +6,14 @@ import { refreshFiles, workspaceStore } from "./workspaceStore";
 export async function createNote() {
 	const ws = workspaceStore.get().workspacePath;
 	if (!ws) return;
-	const filePath = await save({
+	const picked = await save({
 		defaultPath: ws,
 		title: "New Markdown file",
 		filters: [{ name: "Markdown", extensions: ["md"] }],
 	});
-	if (typeof filePath !== "string") return;
-	const finalPath = filePath.endsWith(".md") ? filePath : `${filePath}.md`;
-	await invoke("write_file_text", { path: finalPath, content: "" });
+	if (typeof picked !== "string") return;
+	const path = picked.endsWith(".md") ? picked : `${picked}.md`;
+	await invoke("write_file_text", { path, content: "" });
 	await refreshFiles();
-	await loadPath(finalPath);
+	await loadPath(path);
 }
