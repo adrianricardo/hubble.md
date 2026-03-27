@@ -139,6 +139,7 @@
 	body,
 	#root {
 		block-size: 100%;
+		overscroll-behavior: none;
 	}
 	body {
 		@apply bg-background text-foreground antialiased;

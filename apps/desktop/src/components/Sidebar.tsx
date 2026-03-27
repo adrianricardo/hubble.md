@@ -81,7 +81,7 @@ export function Sidebar({
 			<div
 				ref={navRef}
 				role="listbox"
-				className="flex-1 overflow-y-auto py-1 outline-none"
+className="flex-1 overflow-y-auto overscroll-contain py-1 outline-none"
 				tabIndex={0}
 				onKeyDown={onKeyDown}
 				{...{ [SIDEBAR_NAV_ATTR]: true }}

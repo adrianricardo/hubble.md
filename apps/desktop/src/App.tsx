@@ -36,7 +36,7 @@ import {
 	viewerStore,
 } from "./store";
 import { openWorkspace, refreshFiles, workspaceStore } from "./workspaceStore";
-import "./App.css";
+import "./editor/prosemirror.css";
 
 // Forces editor refresh when underlying TipTap extensions change
 const HMR_REV = (() => {
@@ -111,7 +111,7 @@ function App() {
 		};
 	}, [workspace.workspacePath]);
 
-	const openFilePicker = useCallback(async () => {
+	const openFilePicker
 		const defaultPath = workspaceStore.get().workspacePath ?? undefined;
 		const selected = await open({
 			multiple: false,
@@ -222,13 +222,13 @@ function App() {
 	}, []);
 
 	return (
-		<main className="app">
+		<main className="flex h-dvh flex-col bg-background text-foreground">
 			<Toolbar
 				hasWorkspace={hasWorkspace}
 				sidebarOpen={workspace.sidebarOpen}
 				scrollContainer={scrollContainerEl}
 			/>
-			<div className="appBody">
+			<div className="flex min-h-0 flex-1 overflow-hidden">
 				{hasWorkspace && workspace.sidebarOpen && workspace.workspacePath && (
 					<Sidebar
 						workspacePath={workspace.workspacePath}
@@ -237,7 +237,7 @@ function App() {
 						currentFilePath={state.currentPath}
 					/>
 				)}
-				<section className="content" aria-live="polite">
+				<section className="flex-1 overflow-hidden" aria-live="polite">
 					{state.status === "loading" && <p>Loading…</p>}
 					{state.status === "error" && (
 						<p>{state.error ?? "Failed to open file."}</p>
@@ -248,7 +248,7 @@ function App() {
 							<p>Open a markdown file to edit. Press ⌘O.</p>
 						)}
 					{state.status === "ready" && state.currentPath && (
-						<div className="editorShell">
+						<div className="flex h-full min-h-0 flex-col">
 							{state.externalChange.kind === "conflict" && (
 								<ExternalChangeBanner
 									onKeepMyEdits={() => void keepLocalEdits()}
@@ -354,9 +354,10 @@ function MarkdownEditor({
 				void savePathContent(path, latestMarkdownRef.current);
 			}, SAVE_DEBOUNCE_MS);
 		},
+		autofocus: "end",
 		editorProps: {
 			attributes: {
-				class: "editorInput",
+				class: "min-h-full outline-none",
 				[EDITOR_INPUT_ATTR]: "",
 			},
 			handlePaste: (_view, event): boolean => {
@@ -391,9 +392,12 @@ function MarkdownEditor({
 	}, [path]);
 
 	return (
-		<div className="editorRoot" ref={editorRootRef}>
-			<div className="editorViewport" ref={setEditorViewport}>
-				<EditorContent editor={editor} />
+		<div className="relative flex h-full min-h-0 flex-col" ref={editorRootRef}>
+			<div
+				className="relative min-h-0 flex-1 overflow-auto overscroll-contain"
+				ref={setEditorViewport}
+			>
+				<EditorContent editor={editor} className="h-full" />
 				<VirtualCursor
 					editor={editor}
 					containerRef={editorRootRef}
