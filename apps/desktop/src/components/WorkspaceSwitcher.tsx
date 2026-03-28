@@ -2,7 +2,11 @@ import { Menu } from "@base-ui/react/menu";
 import MingcuteAddLine from "~icons/mingcute/add-line";
 import MingcuteCheckLine from "~icons/mingcute/check-line";
 import MingcuteSelectorVerticalLine from "~icons/mingcute/selector-vertical-line";
-import { openWorkspace, pickAndOpenWorkspace } from "../workspaceStore";
+import {
+	openWorkspace,
+	pickAndOpenWorkspace,
+	workspaceStore,
+} from "../workspaceStore";
 
 function folderName(path: string): string {
 	return path.split("/").pop() ?? path.split("\\").pop() ?? path;
@@ -20,15 +24,20 @@ function MenuItem(props: Menu.Item.Props) {
 export function WorkspaceSwitcher({
 	workspacePath,
 	recentWorkspaces,
+	open,
 }: {
 	workspacePath: string;
 	recentWorkspaces: string[];
+	open: boolean;
 }) {
 	const workspaceName = folderName(workspacePath);
 	const others = recentWorkspaces.filter((p) => p !== workspacePath);
 
+	const setOpen = (next: boolean) =>
+		workspaceStore.set((s) => ({ ...s, isSwitcherOpen: next }));
+
 	return (
-		<Menu.Root>
+		<Menu.Root open={open} onOpenChange={setOpen}>
 			<Menu.Trigger
 				className="flex min-w-0 cursor-pointer items-center gap-1 rounded-sm px-1 py-0.5 hover:bg-sidebar-accent"
 				title={workspacePath}

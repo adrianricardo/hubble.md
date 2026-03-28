@@ -26,6 +26,7 @@ type WorkspaceState = {
 	workspacePath: string | null;
 	recentWorkspaces: string[];
 	sidebarOpen: boolean;
+	isSwitcherOpen: boolean;
 	sortMode: SortMode;
 	files: FileEntry[];
 };
@@ -38,6 +39,7 @@ function getInitialState(): WorkspaceState {
 		workspacePath: null,
 		recentWorkspaces: [],
 		sidebarOpen: true,
+		isSwitcherOpen: false,
 		sortMode: "alpha",
 		files: [],
 	};
@@ -62,7 +64,10 @@ function getInitialState(): WorkspaceState {
 
 export const workspaceStore = store<WorkspaceState>(getInitialState(), {
 	middleware: [
-		localStoragePersist(STORAGE_KEY, ({ files: _, ...rest }) => rest),
+		localStoragePersist(
+			STORAGE_KEY,
+			({ files: _, isSwitcherOpen: _s, ...rest }) => rest,
+		),
 	],
 });
 

@@ -133,14 +133,14 @@ function App() {
 		}
 	}, []);
 
-	const openFolderPicker = useCallback(() => pickAndOpenWorkspace(), []);
-
 	useEffect(() => {
 		const setupMenu = async () => {
 			const menu = await createAppMenu({
 				newNote: () => void createNote(),
 				open: () => void openFilePicker(),
-				openFolder: () => void openFolderPicker(),
+				newWorkspace: () => void pickAndOpenWorkspace(true),
+				openWorkspace: () =>
+					workspaceStore.set((s) => ({ ...s, isSwitcherOpen: true })),
 			});
 			await menu.setAsAppMenu();
 		};
@@ -151,7 +151,10 @@ function App() {
 				await createNote();
 			} else if (keymatch(event, "CmdOrCtrl+Shift+O")) {
 				event.preventDefault();
-				await openFolderPicker();
+				workspaceStore.set((s) => ({ ...s, isSwitcherOpen: true }));
+			} else if (keymatch(event, "CmdOrCtrl+Shift+N")) {
+				event.preventDefault();
+				await pickAndOpenWorkspace(true);
 			} else if (keymatch(event, "CmdOrCtrl+O")) {
 				event.preventDefault();
 				await openFilePicker();
@@ -169,7 +172,7 @@ function App() {
 		};
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
-	}, [openFilePicker, openFolderPicker]);
+	}, [openFilePicker]);
 
 	useEffect(() => {
 		let disposed = false;
@@ -236,6 +239,7 @@ function App() {
 						sortMode={workspace.sortMode}
 						currentFilePath={state.currentPath}
 						recentWorkspaces={workspace.recentWorkspaces}
+						isSwitcherOpen={workspace.isSwitcherOpen}
 					/>
 				)}
 				<section className="flex-1 overflow-hidden" aria-live="polite">

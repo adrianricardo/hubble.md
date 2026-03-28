@@ -21,12 +21,14 @@ export function Sidebar({
 	sortMode,
 	currentFilePath,
 	recentWorkspaces,
+	isSwitcherOpen,
 }: {
 	workspacePath: string;
 	files: FileEntry[];
 	sortMode: SortMode;
 	currentFilePath: string | null;
 	recentWorkspaces: string[];
+	isSwitcherOpen: boolean;
 }) {
 	const navRef = useRef<HTMLDivElement>(null);
 
@@ -62,6 +64,7 @@ export function Sidebar({
 				<WorkspaceSwitcher
 					workspacePath={workspacePath}
 					recentWorkspaces={recentWorkspaces}
+					open={isSwitcherOpen}
 				/>
 				<Select.Root
 					value={sortMode}

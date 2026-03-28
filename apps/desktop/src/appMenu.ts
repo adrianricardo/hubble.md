@@ -30,7 +30,8 @@ async function createAboutSubmenu(): Promise<Submenu> {
 async function createFileSubmenu(actions: {
 	newNote: () => void;
 	open: () => void;
-	openFolder: () => void;
+	newWorkspace: () => void;
+	openWorkspace: () => void;
 }): Promise<Submenu> {
 	return Submenu.new({
 		text: "File",
@@ -40,6 +41,12 @@ async function createFileSubmenu(actions: {
 				text: "New Note",
 				accelerator: "CmdOrCtrl+N",
 				action: () => actions.newNote(),
+			}),
+			await MenuItem.new({
+				id: "new-workspace",
+				text: "New Workspace…",
+				accelerator: "CmdOrCtrl+Shift+N",
+				action: () => actions.newWorkspace(),
 			}),
 			await PredefinedMenuItem.new({
 				text: "separator-text",
@@ -52,10 +59,10 @@ async function createFileSubmenu(actions: {
 				action: () => actions.open(),
 			}),
 			await MenuItem.new({
-				id: "open-folder",
-				text: "Open Folder…",
+				id: "open-workspace",
+				text: "Open Workspace…",
 				accelerator: "CmdOrCtrl+Shift+O",
-				action: () => actions.openFolder(),
+				action: () => actions.openWorkspace(),
 			}),
 			await PredefinedMenuItem.new({
 				text: "separator-text",
@@ -87,7 +94,8 @@ async function createEditSubmenu(): Promise<Submenu> {
 export async function createAppMenu(actions: {
 	newNote: () => void;
 	open: () => void;
-	openFolder: () => void;
+	newWorkspace: () => void;
+	openWorkspace: () => void;
 }): Promise<Menu> {
 	const items: Submenu[] = [
 		await createFileSubmenu(actions),
