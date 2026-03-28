@@ -1,11 +1,20 @@
+import { Menu } from "@base-ui/react/menu";
 import MingcuteAddLine from "~icons/mingcute/add-line";
 import MingcuteCheckLine from "~icons/mingcute/check-line";
 import MingcuteUnfoldVerticalLine from "~icons/mingcute/unfold-vertical-line";
 import { openWorkspace, pickAndOpenWorkspace } from "../workspaceStore";
-import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 
 function folderName(path: string): string {
 	return path.split("/").pop() ?? path.split("\\").pop() ?? path;
+}
+
+function MenuItem(props: Menu.Item.Props) {
+	return (
+		<Menu.Item
+			{...props}
+			className="flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-start text-[11px] text-sidebar-foreground outline-hidden select-none data-highlighted:bg-sidebar-accent"
+		/>
+	);
 }
 
 export function WorkspaceSwitcher({
@@ -16,12 +25,11 @@ export function WorkspaceSwitcher({
 	recentWorkspaces: string[];
 }) {
 	const workspaceName = folderName(workspacePath);
-	// Exclude current from recent list
 	const others = recentWorkspaces.filter((p) => p !== workspacePath);
 
 	return (
-		<Popover>
-			<PopoverTrigger
+		<Menu.Root>
+			<Menu.Trigger
 				className="flex min-w-0 cursor-pointer items-center gap-1 rounded-sm px-1 py-0.5 hover:bg-sidebar-accent"
 				title={workspacePath}
 			>
@@ -29,45 +37,36 @@ export function WorkspaceSwitcher({
 					{workspaceName}
 				</span>
 				<MingcuteUnfoldVerticalLine className="size-3 shrink-0 text-muted-foreground" />
-			</PopoverTrigger>
-			<PopoverContent
-				side="bottom"
-				align="start"
-				sideOffset={4}
-				className="w-56 p-1"
-			>
-				{/* Current workspace */}
-				<div className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-[11px] font-medium text-sidebar-foreground">
-					<MingcuteCheckLine className="size-3 shrink-0 text-brand" />
-					<span className="truncate" title={workspacePath}>
-						{workspaceName}
-					</span>
-				</div>
+			</Menu.Trigger>
+			<Menu.Portal>
+				<Menu.Positioner align="start" side="bottom" sideOffset={4}>
+					<Menu.Popup className="z-50 w-56 origin-(--transform-origin) rounded-sm border border-border bg-popover p-1 text-[11px] text-popover-foreground shadow-panel inset-shadow-chrome outline-hidden transition-[transform,opacity] data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95">
+						{/* Current workspace */}
+						<MenuItem title={workspacePath}>
+							<MingcuteCheckLine className="size-3 shrink-0 text-brand" />
+							<span className="truncate">{workspaceName}</span>
+						</MenuItem>
 
-				{/* Recent workspaces */}
-				{others.map((path) => (
-					<button
-						key={path}
-						type="button"
-						className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-start text-[11px] text-sidebar-foreground hover:bg-sidebar-accent"
-						title={path}
-						onClick={() => void openWorkspace(path)}
-					>
-						<span className="size-3 shrink-0" />
-						<span className="truncate">{folderName(path)}</span>
-					</button>
-				))}
+						{/* Recent workspaces */}
+						{others.map((path) => (
+							<MenuItem
+								key={path}
+								title={path}
+								onClick={() => void openWorkspace(path)}
+							>
+								<span className="size-3 shrink-0" />
+								<span className="truncate">{folderName(path)}</span>
+							</MenuItem>
+						))}
 
-				{/* New workspace */}
-				<button
-					type="button"
-					className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-start text-[11px] text-sidebar-foreground hover:bg-sidebar-accent"
-					onClick={() => void pickAndOpenWorkspace(true)}
-				>
-					<MingcuteAddLine className="size-3 shrink-0" />
-					New workspace…
-				</button>
-			</PopoverContent>
-		</Popover>
+						{/* New workspace */}
+						<MenuItem onClick={() => void pickAndOpenWorkspace(true)}>
+							<MingcuteAddLine className="size-3 shrink-0" />
+							New workspace…
+						</MenuItem>
+					</Menu.Popup>
+				</Menu.Positioner>
+			</Menu.Portal>
+		</Menu.Root>
 	);
 }
