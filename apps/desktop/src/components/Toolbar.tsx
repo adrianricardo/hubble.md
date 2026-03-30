@@ -50,7 +50,7 @@ export function Toolbar({
 
 	return (
 		<div
-			className={`flex items-center py-1 ${borderClass}`}
+			className={`flex h-9 items-center ${borderClass}`}
 			data-tauri-drag-region
 		>
 			<ToolbarActions>
