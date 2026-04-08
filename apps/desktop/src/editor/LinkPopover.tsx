@@ -210,7 +210,6 @@ const PREVIEW_SHELL_INLINE_SIZE = 250;
 const PREVIEW_INLINE_SIZE_END = 174;
 const PREVIEW_HORIZONTAL_OVERFLOW =
 	(PREVIEW_SHELL_INLINE_SIZE - PREVIEW_INLINE_SIZE_END) / 2;
-const MODE_LAYOUT_ANIMATION_WINDOW_MS = 220;
 
 function updateFloatingPosition(
 	editor: Editor,
@@ -263,6 +262,7 @@ function updateFloatingPosition(
 			}),
 		],
 	}).then(({ x, y }) => {
+      console.log({x, y})
 		setX(x);
 		setY(y);
 	});
@@ -298,8 +298,7 @@ export function LinkPopover({
 		((reason?: PositionUpdateReason) => void) | null
 	>(null);
 	const machineStateRef = useRef(machineState);
-	const positionedLinkKeyRef = useRef<string | null>(null);
-	const modeLayoutAnimationUntilRef = useRef(0);
+	const lastActiveKeyRef = useRef<string | null>(null);
 	const [isPreviewEntering, setIsPreviewEntering] = useState(false);
 	const [animatePosition, setAnimatePosition] = useState(false);
 
@@ -335,20 +334,9 @@ export function LinkPopover({
 			Boolean(event.activeKey) &&
 			previousState.mode === "hidden" &&
 			previousState.activeKey !== event.activeKey;
-		const shouldAnimatePreviewActionsLayout =
-			(event.type === "EXPAND_REQUESTED" && previousState.mode === "preview") ||
-			(event.type === "TOGGLE_ACTIONS_REQUESTED" &&
-				(previousState.mode === "preview" ||
-					previousState.mode === "actions")) ||
-			(event.type === "ESCAPE_REQUESTED" && previousState.mode === "actions");
 
 		if (shouldAnimateHiddenToPreview) {
 			setIsPreviewEntering(true);
-		}
-		if (shouldAnimatePreviewActionsLayout) {
-			setAnimatePosition(true);
-			modeLayoutAnimationUntilRef.current =
-				performance.now() + MODE_LAYOUT_ANIMATION_WINDOW_MS;
 		}
 		dispatch(event);
 	}, []);
@@ -366,6 +354,7 @@ export function LinkPopover({
 	useEffect(() => {
 		if (!editor) return;
 		const update = (reason: PositionUpdateReason = "layout") => {
+        console.log(reason);
 			const { link, activeKey } = getLinkSession(editor);
 			setActiveLink(link);
 			if (link) setHrefValue(link.href);
@@ -378,20 +367,19 @@ export function LinkPopover({
 			const floatingEl = popoverRef.current;
 			const isCreating =
 				machineState.mode === "creating" && creationCursorPos !== null;
-			const shouldPosition = link || machineState.pendingCreation || isCreating;
-			const withinModeAnimationWindow =
-				performance.now() < modeLayoutAnimationUntilRef.current;
-			const shouldAnimateModeLayout =
-				withinModeAnimationWindow && reason !== "scroll" && reason !== "resize";
+			const shouldPosition = Boolean(link || machineState.pendingCreation || isCreating);
+        const switchedLinks =
+				lastActiveKeyRef.current !== null &&
+				lastActiveKeyRef.current !== activeKey;
 			const shouldAnimate =
-				shouldAnimateModeLayout ||
-				(inputMode === "keyboard" &&
-					reason === "selection" &&
-					machineStateRef.current.mode === "preview" &&
-					Boolean(activeKey) &&
-					positionedLinkKeyRef.current === activeKey);
+				reason !== "scroll" &&
+				reason !== "resize" &&
+				!(inputMode === "pointer" && reason === "selection") &&
+				!switchedLinks;
 			setAnimatePosition(shouldAnimate);
-			positionedLinkKeyRef.current = activeKey;
+			lastActiveKeyRef.current = activeKey;
+          console.log('from', editor.state.selection.from);
+        console.log(viewport, floatingEl, shouldPosition);
 			if (!viewport || !floatingEl || !shouldPosition) return;
 			updateFloatingPosition(
 				editor,
@@ -403,9 +391,8 @@ export function LinkPopover({
 				setFloatingY,
 			);
 		};
-		positionUpdateRef.current = update;
+		//positionUpdateRef.current = update;
 
-		update();
 		const handleSelectionUpdate = () => update("selection");
 		const handleTransaction = () => update("transaction");
 		const handleFocus = () => update("focus");
@@ -712,7 +699,8 @@ export function LinkPopover({
 			ref={popoverRef}
 			className={cn(
 				"absolute z-[4] w-[250px]",
-				animatePosition && "transition-position motion-reduce:transition-none duration-[var(--cursor-motion-duration)] ease-cursor-motion"
+				animatePosition &&
+					"transition-position motion-reduce:transition-none duration-[var(--cursor-motion-duration)] ease-cursor-motion",
 			)}
 			style={{
 				insetInlineStart: `${floatingX}px`,
