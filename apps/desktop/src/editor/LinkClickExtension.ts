@@ -4,6 +4,7 @@ import { Plugin } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 import { toast } from "sonner";
 import { loadPath } from "../store/actions";
+import { workspaceStore } from "../store/state";
 
 function resolveHref(href: string): string | null {
 	if (!href) return null;
@@ -31,17 +32,41 @@ async function followLink(href: string) {
 	}
 }
 
-function findLinkHrefAtEvent(
+function resolveWikiPath(href: string, target: string | null) {
+	const path = href.startsWith("/") ? href : target || href;
+	if (path.startsWith("/")) return path;
+	const workspacePath = workspaceStore.get().workspacePath;
+	return workspacePath ? `${workspacePath}/${path}` : path;
+}
+
+async function followLinkMark(attrs: {
+	href: string;
+	kind: "url" | "wiki";
+	target: string | null;
+}) {
+	if (attrs.kind === "wiki") {
+		await loadPath(resolveWikiPath(attrs.href, attrs.target));
+		return;
+	}
+	await followLink(attrs.href);
+}
+
+function findLinkAtEvent(
 	view: EditorView,
 	event: MouseEvent,
-): string | null {
+): { href: string; kind: "url" | "wiki"; target: string | null } | null {
 	const state = view.state;
 	const posData = view.posAtCoords({ left: event.clientX, top: event.clientY });
 	if (!posData) return null;
 	const $pos = state.doc.resolve(posData.pos);
 	for (const mark of $pos.marks()) {
 		if (mark.type.name === "link" && typeof mark.attrs.href === "string") {
-			return mark.attrs.href;
+			return {
+				href: mark.attrs.href,
+				kind: mark.attrs.kind === "wiki" ? "wiki" : "url",
+				target:
+					typeof mark.attrs.target === "string" ? mark.attrs.target : null,
+			};
 		}
 	}
 	return null;
@@ -72,10 +97,10 @@ export const LinkClickExtension = Extension.create({
 					handleDOMEvents: {
 						mousedown(view, event) {
 							if (!event.metaKey && !event.ctrlKey) return false;
-							const href = findLinkHrefAtEvent(view, event);
-							if (!href) return false;
+							const link = findLinkAtEvent(view, event);
+							if (!link) return false;
 							event.preventDefault();
-							void followLink(href);
+							void followLinkMark(link);
 							return true;
 						},
 					},

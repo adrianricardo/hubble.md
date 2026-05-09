@@ -174,7 +174,7 @@ function inlineToPM(children: Content[]): JSONContent[] {
 		switch (child.type) {
 			case "text":
 				if (child.value && child.value.length > 0) {
-					out.push({ type: "text", text: child.value });
+					out.push(...textToPM(child.value));
 				}
 				break;
 			case "strong":
@@ -203,7 +203,9 @@ function inlineToPM(children: Content[]): JSONContent[] {
 					...applyMark(
 						inlineToPM(child.children ?? []),
 						"link",
-						typeof child.url === "string" ? { href: child.url } : undefined,
+						typeof child.url === "string"
+							? { href: child.url, kind: "url", target: null }
+							: undefined,
 					),
 				);
 				break;
@@ -220,6 +222,52 @@ function inlineToPM(children: Content[]): JSONContent[] {
 		}
 	}
 	return out;
+}
+
+function textToPM(text: string): JSONContent[] {
+	const out: JSONContent[] = [];
+	const wikiLinkPattern = /\[\[([^\]\n]+)\]\]/g;
+	let lastIndex = 0;
+	for (const match of text.matchAll(wikiLinkPattern)) {
+		const index = match.index ?? 0;
+		if (index > lastIndex) {
+			out.push({ type: "text", text: text.slice(lastIndex, index) });
+		}
+
+		const rawLink = match[1] ?? "";
+		const separatorIndex = rawLink.indexOf("|");
+		const rawTarget =
+			separatorIndex === -1 ? rawLink : rawLink.slice(0, separatorIndex);
+		const rawAlias =
+			separatorIndex === -1 ? "" : rawLink.slice(separatorIndex + 1);
+		const target = rawTarget.trim();
+		if (target) {
+			out.push({
+				type: "text",
+				text: rawAlias || wikiDisplayNameForTarget(target),
+				marks: [
+					{
+						type: "link",
+						attrs: { href: target, kind: "wiki", target },
+					},
+				],
+			});
+		} else {
+			out.push({ type: "text", text: match[0] });
+		}
+		lastIndex = index + match[0].length;
+	}
+
+	if (lastIndex < text.length) {
+		out.push({ type: "text", text: text.slice(lastIndex) });
+	}
+	return out;
+}
+
+function wikiDisplayNameForTarget(target: string) {
+	const withoutHeading = target.split("#")[0] || target;
+	const fileName = withoutHeading.split("/").pop() || withoutHeading;
+	return fileName.replace(/\.(md|markdown|mdown)$/i, "");
 }
 
 function applyMark(
