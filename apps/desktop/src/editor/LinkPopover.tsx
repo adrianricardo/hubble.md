@@ -287,6 +287,15 @@ async function visitLink(href: string) {
 	}
 }
 
+function isHttpUrl(href: string) {
+	try {
+		const protocol = new URL(href).protocol.toLowerCase();
+		return protocol === "http:" || protocol === "https:";
+	} catch {
+		return false;
+	}
+}
+
 async function visitActiveLink(link: { href: string; kind: "url" | "wiki" }) {
 	if (link.kind === "wiki") {
 		await loadPath(resolveWikiPath(link.href));
@@ -1121,10 +1130,9 @@ export function LinkPopover({
 		setHrefValue(href);
 		const linkType = editor.state.schema.marks.link;
 		if (!linkType) return;
-		const attrs =
-			activeLink.kind === "wiki"
-				? { href, kind: "wiki", target: href }
-				: { href, kind: "url", target: null };
+		const attrs = isHttpUrl(href)
+			? { href, kind: "url", target: null }
+			: { href, kind: "wiki", target: href };
 		if (activeLink.from === activeLink.to) {
 			// Zero-width links edit stored marks because there is no text range yet.
 			const marks = (
