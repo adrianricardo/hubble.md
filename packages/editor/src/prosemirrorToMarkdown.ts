@@ -1,4 +1,5 @@
 import type { JSONContent } from "@tiptap/core";
+import type { LinkAttrs } from "./Link";
 
 /**
  * Convert TipTap JSONContent (ProseMirror document) -> Markdown string
@@ -79,12 +80,24 @@ function blockToMarkdown(node: JSONContent): string {
 	}
 }
 
-function getLinkHref(node: JSONContent | undefined): string | null {
+function getLinkAttrs(node: JSONContent | undefined): LinkAttrs | null {
 	if (!node?.marks) return null;
 	const linkMark = node.marks.find((mark) => mark.type === "link");
 	if (!linkMark) return null;
-	const href = (linkMark.attrs as { href?: unknown } | undefined)?.href;
-	return typeof href === "string" ? href : null;
+	const attrs = linkMark.attrs as
+		| { href?: unknown; kind?: unknown; target?: unknown }
+		| undefined;
+	if (typeof attrs?.href !== "string") return null;
+	return {
+		href: attrs.href,
+		kind: attrs.kind === "wiki" ? "wiki" : "url",
+		target: typeof attrs.target === "string" ? attrs.target : null,
+	};
+}
+
+function linkKey(attrs: LinkAttrs | null) {
+	if (!attrs) return null;
+	return `${attrs.kind}\u0000${attrs.href}\u0000${attrs.target ?? ""}`;
 }
 
 function removeLinkMark(node: JSONContent): JSONContent {
@@ -130,8 +143,9 @@ function listItemToMarkdown(item: JSONContent, number?: number): string {
 function inlineToMarkdown(nodes: JSONContent[]): string {
 	let result = "";
 	for (let i = 0; i < nodes.length; ) {
-		const href = getLinkHref(nodes[i]);
-		if (!href) {
+		const attrs = getLinkAttrs(nodes[i]);
+		const key = linkKey(attrs);
+		if (!attrs || !key) {
 			result += nodeToMarkdown(nodes[i]);
 			i += 1;
 			continue;
@@ -139,14 +153,34 @@ function inlineToMarkdown(nodes: JSONContent[]): string {
 
 		let j = i;
 		const grouped: JSONContent[] = [];
-		while (j < nodes.length && getLinkHref(nodes[j]) === href) {
+		while (j < nodes.length && linkKey(getLinkAttrs(nodes[j])) === key) {
 			grouped.push(removeLinkMark(nodes[j]));
 			j += 1;
 		}
-		result += `[${grouped.map(nodeToMarkdown).join("")}](${href})`;
+		const text = grouped.map(nodeToMarkdown).join("");
+		if (attrs.kind === "wiki") {
+			const target = attrs.target || attrs.href;
+			const defaultText = wikiDisplayNameForTarget(target);
+			result +=
+				text === defaultText
+					? `[[${target}]]`
+					: `[[${target}|${escapeWikiAlias(text)}]]`;
+		} else {
+			result += `[${text}](${attrs.href})`;
+		}
 		i = j;
 	}
 	return result;
+}
+
+function wikiDisplayNameForTarget(target: string) {
+	const withoutHeading = target.split("#")[0] || target;
+	const fileName = withoutHeading.split("/").pop() || withoutHeading;
+	return fileName.replace(/\.(md|markdown|mdown)$/i, "");
+}
+
+function escapeWikiAlias(alias: string) {
+	return alias.split("|").join("\\|");
 }
 
 function nodeToMarkdown(node: JSONContent): string {

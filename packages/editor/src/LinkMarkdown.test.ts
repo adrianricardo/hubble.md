@@ -11,7 +11,10 @@ describe("link markdown conversion", () => {
 		expect(textNode?.type).toBe("text");
 		expect(textNode?.text).toBe("OpenAI");
 		expect(textNode?.marks).toEqual([
-			{ type: "link", attrs: { href: "https://openai.com" } },
+			{
+				type: "link",
+				attrs: { href: "https://openai.com", kind: "url", target: null },
+			},
 		]);
 	});
 
@@ -45,7 +48,10 @@ describe("link where text equals href", () => {
 		expect(textNode?.type).toBe("text");
 		expect(textNode?.text).toBe("https://example.com");
 		expect(textNode?.marks).toEqual([
-			{ type: "link", attrs: { href: "https://example.com" } },
+			{
+				type: "link",
+				attrs: { href: "https://example.com", kind: "url", target: null },
+			},
 		]);
 	});
 
@@ -54,5 +60,60 @@ describe("link where text equals href", () => {
 		const doc = markdownToTiptapDoc(input);
 		const output = tiptapDocToMarkdown(doc);
 		expect(output).toBe(input);
+	});
+});
+
+describe("wikilink markdown conversion", () => {
+	it("parses wikilinks into wiki link marks", () => {
+		const doc = markdownToTiptapDoc("[[Notes/File 2.md]]");
+		const paragraph = doc.content?.[0];
+		const textNode = paragraph?.content?.[0];
+		expect(textNode?.type).toBe("text");
+		expect(textNode?.text).toBe("File 2");
+		expect(textNode?.marks).toEqual([
+			{
+				type: "link",
+				attrs: {
+					href: "Notes/File 2.md",
+					kind: "wiki",
+					target: "Notes/File 2.md",
+				},
+			},
+		]);
+	});
+
+	it("round-trips wikilinks with custom titles", () => {
+		const input = "[[Notes/File 2.md|My link]]";
+		const doc = markdownToTiptapDoc(input);
+		const output = tiptapDocToMarkdown(doc);
+		expect(output).toBe(input);
+	});
+
+	it("serializes auto titles without an alias", () => {
+		const markdown = tiptapDocToMarkdown({
+			type: "doc",
+			content: [
+				{
+					type: "paragraph",
+					content: [
+						{
+							type: "text",
+							text: "File 2",
+							marks: [
+								{
+									type: "link",
+									attrs: {
+										href: "/vault/Notes/File 2.md",
+										kind: "wiki",
+										target: "Notes/File 2.md",
+									},
+								},
+							],
+						},
+					],
+				},
+			],
+		});
+		expect(markdown).toBe("[[Notes/File 2.md]]");
 	});
 });

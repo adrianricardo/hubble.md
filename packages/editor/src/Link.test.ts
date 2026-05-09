@@ -42,6 +42,8 @@ describe("getActiveLinkRange", () => {
 			from: 1,
 			to: 1,
 			href: "https://example.com",
+			kind: "url",
+			target: null,
 		});
 	});
 });

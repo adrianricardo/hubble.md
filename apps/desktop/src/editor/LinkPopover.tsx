@@ -6,6 +6,7 @@ import {
 	type VirtualElement,
 } from "@floating-ui/dom";
 import { getActiveLinkRange } from "@hubble.md/editor";
+import { useStoreValue } from "@simplestack/store/react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { Editor } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
@@ -14,6 +15,8 @@ import {
 	type RefObject,
 	useCallback,
 	useEffect,
+	useLayoutEffect,
+	useMemo,
 	useReducer,
 	useRef,
 	useState,
@@ -24,6 +27,8 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import MingcutePencilFill from "~icons/mingcute/pencil-fill";
 import { cn } from "../lib/utils";
+import { loadPath } from "../store/actions";
+import { workspaceStore } from "../store/state";
 import { linkCreationGhostKey } from "./LinkCreationGhostExtension";
 import styles from "./LinkPopover.module.css";
 import {
@@ -49,6 +54,13 @@ type MachineEvent =
 	| { type: "CREATION_REQUESTED" }
 	| { type: "CREATION_CONFIRMED" }
 	| { type: "TITLE_INPUT_REQUESTED" };
+type ActiveLink = {
+	from: number;
+	to: number;
+	href: string;
+	kind: "url" | "wiki";
+	target: string | null;
+};
 
 const INITIAL_MACHINE_STATE: MachineState = {
 	mode: "hidden",
@@ -236,12 +248,28 @@ function insertLinkedText(editor: Editor, pos: number, href: string) {
 	editor.view.dispatch(tr);
 }
 
+function insertWikiLinkedText(
+	editor: Editor,
+	pos: number,
+	text: string,
+	href: string,
+	target: string,
+) {
+	const linkType = editor.state.schema.marks.link;
+	if (!linkType) return;
+	const textNode = editor.state.schema.text(text, [
+		linkType.create({ href, kind: "wiki", target }),
+	]);
+	const tr = editor.state.tr.insert(pos, textNode);
+	editor.view.dispatch(tr);
+}
+
 function applyLinkMarkAtPos(editor: Editor, pos: number, href: string) {
 	const linkType = editor.state.schema.marks.link;
 	if (!linkType) return;
 	const tr = editor.state.tr;
 	tr.setSelection(TextSelection.create(tr.doc, pos));
-	tr.setStoredMarks([linkType.create({ href })]);
+	tr.setStoredMarks([linkType.create({ href, kind: "url", target: null })]);
 	editor.view.dispatch(tr);
 }
 
@@ -266,6 +294,47 @@ async function visitLink(href: string) {
 	}
 }
 
+function isHttpUrl(href: string) {
+	try {
+		const protocol = new URL(href).protocol.toLowerCase();
+		return protocol === "http:" || protocol === "https:";
+	} catch {
+		return false;
+	}
+}
+
+async function visitActiveLink(link: { href: string; kind: "url" | "wiki" }) {
+	if (link.kind === "wiki") {
+		await loadPath(resolveWikiPath(link.href));
+		return;
+	}
+	await visitLink(link.href);
+}
+
+function resolveWikiPath(href: string) {
+	if (href.startsWith("/")) return href;
+	const workspacePath = workspaceStore.get().workspacePath;
+	return workspacePath ? `${workspacePath}/${href}` : href;
+}
+
+function relativeWorkspacePath(path: string, workspacePath: string | null) {
+	if (!workspacePath) return path;
+	const prefix = workspacePath.endsWith("/")
+		? workspacePath
+		: `${workspacePath}/`;
+	return path.startsWith(prefix) ? path.slice(prefix.length) : path;
+}
+
+function wikiDisplayNameForTarget(target: string) {
+	const withoutHeading = target.split("#")[0] || target;
+	const fileName = withoutHeading.split(/[\\/]/).pop() || withoutHeading;
+	return fileName.replace(/\.(md|markdown|mdown)$/i, "");
+}
+
+function normalizedSearchValue(value: string) {
+	return value.trim().toLocaleLowerCase();
+}
+
 // ── Positioning ─────────────────────────────────────────────────────
 type PositionUpdateReason =
 	| "selection"
@@ -282,6 +351,7 @@ const PREVIEW_INLINE_SIZE_END = 174;
 const PREVIEW_HORIZONTAL_OVERFLOW =
 	(PREVIEW_SHELL_INLINE_SIZE - PREVIEW_INLINE_SIZE_END) / 2;
 const PREVIEW_REVEAL_DURATION_MS = 180;
+const ACTION_POPOVER_PLACEMENT = "top";
 
 // Returns true when a selection change should detach the anchor,
 // suppressing position transitions on the next update.
@@ -341,7 +411,7 @@ function updateFloatingPosition(
 
 	return computePosition(reference, floatingEl, {
 		strategy: "absolute",
-		placement: "top",
+		placement: mode === "preview" ? "top" : ACTION_POPOVER_PLACEMENT,
 		middleware: [
 			offset(4),
 			flip({
@@ -477,11 +547,7 @@ export function LinkPopover({
 	const [floatingX, setFloatingX] = useState(0);
 	const [floatingY, setFloatingY] = useState(0);
 	const [hrefValue, setHrefValue] = useState("");
-	const [activeLink, setActiveLink] = useState<{
-		from: number;
-		to: number;
-		href: string;
-	} | null>(null);
+	const [activeLink, setActiveLink] = useState<ActiveLink | null>(null);
 	const [machineState, dispatch] = useReducer(
 		machineReducer,
 		INITIAL_MACHINE_STATE,
@@ -495,6 +561,10 @@ export function LinkPopover({
 	const machineStateRef = useRef(machineState);
 	const anchorRef = useRef(INITIAL_LINK_ANCHOR_STATE);
 	const lastSelectionActiveKeyRef = useRef<string | null>(null);
+	const originalWikiTargetRef = useRef<{
+		activeKey: string;
+		target: string;
+	} | null>(null);
 	const positionRequestIdRef = useRef(0);
 	const [animatePosition, setAnimatePosition] = useState(false);
 	const previewButtonRef = usePreviewRevealAnimation({
@@ -509,10 +579,47 @@ export function LinkPopover({
 		null,
 	);
 	const [creationHref, setCreationHref] = useState("");
+	const workspace = useStoreValue(workspaceStore);
+	const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0);
+	const wikiQuery = machineState.mode === "creating" ? creationHref : hrefValue;
+	const wikiSuggestions = useMemo(() => {
+		const query = normalizedSearchValue(wikiQuery);
+		if (!query || !workspace.workspacePath) return [];
+		return workspace.files
+			.map((file) => {
+				const target = relativeWorkspacePath(
+					file.path,
+					workspace.workspacePath,
+				);
+				const title = wikiDisplayNameForTarget(target);
+				return { ...file, target, title };
+			})
+			.filter((file) => {
+				const haystack = `${file.title} ${file.target}`.toLocaleLowerCase();
+				return haystack.includes(query);
+			})
+			.sort((a, b) => a.title.localeCompare(b.title))
+			.slice(0, 6);
+	}, [wikiQuery, workspace.files, workspace.workspacePath]);
+	const boundedActiveSuggestionIndex =
+		wikiSuggestions.length === 0
+			? 0
+			: Math.min(activeSuggestionIndex, wikiSuggestions.length - 1);
+	const wikiSuggestionCount = wikiSuggestions.length;
 
 	useEffect(() => {
 		machineStateRef.current = machineState;
 	}, [machineState]);
+	// Reposition when the suggestion list appears, disappears, or changes height.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: the count change is the layout signal.
+	useLayoutEffect(() => {
+		positionUpdateRef.current?.("layout");
+	}, [wikiSuggestionCount]);
+	useLayoutEffect(() => {
+		if (machineState.mode !== "creating" && machineState.mode !== "actions")
+			return;
+		positionUpdateRef.current?.("layout");
+	}, [machineState.mode]);
 
 	const dispatchMachineEvent = useCallback(
 		(event: MachineEvent) => {
@@ -536,14 +643,116 @@ export function LinkPopover({
 		dispatchMachineEvent({ type: "TITLE_INPUT_REQUESTED" });
 		editor.commands.focus(undefined, { scrollIntoView: false });
 	}, [editor, creationCursorPos, creationHref, dispatchMachineEvent]);
+	const applyWikiSuggestionToExistingLink = useCallback(
+		(suggestion: (typeof wikiSuggestions)[number]) => {
+			if (!editor || !activeLink) return;
+			const linkType = editor.state.schema.marks.link;
+			if (!linkType) return;
+
+			const attrs = {
+				href: suggestion.path,
+				kind: "wiki",
+				target: suggestion.target,
+			};
+			if (activeLink.from === activeLink.to) {
+				const marks = (
+					editor.state.storedMarks ?? editor.state.selection.$from.marks()
+				).filter((mark) => mark.type !== linkType);
+				editor.view.dispatch(
+					editor.state.tr.setStoredMarks([...marks, linkType.create(attrs)]),
+				);
+				setHrefValue(suggestion.target);
+				dispatchMachineEvent({ type: "ESCAPE_REQUESTED" });
+				return;
+			}
+
+			const currentText = editor.state.doc.textBetween(
+				activeLink.from,
+				activeLink.to,
+				"",
+			);
+			// Update inline text only when it still matches the linked file name.
+			const oldTarget =
+				originalWikiTargetRef.current?.activeKey ===
+				machineStateRef.current.activeKey
+					? originalWikiTargetRef.current.target
+					: activeLink.target || activeLink.href;
+			const oldAutoTitle = wikiDisplayNameForTarget(oldTarget);
+			if (currentText === oldAutoTitle) {
+				const tr = editor.state.tr.replaceWith(
+					activeLink.from,
+					activeLink.to,
+					editor.state.schema.text(suggestion.title, [linkType.create(attrs)]),
+				);
+				editor.view.dispatch(tr);
+			} else {
+				const tr = editor.state.tr.removeMark(
+					activeLink.from,
+					activeLink.to,
+					linkType,
+				);
+				tr.addMark(activeLink.from, activeLink.to, linkType.create(attrs));
+				editor.view.dispatch(tr);
+			}
+			setHrefValue(suggestion.target);
+			dispatchMachineEvent({ type: "ESCAPE_REQUESTED" });
+		},
+		[editor, activeLink, dispatchMachineEvent],
+	);
+	const applyWikiSuggestion = useCallback(
+		(suggestion: (typeof wikiSuggestions)[number]) => {
+			if (!editor) return;
+			if (machineStateRef.current.mode === "creating") {
+				if (creationCursorPos === null) return;
+				clearGhostText(editor);
+				insertWikiLinkedText(
+					editor,
+					creationCursorPos,
+					suggestion.title,
+					suggestion.path,
+					suggestion.target,
+				);
+				dispatchMachineEvent({ type: "CREATION_CONFIRMED" });
+				editor.commands.focus(undefined, { scrollIntoView: false });
+				return;
+			}
+			applyWikiSuggestionToExistingLink(suggestion);
+		},
+		[
+			editor,
+			creationCursorPos,
+			dispatchMachineEvent,
+			applyWikiSuggestionToExistingLink,
+		],
+	);
+	const moveSuggestion = useCallback(
+		(delta: 1 | -1) => {
+			const count = wikiSuggestions.length;
+			if (count === 0) return;
+			setActiveSuggestionIndex((index) => {
+				const boundedIndex = Math.min(index, count - 1);
+				return (boundedIndex + delta + count) % count;
+			});
+		},
+		[wikiSuggestions.length],
+	);
 
 	// ── Link detection + positioning for existing links ─────────────
 	useEffect(() => {
 		if (!editor) return;
 		const update = (reason: PositionUpdateReason = "layout") => {
 			const { link, activeKey } = getLinkSession(editor);
+			if (!link || !activeKey || link.kind !== "wiki") {
+				originalWikiTargetRef.current = null;
+			} else if (originalWikiTargetRef.current?.activeKey !== activeKey) {
+				originalWikiTargetRef.current = {
+					activeKey,
+					target: link.target || link.href,
+				};
+			}
 			setActiveLink(link);
-			if (link) setHrefValue(link.href);
+			if (link)
+				setHrefValue(link.kind === "wiki" ? (link.target ?? "") : link.href);
 			dispatchMachineEvent({
 				type: "LINK_SESSION_CHANGED",
 				activeKey,
@@ -576,12 +785,7 @@ export function LinkPopover({
 				activeKey,
 				shouldDetach,
 			});
-			setAnimatePosition(
-				isAnchored &&
-					reason !== "scroll" &&
-					reason !== "resize" &&
-					!shouldDetach,
-			);
+			setAnimatePosition(isAnchored && reason === "selection" && !shouldDetach);
 			if (reason === "selection") {
 				lastSelectionActiveKeyRef.current = activeKey;
 			}
@@ -724,7 +928,8 @@ export function LinkPopover({
 				clearGhostText(editor);
 				const { link, activeKey } = getLinkSession(editor);
 				setActiveLink(link);
-				if (link) setHrefValue(link.href);
+				if (link)
+					setHrefValue(link.kind === "wiki" ? (link.target ?? "") : link.href);
 				// Clicking anywhere else should behave like Escape: exit creation
 				// mode, then recompute visibility from the editor's real selection.
 				dispatchMachineEvent({ type: "ESCAPE_REQUESTED" });
@@ -748,9 +953,25 @@ export function LinkPopover({
 		const onKeyDown = (event: KeyboardEvent) => {
 			const isInputFocused = document.activeElement === inputRef.current;
 
+			if (
+				isInputFocused &&
+				(event.key === "ArrowDown" || event.key === "ArrowUp") &&
+				wikiSuggestions.length > 0
+			) {
+				event.preventDefault();
+				event.stopPropagation();
+				moveSuggestion(event.key === "ArrowDown" ? 1 : -1);
+				return;
+			}
+
 			if (isInputFocused && keymatch(event, "Enter")) {
 				event.preventDefault();
 				event.stopPropagation();
+				const suggestion = wikiSuggestions[boundedActiveSuggestionIndex];
+				if (suggestion) {
+					applyWikiSuggestion(suggestion);
+					return;
+				}
 				if (creationHref && creationCursorPos !== null) {
 					clearGhostText(editor);
 					insertLinkedText(editor, creationCursorPos, creationHref);
@@ -790,6 +1011,10 @@ export function LinkPopover({
 		creationCursorPos,
 		dispatchMachineEvent,
 		openCreationTitleInput,
+		applyWikiSuggestion,
+		moveSuggestion,
+		wikiSuggestions,
+		boundedActiveSuggestionIndex,
 	]);
 
 	// ── Keyboard: existing link (preview / actions) ─────────────────
@@ -800,6 +1025,34 @@ export function LinkPopover({
 			const isInputFocused = document.activeElement === inputRef.current;
 			const isVisible =
 				machineState.mode !== "hidden" || machineState.pendingCreation;
+
+			if (
+				isInputFocused &&
+				(event.key === "ArrowDown" || event.key === "ArrowUp") &&
+				wikiSuggestions.length > 0
+			) {
+				event.preventDefault();
+				event.stopPropagation();
+				moveSuggestion(event.key === "ArrowDown" ? 1 : -1);
+				return;
+			}
+
+			if (
+				isInputFocused &&
+				keymatch(event, "Enter") &&
+				wikiSuggestions.length > 0
+			) {
+				event.preventDefault();
+				event.stopPropagation();
+				const suggestion = wikiSuggestions[boundedActiveSuggestionIndex];
+				if (suggestion) {
+					applyWikiSuggestion(suggestion);
+					queueMicrotask(() => {
+						editor.commands.focus(undefined, { scrollIntoView: false });
+					});
+				}
+				return;
+			}
 
 			if (
 				isInputFocused &&
@@ -844,13 +1097,17 @@ export function LinkPopover({
 			if (isVisible && keymatch(event, "CmdOrCtrl+Enter")) {
 				event.preventDefault();
 				event.stopPropagation();
-				void visitLink(activeLink.href);
+				void visitActiveLink(activeLink);
 				return;
 			}
 			if (isVisible && keymatch(event, "CmdOrCtrl+Shift+C")) {
 				event.preventDefault();
 				event.stopPropagation();
-				void copyLinkToClipboard(activeLink.href);
+				void copyLinkToClipboard(
+					activeLink.kind === "wiki"
+						? (activeLink.target ?? activeLink.href)
+						: activeLink.href,
+				);
 				return;
 			}
 		};
@@ -864,6 +1121,10 @@ export function LinkPopover({
 		machineState.pendingCreation,
 		dispatchMachineEvent,
 		hrefValue,
+		applyWikiSuggestion,
+		moveSuggestion,
+		wikiSuggestions,
+		boundedActiveSuggestionIndex,
 	]);
 
 	// ── Early return: nothing visible ───────────────────────────────
@@ -882,6 +1143,9 @@ export function LinkPopover({
 		setHrefValue(href);
 		const linkType = editor.state.schema.marks.link;
 		if (!linkType) return;
+		const attrs = isHttpUrl(href)
+			? { href, kind: "url", target: null }
+			: { href, kind: "wiki", target: href };
 		if (activeLink.from === activeLink.to) {
 			// Zero-width links edit stored marks because there is no text range yet.
 			const marks = (
@@ -889,7 +1153,7 @@ export function LinkPopover({
 			).filter((mark) => mark.type !== linkType);
 			const tr = editor.state.tr.setStoredMarks([
 				...marks,
-				linkType.create({ href }),
+				linkType.create(attrs),
 			]);
 			editor.view.dispatch(tr);
 			return;
@@ -899,7 +1163,7 @@ export function LinkPopover({
 			activeLink.to,
 			linkType,
 		);
-		tr.addMark(activeLink.from, activeLink.to, linkType.create({ href }));
+		tr.addMark(activeLink.from, activeLink.to, linkType.create(attrs));
 		editor.view.dispatch(tr);
 	};
 
@@ -908,6 +1172,48 @@ export function LinkPopover({
 		"text-[9px] leading-[14px] tracking-[0.12em] text-muted-foreground/85";
 	const actionButtonClass =
 		"h-auto flex-1 rounded-none border-0 px-2 text-foreground shadow-none inset-shadow-none hover:bg-muted/80";
+	const activeLinkTarget =
+		activeLink?.kind === "wiki" ? (activeLink.target ?? activeLink.href) : null;
+	const previewText = activeLink
+		? activeLink.kind === "wiki"
+			? wikiDisplayNameForTarget(activeLinkTarget ?? activeLink.href)
+			: activeLink.href
+		: creationHref;
+	const previewTitle = activeLink
+		? activeLink.kind === "wiki"
+			? (activeLinkTarget ?? activeLink.href)
+			: activeLink.href
+		: creationHref;
+	const suggestionList =
+		wikiSuggestions.length > 0 ? (
+			<div
+				role="listbox"
+				className="max-h-40 overflow-y-auto border-b border-border/90 p-1"
+			>
+				{wikiSuggestions.map((suggestion, index) => {
+					const isActive = index === activeSuggestionIndex;
+					return (
+						<button
+							key={suggestion.path}
+							type="button"
+							role="option"
+							aria-selected={isActive}
+							className={cn(
+								"flex w-full min-w-0 flex-col rounded-[calc(var(--radius)-2px)] border-0 bg-transparent px-2 py-1 text-start text-[11px] leading-[15px] text-popover-foreground hover:bg-muted",
+								isActive && "bg-muted text-foreground",
+							)}
+							onMouseDown={(event) => event.preventDefault()}
+							onClick={() => applyWikiSuggestion(suggestion)}
+						>
+							<span className="w-full truncate">{suggestion.title}</span>
+							<span className="w-full truncate text-[10px] leading-[13px] text-muted-foreground">
+								{suggestion.target}
+							</span>
+						</button>
+					);
+				})}
+			</div>
+		) : null;
 
 	return (
 		<div
@@ -915,7 +1221,7 @@ export function LinkPopover({
 			className={cn(
 				"absolute z-[4] w-[250px]",
 				animatePosition &&
-					"transition-position motion-reduce:transition-none duration-[var(--cursor-motion-duration)] ease-cursor-motion",
+					"transition-[inset-inline-start,inset-block-start] motion-reduce:transition-none duration-[var(--cursor-motion-duration)] ease-cursor-motion",
 			)}
 			style={{
 				insetInlineStart: `${floatingX}px`,
@@ -924,13 +1230,17 @@ export function LinkPopover({
 		>
 			{machineState.mode === "creating" ? (
 				<div className="w-full overflow-hidden rounded-sm border border-border bg-popover shadow-panel">
+					{suggestionList}
 					<div className="p-1">
 						<Input
 							ref={inputRef}
 							type="text"
 							value={creationHref}
 							placeholder="Paste or type a link"
-							onChange={(event) => setCreationHref(event.target.value)}
+							onChange={(event) => {
+								setCreationHref(event.target.value);
+								setActiveSuggestionIndex(0);
+							}}
 							className="h-7 rounded-[calc(var(--radius)-1px)] border-border bg-background px-2 py-[5px] text-[11px] leading-[16px]"
 						/>
 					</div>
@@ -951,10 +1261,10 @@ export function LinkPopover({
 						onClick={() => dispatchMachineEvent({ type: "EXPAND_REQUESTED" })}
 					>
 						<span
-							title={activeLink?.href ?? creationHref}
+							title={previewTitle}
 							className="min-w-0 flex-1 overflow-hidden px-2.5 py-[5px] pr-3 text-[11px] leading-[16px] text-foreground whitespace-nowrap [mask-image:linear-gradient(to_right,black_84%,transparent)] [-webkit-mask-image:linear-gradient(to_right,black_84%,transparent)]"
 						>
-							{activeLink?.href ?? creationHref}
+							{previewText}
 						</span>
 						<span className="relative flex h-full w-[42px] shrink-0 items-center justify-center overflow-hidden border-s border-border bg-primary text-primary-foreground">
 							<span
@@ -985,13 +1295,17 @@ export function LinkPopover({
 				</div>
 			) : (
 				<div className="w-full overflow-hidden rounded-sm border border-border bg-popover shadow-panel">
+					{suggestionList}
 					<div className="p-1">
 						<Input
 							ref={inputRef}
 							type="text"
 							value={hrefValue}
 							placeholder="⌫ to remove link"
-							onChange={(event) => handleExistingLinkInput(event.target.value)}
+							onChange={(event) => {
+								handleExistingLinkInput(event.target.value);
+								setActiveSuggestionIndex(0);
+							}}
 							className="h-7 rounded-[calc(var(--radius)-1px)] border-border bg-background px-2 py-[5px] text-[11px] leading-[16px]"
 						/>
 					</div>
@@ -1020,7 +1334,11 @@ export function LinkPopover({
 							className={actionButtonClass}
 							onClick={() => {
 								if (!activeLink) return;
-								void copyLinkToClipboard(activeLink.href);
+								void copyLinkToClipboard(
+									activeLink.kind === "wiki"
+										? (activeLink.target ?? activeLink.href)
+										: activeLink.href,
+								);
 							}}
 						>
 							<span>Copy</span>
@@ -1037,7 +1355,7 @@ export function LinkPopover({
 							className="h-auto min-w-[72px] rounded-none border-0 px-2 text-primary-foreground shadow-none inset-shadow-none hover:brightness-105"
 							onClick={() => {
 								if (!activeLink) return;
-								void visitLink(activeLink.href);
+								void visitActiveLink(activeLink);
 							}}
 						>
 							<span>Visit</span>
