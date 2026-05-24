@@ -34,8 +34,10 @@ export function AppShell({
 	onDisconnect,
 }: Props) {
 	const viewer = useStoreValue(viewerStore);
+	const workspace = useStoreValue(workspaceStore);
 	const [switcherOpen, setSwitcherOpen] = useState(false);
 	const [newNoteName, setNewNoteName] = useState<string | null>(null);
+	const [newNoteSubmitted, setNewNoteSubmitted] = useState(false);
 	const newNoteInputRef = useRef<HTMLInputElement>(null);
 
 	useEffect(() => {
@@ -70,17 +72,29 @@ export function AppShell({
 		}
 	}, [newNoteName]);
 
-	const handleNewNote = () => setNewNoteName("");
+	const newNotePath = normalizeNotePath(newNoteName ?? "");
+	const newNoteConflict = workspace.files.some(
+		(file) => file.path === newNotePath,
+	);
+	const showNewNoteConflict = newNoteSubmitted && newNoteConflict;
+
+	const handleNewNote = () => {
+		setNewNoteName("");
+		setNewNoteSubmitted(false);
+	};
 
 	const submitNewNote = async (event: React.FormEvent) => {
 		event.preventDefault();
+		setNewNoteSubmitted(true);
 		const name = (newNoteName ?? "").trim();
 		if (!name) return;
-		const path = name.endsWith(".md") ? name : `${name}.md`;
+		const path = normalizeNotePath(name);
+		if (workspace.files.some((file) => file.path === path)) return;
 		await savePathContent(path, "");
+		setNewNoteName(null);
+		setNewNoteSubmitted(false);
 		await refreshFiles();
 		await loadPath(path);
-		setNewNoteName(null);
 	};
 
 	const onRemoteFilesChanged = async () => {
@@ -130,6 +144,10 @@ export function AppShell({
 									value={newNoteName}
 									onChange={(e) => setNewNoteName(e.target.value)}
 									placeholder="note-name.md"
+									aria-invalid={showNewNoteConflict}
+									aria-describedby={
+										showNewNoteConflict ? "new-note-conflict" : undefined
+									}
 									className="flex-1 rounded-sm border border-border bg-background px-2 py-1 text-sm outline-none focus:border-ring"
 								/>
 								<button
@@ -146,6 +164,14 @@ export function AppShell({
 									Cancel
 								</button>
 							</div>
+							{showNewNoteConflict && (
+								<p
+									id="new-note-conflict"
+									className="mx-auto mt-2 max-w-3xl text-sm text-destructive"
+								>
+									A file named {newNotePath} already exists.
+								</p>
+							)}
 						</form>
 					)}
 					{viewer.currentPath && (
@@ -206,6 +232,12 @@ export function AppShell({
 			)}
 		</main>
 	);
+}
+
+function normalizeNotePath(name: string): string {
+	const trimmed = name.trim();
+	if (!trimmed) return "";
+	return trimmed.endsWith(".md") ? trimmed : `${trimmed}.md`;
 }
 
 function ExternalChangeBanner({

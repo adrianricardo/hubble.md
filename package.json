@@ -9,6 +9,7 @@
 		"build": "pnpm check && pnpm typecheck && pnpm -r --if-present build",
 		"bundle:desktop": "pnpm --filter @hubble.md/desktop... --if-present build && pnpm --filter @hubble.md/desktop tauri build",
 		"dev:desktop": "pnpm -r --parallel --stream --filter \"./packages/**\" --if-present dev & pnpm --filter \"./apps/desktop\" tauri dev",
+		"dev:www": "pnpm --filter \"./apps/www\" dev",
 		"dev:sync-backend": "pnpm --filter \"./packages/sync-backend\" exec convex dev",
 		"dev:cli": "pnpm --filter \"./packages/sync\" --filter \"./packages/cli\" --parallel --stream dev",
 		"hubble": "node packages/cli/dist/index.js"
