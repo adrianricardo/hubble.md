@@ -76,9 +76,35 @@ function blockToMarkdown(node: JSONContent): string {
 			return `![${alt}](${src})`;
 		}
 
+		case "embed": {
+			const tagName = String(node.attrs?.tagName ?? "");
+			if (!/^embed-[a-z0-9][a-z0-9-]*$/.test(tagName)) return "";
+			const props =
+				node.attrs?.props &&
+				typeof node.attrs.props === "object" &&
+				!Array.isArray(node.attrs.props)
+					? (node.attrs.props as Record<string, unknown>)
+					: {};
+			const attrs = Object.entries(props)
+				.filter(([key]) => /^[a-zA-Z_:][a-zA-Z0-9_:.-]*$/.test(key))
+				.map(([key, value]) => ` ${key}="${escapeHtmlAttr(String(value))}"`)
+				.join("");
+			return `<${tagName}${attrs}></${tagName}>`;
+		}
+
 		default:
 			return "";
 	}
+}
+
+function escapeHtmlAttr(value: string) {
+	return value
+		.split("&")
+		.join("&amp;")
+		.split('"')
+		.join("&quot;")
+		.split("<")
+		.join("&lt;");
 }
 
 function getLinkAttrs(node: JSONContent | undefined): LinkAttrs | null {

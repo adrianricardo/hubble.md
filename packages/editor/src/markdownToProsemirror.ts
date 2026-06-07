@@ -34,6 +34,13 @@ function blockToPM(node: Content): JSONContent[] {
 			if (maybeImage?.type === "image") {
 				return imageToPM(maybeImage);
 			}
+			const paragraphHtml = node.children.every((child) => child.type === "html")
+				? node.children.map((child) => child.value).join("")
+				: null;
+			if (paragraphHtml) {
+				const embed = htmlToEmbed(paragraphHtml);
+				if (embed) return [embed];
+			}
 
 			return [
 				{
@@ -95,13 +102,16 @@ function blockToPM(node: Content): JSONContent[] {
 			];
 		}
 		case "html": {
-			// Parse HTML to extract img tags, fallback to text for everything else
+			// Parse HTML to extract known block nodes, fallback to text for everything else
 			const raw = node.value ?? "";
 			if (raw.trim() === "") return [];
 
-			// Try to parse as HTML and extract img tags
 			try {
 				const hastTree = fromHtml(raw, { fragment: true });
+				const embed = hastToEmbed(hastTree);
+				if (embed) {
+					return [embed];
+				}
 				const images = extractImagesFromHast(hastTree);
 				if (images.length > 0) {
 					return images;
@@ -130,6 +140,33 @@ function blockToPM(node: Content): JSONContent[] {
 			return [];
 		}
 	}
+}
+
+function hastToEmbed(root: HastRoot): JSONContent | null {
+	let embed: JSONContent | null = null;
+	visit(root, "element", (node: HastElement) => {
+		const tagName = node.tagName.toLowerCase();
+		if (isEmbedTag(tagName)) {
+			embed = {
+				type: "embed",
+				attrs: {
+					name: tagName.slice("embed-".length),
+					tagName,
+					props: Object.fromEntries(
+						Object.entries(node.properties ?? {}).map(([key, value]) => [
+							key,
+							String(value),
+						]),
+					),
+				},
+			};
+		}
+	});
+	return embed;
+}
+
+function isEmbedTag(tagName: string): boolean {
+	return /^embed-[a-z0-9][a-z0-9-]*$/.test(tagName);
 }
 
 function listItemToPM(li: ListItem, allowChecked: boolean): JSONContent[] {
@@ -167,6 +204,15 @@ function imageToPM(imageNode: Image): JSONContent[] {
 			},
 		},
 	];
+}
+
+function htmlToEmbed(raw: string | undefined): JSONContent | null {
+	if (!raw?.trim()) return null;
+	try {
+		return hastToEmbed(fromHtml(raw, { fragment: true }));
+	} catch {
+		return null;
+	}
 }
 
 function inlineToPM(children: Content[]): JSONContent[] {
