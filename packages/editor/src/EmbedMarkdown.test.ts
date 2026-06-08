@@ -20,6 +20,24 @@ describe("embed markdown conversion", () => {
 		});
 	});
 
+	it("does not parse a nested embed element as an embed node", () => {
+		const doc = markdownToTiptapDoc("<div><embed-kanban></embed-kanban></div>");
+
+		expect(doc.content?.[0]?.type).toBe("paragraph");
+		expect(doc.content?.[0]?.content?.[0]?.text).toBe(
+			"<div><embed-kanban></embed-kanban></div>",
+		);
+	});
+
+	it("does not parse embed HTML with sibling content as an embed node", () => {
+		const doc = markdownToTiptapDoc(
+			"<embed-kanban></embed-kanban><p>Keep me</p>",
+		);
+
+		expect(doc.content?.[0]?.type).toBe("paragraph");
+		expect(doc.content?.some((node) => node.type === "embed")).toBe(false);
+	});
+
 	it("serializes an embed node back to custom element syntax", () => {
 		const markdown = tiptapDocToMarkdown({
 			type: "doc",

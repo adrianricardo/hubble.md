@@ -1,5 +1,9 @@
 import type { JSONContent } from "@tiptap/core";
-import type { Element as HastElement, Root as HastRoot } from "hast";
+import type {
+	Element as HastElement,
+	Root as HastRoot,
+	RootContent,
+} from "hast";
 import { fromHtml } from "hast-util-from-html";
 import type { Content, Image, List, ListItem, Paragraph, Root } from "mdast";
 import remarkGfm from "remark-gfm";
@@ -145,30 +149,40 @@ function blockToPM(node: Content): JSONContent[] {
 }
 
 function hastToEmbed(root: HastRoot): JSONContent | null {
-	let embed: JSONContent | null = null;
-	visit(root, "element", (node: HastElement) => {
-		const tagName = node.tagName.toLowerCase();
-		if (isEmbedTag(tagName)) {
-			embed = {
-				type: "embed",
-				attrs: {
-					name: tagName.slice("embed-".length),
-					tagName,
-					props: Object.fromEntries(
-						Object.entries(node.properties ?? {}).map(([key, value]) => [
-							key,
-							String(value),
-						]),
-					),
-				},
-			};
-		}
-	});
-	return embed;
+	const children = root.children.filter(hasMeaningfulHtml);
+	if (children.length !== 1) return null;
+	const [node] = children;
+	if (!isHastElement(node)) return null;
+
+	const tagName = node.tagName.toLowerCase();
+	if (!isEmbedTag(tagName)) return null;
+	if (node.children.some(hasMeaningfulHtml)) return null;
+
+	return {
+		type: "embed",
+		attrs: {
+			name: tagName.slice("embed-".length),
+			tagName,
+			props: Object.fromEntries(
+				Object.entries(node.properties ?? {}).map(([key, value]) => [
+					key,
+					String(value),
+				]),
+			),
+		},
+	};
 }
 
 function isEmbedTag(tagName: string): boolean {
 	return /^embed-[a-z0-9][a-z0-9-]*$/.test(tagName);
+}
+
+function isHastElement(node: RootContent): node is HastElement {
+	return node.type === "element";
+}
+
+function hasMeaningfulHtml(node: RootContent): boolean {
+	return node.type !== "text" || node.value.trim() !== "";
 }
 
 function listItemToPM(li: ListItem, allowChecked: boolean): JSONContent[] {
