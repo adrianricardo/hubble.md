@@ -14,6 +14,7 @@ import {
 } from "electron";
 import electronUpdater from "electron-updater";
 import ignore from "ignore";
+import type { DesktopUpdateState } from "../src/desktopApi/types";
 
 type FileEntry = {
 	path: string;
@@ -40,6 +41,7 @@ const isDev = !app.isPackaged;
 const { autoUpdater } = electronUpdater;
 const debugPort = process.env.HUBBLE_DESKTOP_DEBUG_PORT ?? "9222";
 const updateFeedUrl = process.env.HUBBLE_DESKTOP_UPDATE_URL;
+const supportsAutoUpdates = !isDev && process.platform === "darwin";
 // Check every 4 hours after the initial packaged-app update check.
 const updateCheckIntervalMs = 4 * 60 * 60 * 1000;
 
@@ -55,9 +57,17 @@ let pendingOpenPath: string | null = firstExistingFileArg(
 	process.argv.slice(1),
 );
 let menuState: MenuState = { hasWorkspace: false };
-let updateDownloaded = false;
-let updateCheckInFlight = false;
-let manualUpdateCheck = false;
+let updateState: DesktopUpdateState = {
+	isSupported: supportsAutoUpdates,
+	status: "idle",
+	currentVersion: app.getVersion(),
+	availableVersion: null,
+	progressPercent: null,
+	message: supportsAutoUpdates
+		? null
+		: "Updates are available on packaged macOS builds only.",
+	lastCheckedAt: null,
+};
 const watchers = new Map<string, FSWatcher>();
 const grantedFiles = new Set<string>();
 const grantedRoots = new Set<string>();
@@ -348,20 +358,26 @@ function buildMenu() {
 			label: app.name,
 			submenu: [
 				{
+					id: "settings",
+					label: "Settings...",
+					accelerator: "CmdOrCtrl+,",
+					click: () => sendToRenderer("desktop:menu-open-settings"),
+				},
+				{ type: "separator" },
+				{
 					id: "check-for-updates",
-					label: updateCheckInFlight
-						? "Checking for Updates..."
-						: "Check for Updates...",
-					enabled: !updateCheckInFlight,
-					click: () => {
-						void checkForUpdates({ manual: true });
-					},
+					label:
+						updateState.status === "checking"
+							? "Checking for Updates..."
+							: "Check for Updates...",
+					enabled: updateState.status !== "checking",
+					click: () => sendToRenderer("desktop:menu-check-for-updates"),
 				},
 				{
 					id: "restart-to-update",
 					label: "Restart to Update",
-					enabled: updateDownloaded,
-					visible: updateDownloaded,
+					enabled: updateState.status === "ready",
+					visible: updateState.status === "ready",
 					click: () => autoUpdater.quitAndInstall(false, true),
 				},
 				{ type: "separator" },
@@ -379,49 +395,52 @@ function buildMenu() {
 	Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-async function checkForUpdates({ manual = false } = {}) {
-	if (isDev || process.platform !== "darwin" || updateCheckInFlight) return;
-	updateCheckInFlight = true;
-	manualUpdateCheck = manual;
+function syncUpdateState(nextState: DesktopUpdateState) {
+	updateState = nextState;
 	buildMenu();
-	try {
-		await autoUpdater.checkForUpdates();
-	} catch (error) {
-		if (manual) {
-			dialog.showErrorBox(
-				"Unable to Check for Updates",
-				error instanceof Error ? error.message : String(error),
-			);
-		}
-		finishUpdateCheck();
-	}
+	sendToRenderer("desktop:update-state", updateState);
 }
 
-function finishUpdateCheck() {
-	updateCheckInFlight = false;
-	manualUpdateCheck = false;
-	buildMenu();
-}
-
-async function showUpdateMessage(message: string) {
-	await dialog.showMessageBox(mainWindow ?? undefined, {
-		type: "info",
-		message,
+function patchUpdateState(patch: Partial<DesktopUpdateState>) {
+	syncUpdateState({
+		...updateState,
+		...patch,
 	});
 }
 
-function showManualUpdateMessage(message: string) {
-	if (!manualUpdateCheck) return;
-	void showUpdateMessage(message);
-}
-
-function showManualUpdateError(error: Error) {
-	if (!manualUpdateCheck) return;
-	dialog.showErrorBox("Unable to Check for Updates", error.message);
+async function checkForUpdates() {
+	if (!supportsAutoUpdates) {
+		patchUpdateState({
+			status: "idle",
+			message: "Updates are available on packaged macOS builds only.",
+		});
+		return;
+	}
+	if (
+		updateState.status === "checking" ||
+		updateState.status === "downloading" ||
+		updateState.status === "ready"
+	) {
+		return;
+	}
+	patchUpdateState({
+		status: "checking",
+		progressPercent: null,
+		message: null,
+	});
+	try {
+		await autoUpdater.checkForUpdates();
+	} catch (error) {
+		patchUpdateState({
+			status: "error",
+			message: error instanceof Error ? error.message : String(error),
+			lastCheckedAt: Date.now(),
+		});
+	}
 }
 
 function configureAutoUpdates() {
-	if (isDev || process.platform !== "darwin") return;
+	if (!supportsAutoUpdates) return;
 	if (updateFeedUrl) {
 		autoUpdater.setFeedURL({
 			provider: "generic",
@@ -430,24 +449,47 @@ function configureAutoUpdates() {
 	}
 	autoUpdater.autoDownload = true;
 	autoUpdater.autoInstallOnAppQuit = true;
-	autoUpdater.on("update-available", () => {
-		showManualUpdateMessage("An update is downloading in the background.");
+	autoUpdater.on("update-available", (info) => {
+		patchUpdateState({
+			status: "downloading",
+			availableVersion: info.version ?? null,
+			progressPercent: 0,
+			message: "Downloading update...",
+			lastCheckedAt: Date.now(),
+		});
 	});
 	autoUpdater.on("update-not-available", () => {
-		showManualUpdateMessage("Hubble is up to date.");
-		finishUpdateCheck();
+		patchUpdateState({
+			status: "up-to-date",
+			availableVersion: null,
+			progressPercent: null,
+			message: "Hubble is up to date.",
+			lastCheckedAt: Date.now(),
+		});
 	});
-	autoUpdater.on("update-downloaded", () => {
-		updateDownloaded = true;
-		showManualUpdateMessage(
-			"Update ready. Use Hubble > Restart to Update when ready.",
-		);
-		finishUpdateCheck();
+	autoUpdater.on("download-progress", (progress) => {
+		patchUpdateState({
+			status: "downloading",
+			progressPercent: progress.percent,
+			message: "Downloading update...",
+		});
+	});
+	autoUpdater.on("update-downloaded", (info) => {
+		patchUpdateState({
+			status: "ready",
+			availableVersion: info.version ?? updateState.availableVersion,
+			progressPercent: 100,
+			message: "Restart Hubble to install the update.",
+			lastCheckedAt: Date.now(),
+		});
 	});
 	autoUpdater.on("error", (error) => {
 		console.error("Auto-update error", error);
-		showManualUpdateError(error);
-		finishUpdateCheck();
+		patchUpdateState({
+			status: "error",
+			message: error.message,
+			lastCheckedAt: Date.now(),
+		});
 	});
 
 	void checkForUpdates();
@@ -853,6 +895,19 @@ function registerIpc() {
 		const pathToOpen = pendingOpenPath;
 		pendingOpenPath = null;
 		return pathToOpen;
+	});
+
+	ipcMain.handle("desktop:get-update-state", () => updateState);
+
+	ipcMain.handle("desktop:check-for-updates", async () => {
+		await checkForUpdates();
+	});
+
+	ipcMain.handle("desktop:install-update", () => {
+		if (updateState.status !== "ready") {
+			throw new Error("No downloaded update is ready to install.");
+		}
+		autoUpdater.quitAndInstall(false, true);
 	});
 
 	ipcMain.handle("desktop:set-menu-state", (_event, state: MenuState) => {

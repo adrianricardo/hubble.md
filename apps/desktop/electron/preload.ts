@@ -1,8 +1,11 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { DesktopApi } from "../src/desktopApi/types";
 
-function subscribe(channel: string, callback: (...args: never[]) => void) {
-	const listener = (_event: Electron.IpcRendererEvent, ...args: never[]) =>
+function subscribe<T extends unknown[]>(
+	channel: string,
+	callback: (...args: T) => void,
+) {
+	const listener = (_event: Electron.IpcRendererEvent, ...args: T) =>
 		callback(...args);
 	ipcRenderer.on(channel, listener);
 	return () => ipcRenderer.removeListener(channel, listener);
@@ -53,13 +56,22 @@ const desktopApi = {
 		`hubble-asset://local/?path=${encodeURIComponent(path)}`,
 	getLaunchFilePath: () => ipcRenderer.invoke("desktop:get-launch-file-path"),
 	setMenuState: (state) => ipcRenderer.invoke("desktop:set-menu-state", state),
+	getUpdateState: () => ipcRenderer.invoke("desktop:get-update-state"),
+	checkForUpdates: () => ipcRenderer.invoke("desktop:check-for-updates"),
+	installUpdate: () => ipcRenderer.invoke("desktop:install-update"),
 	onOpenFile: (callback) =>
 		subscribe("desktop:open-file", (path: string) => callback(path)),
+	onUpdateStateChange: (callback) =>
+		subscribe("desktop:update-state", callback),
 	onMenuCreateMarkdownFile: (callback) =>
 		subscribe("desktop:menu-create-markdown-file", callback),
 	onMenuOpenFile: (callback) => subscribe("desktop:menu-open-file", callback),
 	onMenuOpenFolder: (callback) =>
 		subscribe("desktop:menu-open-folder", callback),
+	onMenuOpenSettings: (callback) =>
+		subscribe("desktop:menu-open-settings", callback),
+	onMenuCheckForUpdates: (callback) =>
+		subscribe("desktop:menu-check-for-updates", callback),
 	onMenuShowWorkspaceSwitcher: (callback) =>
 		subscribe("desktop:menu-show-workspace-switcher", callback),
 } satisfies DesktopApi;

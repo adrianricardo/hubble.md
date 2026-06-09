@@ -31,6 +31,24 @@ export type MenuState = {
 	hasWorkspace: boolean;
 };
 
+export type DesktopUpdateStatus =
+	| "idle"
+	| "checking"
+	| "up-to-date"
+	| "downloading"
+	| "ready"
+	| "error";
+
+export type DesktopUpdateState = {
+	isSupported: boolean;
+	status: DesktopUpdateStatus;
+	currentVersion: string;
+	availableVersion: string | null;
+	progressPercent: number | null;
+	message: string | null;
+	lastCheckedAt: number | null;
+};
+
 export type DesktopApi = {
 	listDirectory(path: string): Promise<FileEntry[]>;
 	listEmbedFiles(
@@ -61,9 +79,17 @@ export type DesktopApi = {
 	toAssetUrl(path: string): string;
 	getLaunchFilePath(): Promise<string | null>;
 	setMenuState(state: MenuState): Promise<void>;
+	getUpdateState(): Promise<DesktopUpdateState>;
+	checkForUpdates(): Promise<void>;
+	installUpdate(): Promise<void>;
 	onOpenFile(callback: (path: string) => void): Unsubscribe;
+	onUpdateStateChange(
+		callback: (state: DesktopUpdateState) => void,
+	): Unsubscribe;
 	onMenuCreateMarkdownFile(callback: () => void): Unsubscribe;
 	onMenuOpenFile(callback: () => void): Unsubscribe;
 	onMenuOpenFolder(callback: () => void): Unsubscribe;
+	onMenuOpenSettings(callback: () => void): Unsubscribe;
+	onMenuCheckForUpdates(callback: () => void): Unsubscribe;
 	onMenuShowWorkspaceSwitcher(callback: () => void): Unsubscribe;
 };
