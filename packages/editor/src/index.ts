@@ -12,6 +12,7 @@ export {
 	serializeFrontMatter,
 	setMarkdownFrontMatter,
 } from "./frontMatter";
+export { HeadingExtension } from "./Heading";
 export {
 	createLinkMark,
 	getActiveLinkRange,
