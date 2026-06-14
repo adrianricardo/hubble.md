@@ -20,6 +20,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LinkClickExtension } from "./LinkClickExtension";
 import { LinkCreationGhostExtension } from "./LinkCreationGhostExtension";
 import { LinkPopover, type WikiTarget } from "./LinkPopover";
+import { SlashCommandMenu } from "./SlashCommandMenu";
 import { SmartLinkExtension } from "./SmartLinkExtension";
 import { VirtualCursor } from "./VirtualCursor";
 import "./EditorView.css";
@@ -253,6 +254,11 @@ export function EditorView({
 					onOpenWikiLink={onOpenWikiLink}
 					onMessage={onMessage}
 					onCursorModeChange={setCursorModeOverride}
+				/>
+				<SlashCommandMenu
+					editor={editor}
+					containerRef={editorRootRef}
+					viewportRef={editorViewportRef}
 				/>
 			</div>
 			<FormattingStatusBar editor={editor} scrollContainer={editorViewportEl} />
