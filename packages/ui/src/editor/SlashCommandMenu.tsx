@@ -15,6 +15,7 @@ import MingcuteListCheck2Line from "~icons/mingcute/list-check-2-line";
 import MingcuteListCheckLine from "~icons/mingcute/list-check-line";
 import MingcuteListOrderedLine from "~icons/mingcute/list-ordered-line";
 import MingcuteQuoteLeftLine from "~icons/mingcute/quote-left-line";
+import MingcuteStrikethroughLine from "~icons/mingcute/strikethrough-line";
 import MingcuteTextLine from "~icons/mingcute/text-line";
 import { cn } from "../lib/utils";
 import {
@@ -100,6 +101,13 @@ const SLASH_COMMANDS: SlashCommand[] = [
 		description: "Separate sections",
 		aliases: ["hr", "horizontal", "rule", "separator", "---"],
 		icon: MingcuteBorderHorizontalLine,
+	},
+	{
+		kind: "strike",
+		title: "Strikethrough",
+		description: "Toggle strikethrough",
+		aliases: ["strike", "s", "delete"],
+		icon: MingcuteStrikethroughLine,
 	},
 ];
 

@@ -34,6 +34,7 @@ export {
 export { markdownToTiptapDoc } from "./markdownToProsemirror";
 export { tiptapDocToMarkdown } from "./prosemirrorToMarkdown";
 export { StoredMarksDecorationExtension } from "./StoredMarksDecorationExtension";
+export { StrikethroughShortcutExtension } from "./StrikethroughShortcutExtension";
 export {
 	isSelectionAtStartOfNode,
 	nearestSharedParentOfType,

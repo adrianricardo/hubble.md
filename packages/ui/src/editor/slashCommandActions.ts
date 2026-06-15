@@ -11,7 +11,8 @@ export type SlashCommandKind =
 	| "orderedList"
 	| "taskList"
 	| "blockquote"
-	| "divider";
+	| "divider"
+	| "strike";
 
 export type SlashToken = {
 	from: number;
@@ -52,6 +53,21 @@ export function applySlashCommand(
 	const blockStart = $from.before(topLevelDepth);
 	const blockEnd = $from.after(topLevelDepth);
 	const block = state.doc.nodeAt(blockStart);
+	if (kind === "strike") {
+		const strike = schema.marks.strike;
+		if (!strike) return;
+		const tr = state.tr.delete(token.from, token.to);
+		const mappedSelection = tr.selection;
+		const marks = mappedSelection.$from.marks();
+		tr.setStoredMarks(
+			strike.isInSet(marks)
+				? marks.filter((mark) => mark.type !== strike)
+				: [...marks, strike.create()],
+		);
+		view.dispatch(tr.scrollIntoView());
+		view.focus();
+		return;
+	}
 	const canConvertInPlace =
 		block?.type.name === "paragraph" &&
 		block.content.size === token.to - token.from;
@@ -157,6 +173,8 @@ function createEmptyBlock(
 			return blockquote.create(null, paragraph.create());
 		case "divider":
 			return horizontalRule.create();
+		case "strike":
+			return null;
 	}
 }
 

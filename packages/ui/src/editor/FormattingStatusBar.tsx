@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import MingcuteBoldLine from "~icons/mingcute/bold-line";
 import MingcuteItalicLine from "~icons/mingcute/italic-line";
 import MingcuteLinkLine from "~icons/mingcute/link-line";
+import MingcuteStrikethroughLine from "~icons/mingcute/strikethrough-line";
 import { shouldShowFooterDivider } from "../lib/scrollOverflow";
 import { Button } from "../primitives/button";
 
@@ -124,6 +125,9 @@ export function FormattingStatusBar({
 				)}
 				{paletteState.activeMarkNames.includes("italic") && (
 					<MingcuteItalicLine className="size-4" />
+				)}
+				{paletteState.activeMarkNames.includes("strike") && (
+					<MingcuteStrikethroughLine className="size-4" />
 				)}
 				{paletteState.activeMarkNames.includes("link") && (
 					<MingcuteLinkLine className="size-4" />

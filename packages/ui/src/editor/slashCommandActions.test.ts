@@ -117,6 +117,30 @@ describe("slash command document actions", () => {
 			content: [{ type: "horizontalRule" }, { type: "paragraph" }],
 		});
 	});
+
+	it("toggles strikethrough for following typed text", () => {
+		const editor = createEditor(docWithParagraph("/strike"));
+		const token = expectSlashToken(editor);
+
+		applySlashCommand(editor, token, "strike");
+
+		editor.commands.insertContent("next");
+		expect(editor.getJSON()).toMatchObject({
+			type: "doc",
+			content: [
+				{
+					type: "paragraph",
+					content: [
+						{
+							type: "text",
+							text: "next",
+							marks: [{ type: "strike" }],
+						},
+					],
+				},
+			],
+		});
+	});
 });
 
 function createEditor(content: JSONContent) {
