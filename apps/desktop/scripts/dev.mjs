@@ -19,9 +19,9 @@ const devExecPath = path.join(devAppPath, "Contents", "MacOS", devAppName);
 const markerPath = path.join(devAppDir, "metadata.json");
 const fixturePath = path.join(appDir, "fixtures", "playground");
 const playgroundPath = path.join(devAppDir, "playground");
-const playgroundHubblePath = path.join(playgroundPath, ".hubble");
-const fixtureHubblePath = path.join(fixturePath, ".hubble");
 const wrapperVersion = 1;
+const currentPlaygroundHtmlMarkers = ["bg-card", "text-foreground"];
+const stalePlaygroundHtmlMarkers = ["./vendor/", "px-6"];
 
 async function pathExists(input) {
 	try {
@@ -186,39 +186,17 @@ async function ensurePlaygroundHtml() {
 	const fixtureHtmlPath = path.join(fixturePath, "file-index.html");
 	try {
 		const html = await fs.readFile(htmlPath, "utf8");
-		if (!html.includes("./vendor/")) return;
+		const isCurrent = currentPlaygroundHtmlMarkers.every((marker) =>
+			html.includes(marker),
+		);
+		const isStale = stalePlaygroundHtmlMarkers.some((marker) =>
+			html.includes(marker),
+		);
+		if (isCurrent && !isStale) return;
 	} catch {
 		// Missing file gets restored from the fixture below.
 	}
 	await fs.copyFile(fixtureHtmlPath, htmlPath);
-}
-
-async function ensurePlaygroundDependencies() {
-	await fs.mkdir(playgroundHubblePath, { recursive: true });
-	const packagePath = path.join(playgroundHubblePath, "package.json");
-	const fixturePackagePath = path.join(fixtureHubblePath, "package.json");
-	const currentPackageJson = await fs
-		.readFile(packagePath, "utf8")
-		.catch(() => "");
-	const nextPackageJson = await fs.readFile(fixturePackagePath, "utf8");
-	const shouldInstall =
-		currentPackageJson !== nextPackageJson ||
-		!(await pathExists(path.join(playgroundHubblePath, "node_modules")));
-	await fs.copyFile(fixturePackagePath, packagePath);
-	if (!shouldInstall) return;
-	run(
-		"pnpm",
-		[
-			"install",
-			"--dir",
-			playgroundHubblePath,
-			"--ignore-workspace",
-			"--ignore-scripts",
-		],
-		{
-			stdio: "inherit",
-		},
-	);
 }
 
 async function ensureDevApp() {
@@ -310,7 +288,6 @@ if (process.platform === "darwin") {
 	env.HUBBLE_DESKTOP_DEV_APP_NAME = devAppName;
 	await ensurePlayground();
 	await ensurePlaygroundHtml();
-	await ensurePlaygroundDependencies();
 	env.HUBBLE_DESKTOP_DEV_WORKSPACE = playgroundPath;
 	await killExistingDevAppProcesses();
 	console.log(`Computer Use app: ${devBundleId}`);

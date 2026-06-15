@@ -3,13 +3,10 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<script src="./.hubble/node_modules/@hubble.md/runtime/global.js"></script>
-		<script src="./.hubble/node_modules/@tailwindcss/browser/dist/index.global.js"></script>
-		<script src="./.hubble/node_modules/alpinejs/dist/cdn.min.js" defer></script>
 	</head>
-	<body class="m-0 overflow-hidden px-6 py-6 font-sans text-slate-800">
+	<body class="m-0 overflow-hidden font-sans text-foreground">
 		<div
-			class="rounded-lg border border-emerald-200 bg-emerald-50/70 px-5 py-5"
+			class="rounded-lg border border-border bg-card px-5 py-5 text-card-foreground"
 			x-data="{
 				files: [],
 				sort: 'recent',
@@ -38,7 +35,7 @@
 				<h1 class="m-0 text-2xl leading-tight font-bold">Workspace files</h1>
 				<div class="flex gap-2" aria-label="Sort files">
 					<button
-						class="cursor-pointer rounded-lg border border-emerald-300 bg-white px-3 py-2 text-slate-800 aria-pressed:border-emerald-950 aria-pressed:bg-emerald-950 aria-pressed:text-white"
+						class="cursor-pointer rounded-md border border-border bg-background px-3 py-2 text-foreground aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
 						type="button"
 						:aria-pressed="sort === 'recent'"
 						@click="sort = 'recent'"
@@ -46,7 +43,7 @@
 						Recent
 					</button>
 					<button
-						class="cursor-pointer rounded-lg border border-emerald-300 bg-white px-3 py-2 text-slate-800 aria-pressed:border-emerald-950 aria-pressed:bg-emerald-950 aria-pressed:text-white"
+						class="cursor-pointer rounded-md border border-border bg-background px-3 py-2 text-foreground aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
 						type="button"
 						:aria-pressed="sort === 'name'"
 						@click="sort = 'name'"
@@ -56,17 +53,17 @@
 				</div>
 			</div>
 
-			<p class="m-0 text-slate-500" x-show="!error && files.length === 0">
+			<p class="m-0 text-muted-foreground" x-show="!error && files.length === 0">
 				Loading files...
 			</p>
-			<p class="m-0 text-slate-500" x-show="error" x-text="error"></p>
+			<p class="m-0 text-muted-foreground" x-show="error" x-text="error"></p>
 
 			<ul class="m-0 grid list-none gap-2 p-0" x-show="!error && files.length > 0">
 				<template x-for="file in sortedFiles" :key="file.path">
-					<li class="grid gap-1 rounded-lg border border-emerald-100 bg-white px-3.5 py-3">
+					<li class="grid gap-1 rounded-md border border-border bg-background px-3.5 py-3">
 						<span class="text-[15px] font-bold" x-text="file.path"></span>
 						<span
-							class="text-[13px] text-slate-500"
+							class="text-[13px] text-muted-foreground"
 							x-text="`${date(file.modified_at)} · ${file.size} bytes`"
 						></span>
 					</li>

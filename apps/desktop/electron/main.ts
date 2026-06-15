@@ -2,6 +2,10 @@ import { createHash } from "node:crypto";
 import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import embedTheme from "@hubble.md/runtime/embed-theme.css?raw";
+import hubbleRuntime from "@hubble.md/runtime/global.js?raw";
+import tailwindRuntime from "@tailwindcss/browser?raw";
+import alpineRuntime from "alpinejs/dist/cdn.min.js?raw";
 import chokidar, { type FSWatcher } from "chokidar";
 import {
 	app,
@@ -35,6 +39,11 @@ type MenuState = {
 type IgnoreRule = {
 	dir: string;
 	matcher: ReturnType<typeof ignore>;
+};
+
+type IframeAsset = {
+	name: string;
+	source: string;
 };
 
 const isDev = !app.isPackaged || process.env.HUBBLE_DESKTOP_FORCE_DEV === "1";
@@ -84,6 +93,17 @@ let grantsLoaded = false;
 
 const ignoreConfigFiles = [".gitignore", ".ignore"];
 const ignoredWorkspaceDirs = new Set([".git", "dist", "node_modules"]);
+const iframeHeadStyles = [
+	{ name: "hubble-theme", source: embedTheme },
+] as const;
+const iframeHeadScripts = [
+	{ name: "hubble-runtime", source: hubbleRuntime },
+	{ name: "tailwind-browser", source: tailwindRuntime },
+] as const;
+// Alpine's CDN build auto-starts immediately; inline scripts cannot use defer.
+const iframeBodyEndScripts = [
+	{ name: "alpine", source: alpineRuntime },
+] as const;
 
 function grantsPath(): string {
 	return path.join(app.getPath("userData"), "grants.json");
@@ -324,6 +344,47 @@ function assetContentType(filePath: string): string {
 		default:
 			return "application/octet-stream";
 	}
+}
+
+function scriptTag({ name, source }: IframeAsset) {
+	return `<script data-hubble-injected="${name}">\n${source}\n</script>`;
+}
+
+function styleTag({ name, source }: IframeAsset) {
+	return `<style data-hubble-injected="${name}" type="text/tailwindcss">\n${source}\n</style>`;
+}
+
+function insertBeforeCloseTag(html: string, tagName: string, content: string) {
+	const closeIndex = html.search(new RegExp(`</${tagName}\\s*>`, "i"));
+	if (closeIndex === -1) return `${html}${content}`;
+	return `${html.slice(0, closeIndex)}${content}${html.slice(closeIndex)}`;
+}
+
+function injectIframeRuntime(html: string): string {
+	const headStyles = iframeHeadStyles.map(styleTag).join("\n");
+	const headScripts = iframeHeadScripts.map(scriptTag).join("\n");
+	const bodyEndScripts = iframeBodyEndScripts.map(scriptTag).join("\n");
+	const headInjection = `\n${headStyles}\n${headScripts}\n`;
+	const bodyEndInjection = `\n${bodyEndScripts}\n`;
+	const withHead =
+		html.search(/<\/head\s*>/i) === -1
+			? `${headInjection}${html}`
+			: insertBeforeCloseTag(html, "head", headInjection);
+	return insertBeforeCloseTag(withHead, "body", bodyEndInjection);
+}
+
+function responseForAsset(filePath: string) {
+	const contentType = assetContentType(filePath);
+	const body = contentType.startsWith("text/html")
+		? injectIframeRuntime(fsSync.readFileSync(filePath, "utf8"))
+		: fsSync.readFileSync(filePath);
+
+	return new Response(body, {
+		headers: {
+			"cache-control": "no-store",
+			"content-type": contentType,
+		},
+	});
 }
 
 function buildMenu() {
@@ -989,12 +1050,7 @@ if (!singleInstanceLock) {
 			// HTML iframe embeds use this protocol as their base URL, so relative
 			// scripts, stylesheets, images, and fetches resolve to granted files.
 			// Disable caching because these files are edited directly in workspaces.
-			return new Response(fsSync.readFileSync(filePath), {
-				headers: {
-					"cache-control": "no-store",
-					"content-type": assetContentType(filePath),
-				},
-			});
+			return responseForAsset(filePath);
 		});
 		registerIpc();
 		buildMenu();

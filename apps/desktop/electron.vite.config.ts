@@ -8,7 +8,11 @@ const devPort = Number(process.env.PORT ?? 1420);
 
 export default defineConfig({
 	main: {
-		plugins: [externalizeDepsPlugin()],
+		plugins: [
+			externalizeDepsPlugin({
+				exclude: ["@hubble.md/runtime", "@tailwindcss/browser", "alpinejs"],
+			}),
+		],
 		build: {
 			lib: {
 				entry: "electron/main.ts",

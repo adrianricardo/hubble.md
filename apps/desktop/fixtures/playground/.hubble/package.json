@@ -1,8 +1,0 @@
-{
-	"private": true,
-	"dependencies": {
-		"@hubble.md/runtime": "file:../../../../../packages/runtime",
-		"@tailwindcss/browser": "4.3.1",
-		"alpinejs": "3.15.12"
-	}
-}

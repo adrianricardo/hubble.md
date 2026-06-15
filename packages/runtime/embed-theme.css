@@ -1,0 +1,74 @@
+:root {
+	color-scheme: light;
+	--brand: oklch(0.426 0.08 159.6);
+	--brand-accent: oklch(0.847 0.168 84.7);
+	--brand-accent-foreground: oklch(0.327 0.051 164.9);
+	--background: oklch(0.995 0.001 95);
+	--foreground: oklch(0.27 0.008 150);
+	--card: oklch(0.998 0.001 95);
+	--card-foreground: var(--foreground);
+	--primary: var(--brand);
+	--primary-foreground: oklch(0.985 0 0);
+	--secondary: oklch(0.968 0.003 95);
+	--secondary-foreground: var(--foreground);
+	--muted: oklch(0.96 0.003 95);
+	--muted-foreground: oklch(0.55 0.01 95);
+	--accent: oklch(0.965 0.05 90);
+	--accent-foreground: var(--foreground);
+	--selected: oklch(0.9 0.12 90);
+	--selected-foreground: var(--foreground);
+	--destructive: oklch(0.577 0.245 27.325);
+	--border: oklch(0.9 0.004 95);
+	--input: oklch(0.91 0.004 95);
+	--ring: var(--brand-accent);
+	--radius: 0.625rem;
+}
+
+@theme inline {
+	--font-sans:
+		ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	--font-mono: "Lilex", ui-monospace, SFMono-Regular, Menlo, monospace;
+	--color-brand: var(--brand);
+	--color-brand-accent: var(--brand-accent);
+	--color-brand-accent-foreground: var(--brand-accent-foreground);
+	--color-background: var(--background);
+	--color-foreground: var(--foreground);
+	--color-card: var(--card);
+	--color-card-foreground: var(--card-foreground);
+	--color-primary: var(--primary);
+	--color-primary-foreground: var(--primary-foreground);
+	--color-secondary: var(--secondary);
+	--color-secondary-foreground: var(--secondary-foreground);
+	--color-muted: var(--muted);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-accent: var(--accent);
+	--color-accent-foreground: var(--accent-foreground);
+	--color-selected: var(--selected);
+	--color-selected-foreground: var(--selected-foreground);
+	--color-destructive: var(--destructive);
+	--color-border: var(--border);
+	--color-input: var(--input);
+	--color-ring: var(--ring);
+	--radius-sm: calc(var(--radius) * 0.6);
+	--radius-md: calc(var(--radius) * 0.8);
+	--radius-lg: var(--radius);
+	--radius-xl: calc(var(--radius) * 1.4);
+	--default-transition-duration: 180ms;
+	--default-transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+body {
+	background: var(--background);
+	color: var(--foreground);
+	font-family:
+		ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+button:not(:disabled),
+[role="button"]:not(:disabled) {
+	cursor: pointer;
+}
+
+::selection {
+	background: color-mix(in oklab, var(--selected) 70%, transparent);
+}
