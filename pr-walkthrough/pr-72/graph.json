@@ -1,0 +1,303 @@
+{
+  "meta": {
+    "title": "Fix tag placeholder visibility",
+    "prUrl": "https://github.com/bholmesdev/hubble.md/pull/72",
+    "baseRef": "main",
+    "headRef": "oz/fix-tag-empty-placeholder-71",
+    "summary": "Small PR. The tag property input in the file properties panel showed the ghost \"Empty\" placeholder even after tags were added. The fix makes the placeholder conditional on whether any tags exist. The PR also adds/edits CI workflows that publish this walkthrough; those are infra, not part of the tag fix."
+  },
+  "graphs": [
+    {
+      "id": "system-overview",
+      "label": "System overview",
+      "color": "#c0872a",
+      "summary": "How the markdown editor's front-matter / file-properties subsystem is structured, independent of any single change.",
+      "nodes": [
+        {
+          "id": "editor-view",
+          "title": "EditorView host",
+          "kind": "overview card",
+          "x": -400,
+          "y": -40,
+          "width": 360,
+          "height": 230,
+          "summaryLines": 8,
+          "summary": "EditorView owns the open document. It splits markdown into front matter and body, drives a Tiptap editor for the body, and holds front-matter as React state. It debounces saves and re-combines front matter + body back into markdown on every change, so the properties UI and the prose editor stay in sync around one source string.",
+          "details": [
+            "State owner: holds frontMatterState plus a partsRef of { frontMatter, body } and the latest combined markdown.",
+            "Parses markdown into front matter on load and re-serializes on edits; saves are debounced before persisting.",
+            "Renders the properties panel above the prose EditorContent inside the same scroll viewport."
+          ]
+        },
+        {
+          "id": "properties-panel",
+          "title": "FilePropertiesPanel",
+          "kind": "overview card",
+          "x": 0,
+          "y": -40,
+          "width": 360,
+          "height": 230,
+          "summaryLines": 8,
+          "summary": "FilePropertiesPanel renders front matter as a list of editable property rows plus an Add property button. It models state as a tagged union (none / valid / invalid); invalid front matter falls back to a raw textarea. Each row pairs a property name, a type selector, and a type-specific value editor, and changes flow back through a single emit helper.",
+          "details": [
+            "FrontMatterState union: none, valid (parsed properties), or invalid (raw text + error).",
+            "Each row owns a stable draftId so editing a property name does not remount the row.",
+            "emitProperties() turns the row list back into FrontMatterState + serialized front matter for the host."
+          ]
+        },
+        {
+          "id": "value-editors",
+          "title": "Per-type value editors",
+          "kind": "overview card",
+          "x": 400,
+          "y": -40,
+          "width": 360,
+          "height": 230,
+          "summaryLines": 8,
+          "summary": "PropertyValue dispatches each property to a type-specific editor: scalar text/number, checkbox, date segments, and tags. Editors keep a local draft of in-progress input and commit it to the parent on blur or Enter. The tags editor renders existing values as removable chips followed by an input used to add more.",
+          "details": [
+            "PropertyValue switches on property.type to choose ScalarValue, DateValue, TagsValue, or a checkbox/unsupported view.",
+            "TagsValue keeps a draft string, splits on commas, and appends trimmed non-empty entries to the values array.",
+            "Each editor commits via onChange, which the row forwards into emitProperties."
+          ]
+        }
+      ],
+      "edges": [],
+      "tour": [
+        { "nodeId": "editor-view", "title": "Start at the host", "body": "EditorView owns the document and front-matter state, and keeps the properties UI in sync with the saved markdown." },
+        { "nodeId": "properties-panel", "title": "How properties are modeled", "body": "FilePropertiesPanel renders front matter as editable rows over a none/valid/invalid state union and emits changes through one helper." },
+        { "nodeId": "value-editors", "title": "Where values are edited", "body": "Each property delegates to a type-specific editor; the tags editor manages chips plus a draft input, which is the area this PR touches." }
+      ]
+    },
+    {
+      "id": "data-flow",
+      "label": "Data flow graph",
+      "color": "#34895c",
+      "summary": "How tag state flows from saved front matter into the tags input, drives the placeholder, and is committed back to markdown.",
+      "nodes": [
+        {
+          "id": "frontmatter-source",
+          "title": "Front matter source",
+          "kind": "input",
+          "x": -420,
+          "y": -120,
+          "summary": "Saved markdown front matter is parsed into FrontMatterState and passed to the panel.",
+          "details": [
+            "EditorView parses initialMarkdown and stores frontMatterState; the panel receives it as state.",
+            "A tags property arrives as a property with type 'tags' and a string[] value."
+          ],
+          "files": [
+            { "path": "packages/ui/src/editor/EditorView.tsx", "url": "https://github.com/bholmesdev/hubble.md/pull/72/files", "note": "Host that owns and re-syncs front-matter state (context, unchanged)." }
+          ],
+          "links": [{ "label": "Fixes issue #71", "url": "https://github.com/bholmesdev/hubble.md/issues/71" }]
+        },
+        {
+          "id": "tags-values",
+          "title": "TagsValue values[]",
+          "kind": "state",
+          "x": -120,
+          "y": 30,
+          "summary": "TagsValue renders the current tag list as chips and exposes an input for adding more.",
+          "details": [
+            "values comes from property.value for the tags property.",
+            "values.length is the signal the placeholder decision depends on."
+          ],
+          "files": [
+            { "path": "packages/ui/src/editor/FilePropertiesPanel.tsx (TagsValue)", "url": "https://github.com/bholmesdev/hubble.md/pull/72/files#diff-63010c442cf709e64bb649bc9d037732b2d4b1e7a23328fef89ba1be8b8f087c", "note": "TagsValue component renders chips + the add input." }
+          ]
+        },
+        {
+          "id": "placeholder-decision",
+          "title": "Placeholder decision",
+          "kind": "changed",
+          "x": 200,
+          "y": -90,
+          "summary": "The PR makes the input placeholder conditional: \"Empty\" only when there are no tags, otherwise blank.",
+          "details": [
+            "Before: placeholder was always \"Empty\", so it showed even after a tag was added.",
+            "After: placeholder={values.length === 0 ? \"Empty\" : \"\"}.",
+            "This is the single substantive code change in the PR."
+          ],
+          "files": [
+            { "path": "FilePropertiesPanel.tsx:602 (placeholder)", "url": "https://github.com/bholmesdev/hubble.md/pull/72/files#diff-63010c442cf709e64bb649bc9d037732b2d4b1e7a23328fef89ba1be8b8f087cR602", "note": "The one-line conditional placeholder change." }
+          ],
+          "comments": [
+            { "author": "bholmesdev", "body": "PR-level note (not a code-review comment): published the generated walkthrough as a gist/htmlpreview link because GitHub Pages is not enabled for the repo.", "url": "https://github.com/bholmesdev/hubble.md/pull/72#issuecomment" }
+          ],
+          "links": [{ "label": "Open PR #72", "url": "https://github.com/bholmesdev/hubble.md/pull/72" }]
+        },
+        {
+          "id": "commit-back",
+          "title": "Commit back to markdown",
+          "kind": "output",
+          "x": 470,
+          "y": 60,
+          "summary": "Adding a tag flows through onChange and emitProperties, which re-serializes front matter and triggers a debounced save.",
+          "details": [
+            "addDraft() appends parsed tags and calls onChange(values).",
+            "The row forwards onChange into emitProperties, which serializes front matter and the host saves it.",
+            "Note: the PR also touches CI workflows (.github/workflows/pr-walkthrough*.yml) that publish this walkthrough; not part of this data path."
+          ],
+          "files": [
+            { "path": "FilePropertiesPanel.tsx (emitProperties/addDraft)", "url": "https://github.com/bholmesdev/hubble.md/pull/72/files#diff-63010c442cf709e64bb649bc9d037732b2d4b1e7a23328fef89ba1be8b8f087c", "note": "emitProperties + addDraft serialize tag state back (context)." },
+            { "path": ".github/workflows/pr-walkthrough-publish.yml", "url": "https://github.com/bholmesdev/hubble.md/pull/72/files#diff-c4dafb6d1ff05b23fb66495ff81e309c89cc24d4c5e20b7313fa964cbe083699", "note": "Added CI workflow (infra, unrelated to the tag fix)." },
+            { "path": ".github/workflows/pr-walkthrough.yml", "url": "https://github.com/bholmesdev/hubble.md/pull/72/files#diff-b04f5a3f7cd03dc371af4e9e519b34c182d3ada2db0394a51509e3d24c100dea", "note": "Edited CI workflow (infra, unrelated to the tag fix)." }
+          ]
+        }
+      ],
+      "edges": [
+        { "source": "frontmatter-source", "target": "tags-values", "label": "supplies values[]" },
+        { "source": "tags-values", "target": "placeholder-decision", "label": "values.length drives" },
+        { "source": "tags-values", "target": "commit-back", "label": "edits commit via" }
+      ],
+      "tour": [
+        { "nodeId": "frontmatter-source", "title": "Where tag data starts", "body": "Saved front matter is parsed and handed to the panel; a tags property arrives as a string[] of values." },
+        { "nodeId": "tags-values", "title": "The values that matter", "body": "TagsValue renders that list as chips; values.length is the input the placeholder logic reads." },
+        { "nodeId": "placeholder-decision", "title": "The actual fix", "body": "Placeholder is now \"Empty\" only when values.length === 0, so it disappears once a tag exists." },
+        { "nodeId": "commit-back", "title": "Closing the loop", "body": "New tags flow back through emitProperties into serialized front matter and a debounced save." }
+      ]
+    },
+    {
+      "id": "code-dependency",
+      "label": "Code dependency graph",
+      "color": "#2e5d9e",
+      "summary": "Which components depend on which to reach the changed tags input, from the editor host down to the leaf editor.",
+      "nodes": [
+        {
+          "id": "editor-view-dep",
+          "title": "EditorView",
+          "kind": "entry",
+          "x": -420,
+          "y": -90,
+          "summary": "Entry point: renders FilePropertiesPanel and owns the onChange that saves front matter.",
+          "details": [
+            "Imports FilePropertiesPanel and frontMatterStateFromMarkdown.",
+            "Passes state + onChange; not modified by this PR."
+          ],
+          "files": [
+            { "path": "packages/ui/src/editor/EditorView.tsx", "url": "https://github.com/bholmesdev/hubble.md/pull/72/files", "note": "Host (context, unchanged)." }
+          ]
+        },
+        {
+          "id": "panel-dep",
+          "title": "FilePropertiesPanel",
+          "kind": "module",
+          "x": -120,
+          "y": 30,
+          "summary": "Renders property rows and routes each row's value to PropertyValue.",
+          "details": [
+            "PropertyRow wires the type selector, name input, and value editor.",
+            "emitProperties() is the single write path back to the host."
+          ],
+          "files": [
+            { "path": "packages/ui/src/editor/FilePropertiesPanel.tsx", "url": "https://github.com/bholmesdev/hubble.md/pull/72/files#diff-63010c442cf709e64bb649bc9d037732b2d4b1e7a23328fef89ba1be8b8f087c", "note": "Contains the changed component (context)." }
+          ]
+        },
+        {
+          "id": "property-value-dep",
+          "title": "PropertyValue dispatch",
+          "kind": "seam",
+          "x": 190,
+          "y": -90,
+          "summary": "Dispatches by property.type to the correct value editor; the seam between rows and editors.",
+          "details": [
+            "Routes type 'tags' to TagsValue, others to scalar/date/checkbox views.",
+            "Unchanged by this PR but defines how the changed component is reached."
+          ],
+          "files": [
+            { "path": "FilePropertiesPanel.tsx (PropertyValue)", "url": "https://github.com/bholmesdev/hubble.md/pull/72/files#diff-63010c442cf709e64bb649bc9d037732b2d4b1e7a23328fef89ba1be8b8f087c", "note": "Type dispatch (context)." }
+          ]
+        },
+        {
+          "id": "tags-value-dep",
+          "title": "TagsValue (changed)",
+          "kind": "leaf",
+          "x": 470,
+          "y": 60,
+          "summary": "Leaf editor for tags; the only file with a substantive change in this PR.",
+          "details": [
+            "The conditional placeholder lives on the add-tag input here.",
+            "Inspect this node to review the actual fix."
+          ],
+          "files": [
+            { "path": "FilePropertiesPanel.tsx:602 (TagsValue input)", "url": "https://github.com/bholmesdev/hubble.md/pull/72/files#diff-63010c442cf709e64bb649bc9d037732b2d4b1e7a23328fef89ba1be8b8f087cR602", "note": "Changed line." }
+          ]
+        }
+      ],
+      "edges": [
+        { "source": "editor-view-dep", "target": "panel-dep", "label": "renders" },
+        { "source": "panel-dep", "target": "property-value-dep", "label": "delegates to" },
+        { "source": "property-value-dep", "target": "tags-value-dep", "label": "dispatches tags to" }
+      ],
+      "tour": [
+        { "nodeId": "editor-view-dep", "title": "Top of the chain", "body": "EditorView is the entry point that mounts the properties panel and owns the save callback." },
+        { "nodeId": "panel-dep", "title": "Row rendering", "body": "FilePropertiesPanel builds each property row and forwards values to PropertyValue." },
+        { "nodeId": "property-value-dep", "title": "The dispatch seam", "body": "PropertyValue picks the editor by type; this is how execution reaches the tags editor." },
+        { "nodeId": "tags-value-dep", "title": "The changed leaf", "body": "TagsValue is the only substantively changed file. Review the conditional placeholder here." }
+      ]
+    },
+    {
+      "id": "user-action",
+      "label": "User action graph",
+      "color": "#754dac",
+      "summary": "What the user does with a tags property and how the placeholder responds before and after the fix.",
+      "nodes": [
+        {
+          "id": "surface",
+          "title": "Tags property input",
+          "kind": "surface",
+          "x": -380,
+          "y": -90,
+          "summary": "In the file properties panel, a tags property shows existing tags as chips plus an input to add more.",
+          "details": [
+            "An empty tags property shows the ghost \"Empty\" placeholder in the input.",
+            "This is the surface where the bug was visible."
+          ],
+          "files": [
+            { "path": "FilePropertiesPanel.tsx (TagsValue)", "url": "https://github.com/bholmesdev/hubble.md/pull/72/files#diff-63010c442cf709e64bb649bc9d037732b2d4b1e7a23328fef89ba1be8b8f087c", "note": "Tags input surface." }
+          ]
+        },
+        {
+          "id": "action",
+          "title": "Add the first tag",
+          "kind": "action",
+          "x": -40,
+          "y": 40,
+          "summary": "The user types a tag and presses Enter or comma (or blurs), creating a chip.",
+          "details": [
+            "addDraft() splits the draft, appends trimmed tags, and clears the input.",
+            "After this, at least one tag exists."
+          ],
+          "files": [
+            { "path": "FilePropertiesPanel.tsx (addDraft / onKeyDown)", "url": "https://github.com/bholmesdev/hubble.md/pull/72/files#diff-63010c442cf709e64bb649bc9d037732b2d4b1e7a23328fef89ba1be8b8f087c", "note": "Tag-add handlers." }
+          ]
+        },
+        {
+          "id": "feedback",
+          "title": "Placeholder responds",
+          "kind": "feedback",
+          "x": 320,
+          "y": -70,
+          "summary": "With at least one tag, the placeholder is hidden; with no tags, \"Empty\" still shows.",
+          "details": [
+            "Before the PR: \"Empty\" lingered next to existing chips, which looked wrong (issue #71).",
+            "After the PR: placeholder is blank once a tag is present and returns to \"Empty\" when all tags are removed."
+          ],
+          "files": [
+            { "path": "FilePropertiesPanel.tsx:602 (placeholder)", "url": "https://github.com/bholmesdev/hubble.md/pull/72/files#diff-63010c442cf709e64bb649bc9d037732b2d4b1e7a23328fef89ba1be8b8f087cR602", "note": "Conditional placeholder." }
+          ],
+          "links": [{ "label": "Issue #71 (with screenshot)", "url": "https://github.com/bholmesdev/hubble.md/issues/71" }]
+        }
+      ],
+      "edges": [
+        { "source": "surface", "target": "action", "label": "user types tag" },
+        { "source": "action", "target": "feedback", "label": "input updates to" }
+      ],
+      "tour": [
+        { "nodeId": "surface", "title": "Where the user starts", "body": "A tags property in the properties panel shows chips plus an add-tag input that reads \"Empty\" when no tags exist." },
+        { "nodeId": "action", "title": "The triggering action", "body": "The user adds the first tag via Enter, comma, or blur, so the tag list is no longer empty." },
+        { "nodeId": "feedback", "title": "The corrected feedback", "body": "The placeholder now hides while tags exist and only reappears when the property is emptied again." }
+      ]
+    }
+  ]
+}
