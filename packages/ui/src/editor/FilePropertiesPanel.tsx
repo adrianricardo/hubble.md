@@ -599,7 +599,7 @@ function TagsValue({
 			))}
 			<input
 				value={draft}
-				placeholder="Empty"
+				placeholder={values.length === 0 ? "Empty" : ""}
 				className="min-w-20 flex-1 bg-transparent text-[12px] outline-none"
 				onChange={(event) => setDraft(event.target.value)}
 				onBlur={addDraft}
