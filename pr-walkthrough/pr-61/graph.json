@@ -4,84 +4,71 @@
     "prUrl": "https://github.com/bholmesdev/hubble.md/pull/61",
     "baseRef": "main",
     "headRef": "codex/issue-31-stronger-markdown-crawling",
-    "summary": "Docs-only PR (3 new files, +283/-0). It specs a redesign of Hubble Desktop markdown crawling so the editor shell stays usable while the sidebar builds an ignore-aware, incrementally-updated markdown index. No code changes yet; the views map the existing desktop file subsystem and the behavior/architecture the specs propose."
+    "summary": "Hubble Desktop moves markdown discovery into a main-process workspace file index so opening a large folder keeps the editor shell usable while the sidebar indexes incrementally, respecting ignore files. Use the four views to get oriented, then follow data, code, and user-action flow."
   },
   "graphs": [
     {
       "id": "system-overview",
       "label": "System overview",
       "color": "#c0872a",
-      "summary": "How Hubble Desktop's file/sidebar subsystem is wired today: disk access lives in Electron main, reaches the renderer over a typed bridge, lands in a small store, and renders in the sidebar.",
+      "summary": "Stable architecture of the Hubble Desktop workspace file subsystem: where filesystem access lives, how the renderer reaches it, and where workspace state and the sidebar surface are owned.",
       "nodes": [
         {
-          "id": "main-process",
-          "title": "Electron main process",
-          "kind": "overview card",
-          "x": -320,
-          "y": -170,
+          "id": "main-fs",
+          "title": "Electron main: filesystem owner",
+          "kind": "subsystem",
+          "x": -210,
+          "y": -135,
           "width": 360,
-          "height": 220,
-          "summaryLines": 7,
-          "summary": "The only layer that touches disk. apps/desktop/electron/main.ts holds a path-grant allowlist, registers IPC handlers (desktop:list-directory recursively crawls markdown, desktop:watch-path runs chokidar), parses layered .gitignore/.ignore via the `ignore` package, and always hard-ignores .git, dist, and node_modules.",
-          "details": [
-            "collectMarkdownFiles() walks directories depth-first, applies inherited ignore rules per directory, and emits FileEntry { path, modified_at } for .md/.markdown/.mdown only.",
-            "A chokidar watcher per watchId streams add/change/unlink/addDir/unlinkDir events; editing a .gitignore/.ignore replaces the watcher so ignore scope stays current.",
-            "Grants (granted files + roots) gate every path so the renderer can only reach explicitly allowed locations."
-          ],
+          "height": 190,
+          "summaryLines": 6,
+          "summary": "The Electron main process is the only code with direct filesystem access. It validates granted roots, lists directories, reads and writes files, and runs chokidar watchers. Renderer code never touches the disk directly, so all discovery and watching is centralized here behind grant checks.",
+          "details": ["Main owns grants, directory listing, file IO, and watchers.", "ADR-0002 keeps filesystem access in Electron main behind a typed bridge."],
           "files": [],
           "comments": [],
           "links": []
         },
         {
-          "id": "preload-bridge",
-          "title": "Preload bridge (desktopApi)",
-          "kind": "overview card",
-          "x": 320,
-          "y": -170,
+          "id": "bridge",
+          "title": "Typed desktop bridge",
+          "kind": "subsystem",
+          "x": 210,
+          "y": -135,
           "width": 360,
-          "height": 220,
-          "summaryLines": 7,
-          "summary": "apps/desktop/electron/preload.ts exposes a context-isolated, typed DesktopApi over ipcRenderer. The renderer never touches Node fs directly; listDirectory, readFileText, the pickers, and watchPath are all bridge calls. watchPath allocates a numeric watchId and turns main-process file events into a renderer subscription with an unsubscribe handle.",
-          "details": [
-            "The DesktopApi surface is typed in apps/desktop/src/desktopApi/types.ts, keeping renderer and main in sync.",
-            "watchPath(path, { recursive }, callback) returns an Unsubscribe; recursive watches a folder, non-recursive watches a single file."
-          ],
+          "height": 190,
+          "summaryLines": 6,
+          "summary": "A preload script exposes a single typed desktopApi object over contextBridge, and a shared types module defines its contract. The renderer calls main through request/response invokes and subscribes to push channels for streaming updates, giving every renderer feature one strongly-typed surface to the OS.",
+          "details": ["Renderer-to-main calls go through invoke; live updates use subscribe channels.", "One typed contract is shared by preload and renderer."],
           "files": [],
           "comments": [],
           "links": []
         },
         {
-          "id": "renderer-store",
-          "title": "Renderer store",
-          "kind": "overview card",
-          "x": -320,
-          "y": 175,
+          "id": "store",
+          "title": "Renderer workspace store",
+          "kind": "subsystem",
+          "x": -210,
+          "y": 140,
           "width": 360,
-          "height": 220,
-          "summaryLines": 7,
-          "summary": "A @simplestack/store appStore split into workspaceStore (workspacePath, files, recentWorkspaces, lastOpenedPaths, sortMode) and viewerStore (currentPath, content, external-change status). apps/desktop/src/store/actions.ts owns refreshFiles, openWorkspace, loadPath, and file mutations; persistence.ts saves everything except the file list, so the list is rebuilt each launch.",
-          "details": [
-            "refreshFiles(path) calls listDirectory and replaces workspace.files, guarding against a stale workspacePath.",
-            "isInWorkspace / lastOpenedPaths track which file to restore per workspace; touchFile bumps mtime on local saves."
-          ],
+          "height": 190,
+          "summaryLines": 6,
+          "summary": "The renderer keeps workspace and document state in a small store updated through reducer-style actions. It tracks the open workspace path, the visible file list, and the active document separately. Persistence saves the workspace path and last-opened files, but treats the file list as rebuildable rather than durable state.",
+          "details": ["Actions mutate workspace and document state with workspace-path guards.", "ADR-0001 treats workspace loading as an atomic snapshot; the file list is not persisted."],
           "files": [],
           "comments": [],
           "links": []
         },
         {
-          "id": "sidebar-watchers",
-          "title": "Sidebar + App watchers",
-          "kind": "overview card",
-          "x": 320,
-          "y": 175,
+          "id": "sidebar",
+          "title": "Sidebar navigation surface",
+          "kind": "subsystem",
+          "x": 210,
+          "y": 140,
           "width": 360,
-          "height": 220,
-          "summaryLines": 7,
-          "summary": "apps/desktop/src/components/Sidebar.tsx adapts workspace.files into the shared @hubble.md/ui sidebar (relative display paths, sort modes, select→loadPath, rename/delete). apps/desktop/src/App.tsx runs two watcher effects: a recursive workspace watcher and a single-file active-document watcher that feeds external-change conflict handling.",
-          "details": [
-            "The workspace watcher effect currently reacts to any change by re-listing the whole folder.",
-            "The active-file watcher re-reads the open document and classifies match/reload/conflict against the editor baseline."
-          ],
+          "height": 190,
+          "summaryLines": 6,
+          "summary": "The desktop Sidebar adapts workspace store state into the shared UI sidebar component. It renders the markdown file tree plus empty, loading, and error affordances. Navigation in the sidebar is separate from document loading, so the editor can show a file that is not currently selected in the tree.",
+          "details": ["Sidebar maps workspace files into the shared @hubble.md/ui sidebar.", "Document loading is independent of which sidebar row is selected."],
           "files": [],
           "comments": [],
           "links": []
@@ -89,159 +76,148 @@
       ],
       "edges": [],
       "tour": [
-        { "nodeId": "main-process", "title": "Start where disk access lives", "body": "Electron main is the single owner of filesystem access: grants, recursive markdown crawling, ignore parsing, and chokidar watchers all live here. Everything else is downstream of this layer." },
-        { "nodeId": "preload-bridge", "title": "Cross the typed bridge", "body": "The renderer reaches main only through the context-isolated desktopApi. Knowing this bridge exists explains why file reads, lists, and watches are all async IPC calls rather than direct fs access." },
-        { "nodeId": "renderer-store", "title": "Land in the store", "body": "Bridge results populate a small @simplestack store split into workspace and document state. Note the file list is intentionally not persisted, so it is rebuilt on each launch." },
-        { "nodeId": "sidebar-watchers", "title": "Render and watch", "body": "The sidebar renders workspace.files through the shared UI, while App.tsx wires the folder and active-file watchers. This is the surface a reviewer will see behavior changes in." }
+        {"nodeId": "main-fs", "title": "Where files live", "body": "Start at the Electron main process: it is the single owner of filesystem access, so all discovery and watching is centralized behind grant checks."},
+        {"nodeId": "bridge", "title": "How the renderer reaches files", "body": "The renderer never touches disk directly. It goes through a typed preload bridge using request/response invokes and subscription channels."},
+        {"nodeId": "store", "title": "Where workspace state lives", "body": "Renderer state for the open workspace and active document is held in a small store, mutated through reducer-style actions, with the file list treated as rebuildable."},
+        {"nodeId": "sidebar", "title": "What the user sees", "body": "The sidebar surface adapts store state into the shared sidebar component and keeps file navigation separate from document loading."}
       ]
     },
     {
       "id": "data-flow",
       "label": "Data flow graph",
       "color": "#34895c",
-      "summary": "How markdown file state moves from intent through crawling and watcher deltas into renderer state and the sidebar. The specs propose owning incremental index state instead of re-listing on every event.",
+      "summary": "How markdown file state moves: spec intent shapes a main-process index that crawls and watches the folder, streams typed events over IPC, reduces into renderer state, and renders the sidebar.",
       "nodes": [
         {
           "id": "intent",
-          "title": "Indexing intent (specs)",
-          "kind": "input",
-          "x": -420,
-          "y": -20,
-          "summary": "The specs define the target: keep the shell usable, show a sidebar indexing state, and update incrementally while respecting ignore files.",
-          "details": [
-            "PRODUCT.md sets the user-visible contract; TECH.md sets the module plan; ADR-0008 frames the sidebar index as ephemeral navigation state, not an access boundary.",
-            "No existing PR review comments were found at the head commit."
-          ],
+          "title": "Spec intent",
+          "kind": "intent",
+          "x": -520,
+          "y": -40,
+          "summary": "Keep the shell usable; index the sidebar incrementally and ignore-aware.",
+          "details": ["PRODUCT.md: open folder enters immediately, sidebar shows an indexing state, ignored files stay openable.", "TECH.md: move incremental crawl ownership into a main-process indexer instead of full refreshes.", "No human or agent review comments yet; only an automated walkthrough-preview bot comment exists on the PR."],
           "files": [
-            { "path": "specs/gh-31/PRODUCT.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-26c77b0a60daf64bd452c2b157dfb8d5b253ffb01ba778df0613e04a5e69795f" },
-            { "path": "specs/gh-31/TECH.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-4b79c6d2de308f9cb2f1cb093f69b3090f2f78ec8e651e947e612a7783173acd" }
+            {"path": "specs/gh-31/PRODUCT.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-26c77b0a60daf64bd452c2b157dfb8d5b253ffb01ba778df0613e04a5e69795f"},
+            {"path": "specs/gh-31/TECH.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-4b79c6d2de308f9cb2f1cb093f69b3090f2f78ec8e651e947e612a7783173acd"},
+            {"path": "docs/adr/0008-desktop-sidebar-index-is-ephemeral-navigation-state.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-244f0538177063b1d3622cab5d1efec1538d53099c458f1dfe1bfded097c85b1"}
           ],
           "comments": [],
-          "links": [ { "label": "PR #61", "url": "https://github.com/bholmesdev/hubble.md/pull/61" } ]
+          "links": [{"label": "PR #61", "url": "https://github.com/bholmesdev/hubble.md/pull/61"}]
         },
         {
-          "id": "crawl",
-          "title": "Initial crawl + ignore rules",
-          "kind": "main-process",
-          "x": -130,
-          "y": -150,
-          "summary": "A recursive walk produces the markdown FileEntry[] for the open folder, filtering by layered ignore rules and hard-ignored dirs.",
-          "details": [
-            "Today collectMarkdownFiles() in main.ts emits the snapshot via desktop:list-directory.",
-            "TECH.md proposes moving this into fileIndex.ts + ignoreRules.ts that own crawl state and emit an initial 'ready' snapshot.",
-            "Crawl includes .md/.markdown/.mdown and always excludes .git, dist, node_modules."
-          ],
+          "id": "index",
+          "title": "Workspace file index",
+          "kind": "producer",
+          "x": -240,
+          "y": 40,
+          "summary": "Main-process index crawls markdown, watches, and emits typed deltas.",
+          "details": ["createWorkspaceFileIndex performs an ignore-aware crawl, then watches with chokidar.", "Emits indexing -> ready(snapshot) -> update(upsert/remove) and error events, with debounced batching (~100ms).", "Ignore-config edits rebuild rules and recrawl; hard-ignores .git, dist, node_modules."],
           "files": [
-            { "path": "specs/gh-31/TECH.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-4b79c6d2de308f9cb2f1cb093f69b3090f2f78ec8e651e947e612a7783173acd" }
+            {"path": "apps/desktop/electron/fileIndex.ts", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-6ca9e7b13464bcb0b8be41769b07726db9fb0d8772060d1983cf35a7d9c9aebf"},
+            {"path": "apps/desktop/electron/fileRules.ts", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-0eec665abd8ce5bb1e3cb2c4fcb4cd5c869bf1b61bffab9b9bd0dbaac8c5ab7b"}
           ],
           "comments": [],
           "links": []
         },
         {
-          "id": "watcher",
-          "title": "Chokidar watcher deltas",
-          "kind": "main-process",
-          "x": -130,
-          "y": 110,
-          "summary": "The folder watcher emits add/change/unlink/dir events; ignore-config edits rebuild rules and replace the watcher.",
-          "details": [
-            "desktop:watch-path filters to markdown and ignore-config files, then notifies the renderer.",
-            "TECH.md proposes batching these into typed index deltas (upsert/remove) with a short debounce instead of a full re-list."
-          ],
+          "id": "ipc",
+          "title": "IPC event stream",
+          "kind": "transport",
+          "x": 60,
+          "y": -40,
+          "summary": "desktop:watch-workspace-files streams index events to the renderer.",
+          "details": ["main.ts registers watch/unwatch handlers and forwards each event on a per-watchId channel.", "preload.watchWorkspaceFiles subscribes and returns an unsubscribe that also closes the main-side index.", "Per-watchId routing guards against stale subscriptions updating a new workspace."],
           "files": [
-            { "path": "specs/gh-31/TECH.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-4b79c6d2de308f9cb2f1cb093f69b3090f2f78ec8e651e947e612a7783173acd" }
+            {"path": "apps/desktop/electron/main.ts", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-24986faf95d15dba70ae9a1bd169d0cf9f503f399de4c2c75deac2ea4c09a06a"},
+            {"path": "apps/desktop/electron/preload.ts", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-bda98b937704b4997d3c073e79aac34879b1501569b5eb1c42a48945181bb171"},
+            {"path": "apps/desktop/src/desktopApi/types.ts", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-5d12dd79c5b7bbde38c2466eab476d341698ee8df3af84ac5e4f4269f3ef50cb"}
           ],
           "comments": [],
           "links": []
         },
         {
           "id": "store",
-          "title": "workspace.files state",
-          "kind": "state owner",
-          "x": 190,
-          "y": -20,
-          "summary": "The renderer store holds the file list the sidebar renders. Today every watcher event triggers refreshFiles(); the spec replaces that with delta application.",
-          "details": [
-            "refreshFiles() sets workspace.files (guarded by workspacePath); touchFile() bumps mtime on save.",
-            "TECH.md adds a fileIndexStatus (idle/indexing/ready/error) and upsert/remove reducers so live edits avoid full re-crawls."
-          ],
+          "title": "Renderer state reducer",
+          "kind": "state",
+          "x": 360,
+          "y": 40,
+          "summary": "applyWorkspaceFileIndexEvent folds events into files + fileIndexStatus.",
+          "details": ["indexing sets status; ready replaces files; update applies upsert/remove into a path-keyed map.", "Every branch bails out unless event workspacePath still matches state.workspacePath (latest-wins guard).", "Index removals never close the editor or clear last-opened paths."],
           "files": [
-            { "path": "specs/gh-31/TECH.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-4b79c6d2de308f9cb2f1cb093f69b3090f2f78ec8e651e947e612a7783173acd" }
+            {"path": "apps/desktop/src/store/actions.ts", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-a2a74a810ff712fda4ad421e0d3c8f752ce18986899be40a72abd06facb18b55"},
+            {"path": "apps/desktop/src/store/persistence.ts", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-1ad6d772dd87a419a95264f4c56e4839e97cd93c266e9fc88e728867b0651e9c"}
           ],
           "comments": [],
           "links": []
         },
         {
-          "id": "sidebar-render",
+          "id": "render",
           "title": "Sidebar render",
           "kind": "output",
-          "x": 470,
-          "y": -20,
-          "summary": "The sidebar renders the current file list. The spec adds a dedicated indexing state and allows the open file to be absent from the list.",
-          "details": [
-            "Sidebar.tsx maps workspace.files into the shared @hubble.md/ui sidebar with relative paths and sort modes.",
-            "PRODUCT.md requires an indexing/loading state during the first crawl and a complete tree afterward."
-          ],
+          "x": 640,
+          "y": -40,
+          "summary": "Sidebar shows indexing / error / file tree from fileIndexStatus.",
+          "details": ["While indexing, the sidebar shows a compact status instead of a partial tree.", "On ready, it renders the markdown-only tree; on error it shows a recoverable message.", "currentPath may be absent from files, so an explicitly opened ignored file keeps the editor open."],
           "files": [
-            { "path": "specs/gh-31/PRODUCT.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-26c77b0a60daf64bd452c2b157dfb8d5b253ffb01ba778df0613e04a5e69795f" }
+            {"path": "apps/desktop/src/components/Sidebar.tsx", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-a9034d5bc3d12dd2925117e42e100b888058594e30dd773eb5db899d5a039d48"}
           ],
           "comments": [],
           "links": []
         }
       ],
       "edges": [
-        { "source": "intent", "target": "crawl", "label": "drives initial crawl" },
-        { "source": "intent", "target": "watcher", "label": "drives live updates" },
-        { "source": "crawl", "target": "store", "label": "snapshot populates" },
-        { "source": "watcher", "target": "store", "label": "deltas update" },
-        { "source": "store", "target": "sidebar-render", "label": "renders from" }
+        {"source": "intent", "target": "index", "label": "specifies crawl"},
+        {"source": "index", "target": "ipc", "label": "emits events"},
+        {"source": "ipc", "target": "store", "label": "streams deltas"},
+        {"source": "store", "target": "render", "label": "drives status"}
       ],
       "tour": [
-        { "nodeId": "intent", "title": "Start with intent", "body": "Begin with what the specs are trying to achieve: a usable shell plus an ignore-aware, incremental sidebar index. This is the source of every flow below." },
-        { "nodeId": "crawl", "title": "Initial crawl", "body": "The first data to move is the initial markdown snapshot from a recursive, ignore-filtered crawl. The spec relocates this into a dedicated indexer module." },
-        { "nodeId": "watcher", "title": "Live deltas", "body": "After the snapshot, the chokidar watcher produces incremental file events. The spec batches these into typed upsert/remove deltas instead of full re-lists." },
-        { "nodeId": "store", "title": "Into renderer state", "body": "Both the snapshot and deltas land in workspace.files. The key spec change is applying deltas and an index status here rather than calling refreshFiles() on every event." },
-        { "nodeId": "sidebar-render", "title": "Out to the sidebar", "body": "Finally the store renders into the sidebar, which gains an explicit indexing state and tolerates the open file being absent from the list." }
+        {"nodeId": "intent", "title": "Start with intent", "body": "The specs and ADR-0008 define the goal: enter the workspace immediately and index the sidebar incrementally while respecting ignore files."},
+        {"nodeId": "index", "title": "Index produces data", "body": "The main-process index crawls markdown once, then watches and emits typed indexing/ready/update/error deltas instead of full refreshes."},
+        {"nodeId": "ipc", "title": "Cross the process boundary", "body": "Each event is forwarded over a per-watchId IPC channel and delivered through the preload subscription, which can also tear the index down."},
+        {"nodeId": "store", "title": "Reduce into state", "body": "applyWorkspaceFileIndexEvent folds events into the file list and fileIndexStatus, guarded so stale events cannot mutate a newly opened workspace."},
+        {"nodeId": "render", "title": "Render the result", "body": "The sidebar reads fileIndexStatus to show indexing, error, or the final markdown tree, keeping the editor usable throughout."}
       ]
     },
     {
       "id": "code-dependency",
       "label": "Code dependency graph",
       "color": "#2e5d9e",
-      "summary": "Which modules the specs touch and how they depend on each other: specs guide renderer entry points, which depend on the store and the typed bridge, which invokes the main-process crawler that the spec splits into an indexer.",
+      "summary": "Which changed modules depend on each other: renderer and main entry points at the top, the shared event-type seam in the middle, and ignore/markdown rules as the leaf dependency.",
       "nodes": [
         {
-          "id": "specs",
-          "title": "specs/gh-31 + ADR-0008",
-          "kind": "spec entry",
-          "x": -430,
-          "y": 0,
-          "summary": "The only files actually added by this PR. They define intent (PRODUCT), the module plan (TECH), and the architectural decision (ADR).",
-          "details": [
-            "PRODUCT.md: 28 numbered behaviors + a UX validation script.",
-            "TECH.md: proposed fileIndex.ts/ignoreRules.ts modules and renderer/IPC changes.",
-            "ADR-0008: sidebar index is ephemeral navigation state, refining ADR-0001."
-          ],
-          "files": [
-            { "path": "specs/gh-31/PRODUCT.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-26c77b0a60daf64bd452c2b157dfb8d5b253ffb01ba778df0613e04a5e69795f" },
-            { "path": "specs/gh-31/TECH.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-4b79c6d2de308f9cb2f1cb093f69b3090f2f78ec8e651e947e612a7783173acd" },
-            { "path": "docs/adr/0008-desktop-sidebar-index-is-ephemeral-navigation-state.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-244f0538177063b1d3622cab5d1efec1538d53099c458f1dfe1bfded097c85b1" }
-          ],
+          "id": "app",
+          "title": "App.tsx (renderer entry)",
+          "kind": "entry point",
+          "x": -470,
+          "y": -120,
+          "summary": "useEffect subscribes watchWorkspaceFiles and forwards events to the reducer.",
+          "details": ["Replaces the old refreshFiles-on-every-watcher-event effect with a workspace-index subscription.", "Active-file watcher (watchPath) for external-change conflicts is kept separate."],
+          "files": [{"path": "apps/desktop/src/App.tsx", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-29b177c19ce1ebbf5dcb37ef36de3f2557023d5bcd803c22b2da9c29a149c47e"}],
           "comments": [],
-          "links": [ { "label": "PR #61", "url": "https://github.com/bholmesdev/hubble.md/pull/61" } ]
+          "links": []
         },
         {
-          "id": "app",
-          "title": "App.tsx watchers",
+          "id": "mainproc",
+          "title": "main.ts (IPC entry)",
           "kind": "entry point",
-          "x": -150,
-          "y": -130,
-          "summary": "Renderer entry that wires workspace + active-file watchers and startup path restoration. Spec target: subscribe to index updates instead of re-listing.",
-          "details": [
-            "Today the workspace watcher effect calls refreshFiles(workspacePath) on every change.",
-            "TECH.md: subscribe to a workspace-index subscription and keep startup restoration independent of index readiness."
-          ],
-          "files": [],
+          "x": -470,
+          "y": 130,
+          "summary": "Registers watch/unwatch IPC and constructs an index per watchId.",
+          "details": ["Removed the inline ignore/crawl helpers from main and delegated to fileIndex/fileRules.", "Wires HUBBLE_DESKTOP_DEBUG_WATCHERS diagnostics into onDebug."],
+          "files": [{"path": "apps/desktop/electron/main.ts", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-24986faf95d15dba70ae9a1bd169d0cf9f503f399de4c2c75deac2ea4c09a06a"}],
+          "comments": [],
+          "links": []
+        },
+        {
+          "id": "types",
+          "title": "desktopApi/types.ts",
+          "kind": "contract",
+          "x": -110,
+          "y": 0,
+          "summary": "Defines WorkspaceFileIndexEvent and watchWorkspaceFiles on DesktopApi.",
+          "details": ["Single shared event union imported by preload, renderer actions, and main.", "FileEntry stays unchanged; the new subscription shape is additive."],
+          "files": [{"path": "apps/desktop/src/desktopApi/types.ts", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-5d12dd79c5b7bbde38c2466eab476d341698ee8df3af84ac5e4f4269f3ef50cb"}],
           "comments": [],
           "links": []
         },
@@ -249,186 +225,156 @@
           "id": "actions",
           "title": "store/actions.ts",
           "kind": "module",
-          "x": -150,
-          "y": 130,
-          "summary": "Owns refreshFiles, openWorkspace, loadPath and file mutations. Spec target: add delta reducers and decouple loadPath from indexing.",
-          "details": [
-            "openWorkspace currently awaits refreshFiles before loading the remembered file.",
-            "TECH.md: return without awaiting the crawl, apply upsert/remove deltas, keep full refresh only as a fallback."
+          "x": 210,
+          "y": -140,
+          "summary": "Hosts applyWorkspaceFileIndexEvent reducer and openWorkspace decoupling.",
+          "details": ["openWorkspace marks indexing and returns without awaiting the crawl, so loadPath can run.", "Covered by store reducer tests for snapshot/upsert/remove and guard behavior."],
+          "files": [
+            {"path": "apps/desktop/src/store/actions.ts", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-a2a74a810ff712fda4ad421e0d3c8f752ce18986899be40a72abd06facb18b55"},
+            {"path": "apps/desktop/src/store/actions.test.ts", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-0125034a7d6d625d2e6a2fc442193d641990fb63ecafea5c395d10b82c7640fb"}
           ],
-          "files": [],
           "comments": [],
           "links": []
         },
         {
-          "id": "bridge",
-          "title": "preload + desktopApi types",
-          "kind": "ipc seam",
-          "x": 160,
-          "y": 0,
-          "summary": "The typed IPC contract between renderer and main. Spec target: add a watchWorkspaceFiles-style index subscription.",
-          "details": [
-            "types.ts defines DesktopApi; preload.ts implements watchPath/listDirectory over ipcRenderer.",
-            "TECH.md: add a workspace-index subscription that sends { status, snapshot?, upsert?, remove? } guarded by watch id."
-          ],
-          "files": [],
-          "comments": [],
-          "links": []
-        },
-        {
-          "id": "main",
-          "title": "electron/main.ts",
+          "id": "fileindex",
+          "title": "electron/fileIndex.ts",
           "kind": "module",
-          "x": 450,
-          "y": -120,
-          "summary": "Deepest dependency: IPC registration, recursive crawl, ignore parsing, chokidar watching. Spec target: extract an indexer + ignore-rules module.",
-          "details": [
-            "Holds collectMarkdownFiles, collectWorkspaceIgnoreRules, isIgnoredByRules and the desktop:watch-path watcher.",
-            "TECH.md: move discovery/watching into fileIndex.ts, ignore logic into ignoreRules.ts, keep grants + IPC in main."
+          "x": 230,
+          "y": 120,
+          "summary": "Index implementation: crawl, watch, batch deltas, recreate on ignore edits.",
+          "details": ["Depends on fileRules for crawl, ignore matching, markdown and ignore-config detection.", "Covered by fileIndex.test.ts using temp directories."],
+          "files": [
+            {"path": "apps/desktop/electron/fileIndex.ts", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-6ca9e7b13464bcb0b8be41769b07726db9fb0d8772060d1983cf35a7d9c9aebf"},
+            {"path": "apps/desktop/electron/fileIndex.test.ts", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-08a40c13fae441a5a5fd06396b52ff885bd20ecedc6c320e578cffdfbf29bc89"}
           ],
-          "files": [],
           "comments": [],
           "links": []
         },
         {
-          "id": "sidebar",
-          "title": "components/Sidebar.tsx",
+          "id": "filerules",
+          "title": "electron/fileRules.ts",
           "kind": "leaf",
-          "x": 450,
-          "y": 140,
-          "summary": "Leaf view that renders workspace.files via the shared UI. Spec target: render an indexing state and allow currentPath to be absent.",
-          "details": [
-            "Adapts files into @hubble.md/ui Sidebar and calls loadPath on select.",
-            "PRODUCT/TECH: show a compact indexing affordance and no selected row when the open file is not indexed."
+          "x": 560,
+          "y": 120,
+          "summary": "Leaf: layered .gitignore/.ignore rules, hard ignores, markdown matching.",
+          "details": ["Wraps the `ignore` package with Git-like layered semantics and directory-only handling.", "Covered by fileRules.test.ts for nested rules, negations, and hard ignores."],
+          "files": [
+            {"path": "apps/desktop/electron/fileRules.ts", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-0eec665abd8ce5bb1e3cb2c4fcb4cd5c869bf1b61bffab9b9bd0dbaac8c5ab7b"},
+            {"path": "apps/desktop/electron/fileRules.test.ts", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-77d97b210eeacae02c7f782a921d39f16547f5e43944f3933c86344e5d845061"}
           ],
-          "files": [],
           "comments": [],
           "links": []
         }
       ],
       "edges": [
-        { "source": "specs", "target": "app", "label": "guides changes to" },
-        { "source": "app", "target": "actions", "label": "depends on" },
-        { "source": "app", "target": "bridge", "label": "subscribes via" },
-        { "source": "actions", "target": "bridge", "label": "calls" },
-        { "source": "bridge", "target": "main", "label": "invokes IPC in" },
-        { "source": "app", "target": "sidebar", "label": "renders" },
-        { "source": "sidebar", "target": "actions", "label": "calls" }
+        {"source": "app", "target": "actions", "label": "calls reducer"},
+        {"source": "app", "target": "types", "label": "imports event type"},
+        {"source": "actions", "target": "types", "label": "imports event type"},
+        {"source": "mainproc", "target": "types", "label": "emits event type"},
+        {"source": "mainproc", "target": "fileindex", "label": "creates index"},
+        {"source": "fileindex", "target": "filerules", "label": "depends on"}
       ],
       "tour": [
-        { "nodeId": "specs", "title": "Start at the only changed files", "body": "This PR adds just three docs. They are the entry point for understanding which code seams the change will eventually touch." },
-        { "nodeId": "app", "title": "Renderer entry point", "body": "App.tsx is the highest-level seam: it owns the watcher effects and startup restoration the spec wants to rewire away from full re-lists." },
-        { "nodeId": "actions", "title": "Store actions", "body": "App depends on actions.ts for refreshFiles/openWorkspace/loadPath. The spec adds delta reducers here and decouples document loading from indexing." },
-        { "nodeId": "bridge", "title": "The IPC seam", "body": "Both App and actions depend on the typed desktopApi bridge. A new index-subscription contract is the main interface the spec introduces." },
-        { "nodeId": "main", "title": "Deepest dependency", "body": "The bridge invokes main.ts, the only disk owner. The spec extracts its crawl/ignore logic into fileIndex.ts and ignoreRules.ts." },
-        { "nodeId": "sidebar", "title": "Leaf view", "body": "Sidebar.tsx is the leaf: it consumes store state and calls actions. It gains the indexing state and absent-current-path tolerance." }
+        {"nodeId": "app", "title": "Renderer entry point", "body": "App.tsx is where the renderer subscribes to the workspace index and forwards events; it is the top of the renderer dependency chain."},
+        {"nodeId": "mainproc", "title": "Main entry point", "body": "main.ts is the other entry point: it owns the IPC handlers and constructs one index per watchId, delegating crawl logic downward."},
+        {"nodeId": "fileindex", "title": "Index seam", "body": "fileIndex.ts owns crawl-plus-watch behavior and is the major seam between IPC plumbing and the ignore rules it relies on."},
+        {"nodeId": "filerules", "title": "Leaf dependency", "body": "fileRules.ts is the leaf: pure ignore and markdown logic with no Electron dependency, which is why it is unit-testable on its own."},
+        {"nodeId": "types", "title": "Shared contract", "body": "types.ts defines the WorkspaceFileIndexEvent union that both entry points and the reducer depend on, keeping the boundary typed."},
+        {"nodeId": "actions", "title": "Renderer reducer", "body": "actions.ts consumes that contract to fold events into store state and to decouple opening a workspace from indexing it."}
       ]
     },
     {
       "id": "user-action",
       "label": "User action graph",
       "color": "#754dac",
-      "summary": "What the user does when opening a large folder and how the specced behavior responds: the shell stays usable, the sidebar shows an indexing state, files open during indexing, and the list updates incrementally.",
+      "summary": "What the user does and how it flows: open a folder, get an immediately usable shell, watch the sidebar move from indexing to a ready tree, then see live incremental updates.",
       "nodes": [
         {
-          "id": "open-folder",
+          "id": "open",
           "title": "Open a folder",
           "kind": "user action",
-          "x": -420,
-          "y": -10,
-          "summary": "The user opens a Workspace Folder or Plain Folder (picker, menu, or launch path).",
-          "details": [
-            "openWorkspace sets workspacePath and clears files; PRODUCT behavior 1 requires entering the workspace immediately." ,
-            "Folder open is local-first; no Workspace config or Cloud Sync is required (PRODUCT 26)."
-          ],
+          "x": -520,
+          "y": -20,
+          "summary": "User picks a Workspace or Plain Folder via Open Folder or the picker.",
+          "details": ["openWorkspace sets workspacePath, clears files, marks fileIndexStatus indexing, and returns.", "The sidebar 'Open folder' button and CmdOrCtrl+Shift+N trigger the same path."],
           "files": [
-            { "path": "specs/gh-31/PRODUCT.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-26c77b0a60daf64bd452c2b157dfb8d5b253ffb01ba778df0613e04a5e69795f" }
+            {"path": "apps/desktop/src/store/actions.ts", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-a2a74a810ff712fda4ad421e0d3c8f752ce18986899be40a72abd06facb18b55"},
+            {"path": "apps/desktop/src/components/Sidebar.tsx", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-a9034d5bc3d12dd2925117e42e100b888058594e30dd773eb5db899d5a039d48"}
           ],
           "comments": [],
-          "links": [ { "label": "PR #61", "url": "https://github.com/bholmesdev/hubble.md/pull/61" } ]
+          "links": []
         },
         {
           "id": "shell",
-          "title": "Editor shell stays usable",
+          "title": "Shell stays usable",
           "kind": "surface",
-          "x": -140,
-          "y": -130,
-          "summary": "The main editor shell remains interactive while the sidebar indexes; Open File and Open Folder stay available.",
-          "details": [
-            "PRODUCT 1–3: the shell must not block on the initial sidebar crawl.",
-            "ADR-0008: the editor shell can become usable before the navigation index is ready."
-          ],
+          "x": -240,
+          "y": 60,
+          "summary": "Editor shell is interactive immediately; remembered/explicit files still load.",
+          "details": ["openWorkspace no longer awaits the crawl, so loadPath for a remembered or picked file runs during indexing.", "Open File / Open Folder remain available while the sidebar indexes."],
           "files": [
-            { "path": "docs/adr/0008-desktop-sidebar-index-is-ephemeral-navigation-state.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-244f0538177063b1d3622cab5d1efec1538d53099c458f1dfe1bfded097c85b1" }
+            {"path": "apps/desktop/src/App.tsx", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-29b177c19ce1ebbf5dcb37ef36de3f2557023d5bcd803c22b2da9c29a149c47e"},
+            {"path": "apps/desktop/src/store/actions.ts", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-a2a74a810ff712fda4ad421e0d3c8f752ce18986899be40a72abd06facb18b55"}
           ],
           "comments": [],
           "links": []
         },
         {
           "id": "indexing",
-          "title": "Sidebar indexing state",
+          "title": "Sidebar shows indexing",
           "kind": "feedback",
-          "x": -140,
-          "y": 120,
-          "summary": "During the first crawl the sidebar shows an indexing/loading state, not a partial tree, then swaps to a complete tree.",
-          "details": [
-            "PRODUCT 2 + 12: show indexing while crawling, then a complete markdown-only tree.",
-            "PRODUCT 13: expanding a folder is presentational and does not trigger a new crawl."
-          ],
+          "x": 40,
+          "y": -40,
+          "summary": "Sidebar renders a compact indexing status, not a partial tree.",
+          "details": ["SidebarStatus shows 'Indexing files / Building file tree...' while fileIndexStatus is indexing.", "On error it shows a recoverable 'File tree unavailable' message."],
+          "files": [{"path": "apps/desktop/src/components/Sidebar.tsx", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-a9034d5bc3d12dd2925117e42e100b888058594e30dd773eb5db899d5a039d48"}],
+          "comments": [],
+          "links": []
+        },
+        {
+          "id": "ready",
+          "title": "Tree becomes ready",
+          "kind": "feedback",
+          "x": 320,
+          "y": 60,
+          "summary": "Ready snapshot replaces the loading state with the markdown-only tree.",
+          "details": ["Expanding folders only reveals already-indexed paths; it does not trigger a new crawl.", "An explicitly opened ignored file can stay open with no selected sidebar row."],
           "files": [
-            { "path": "specs/gh-31/PRODUCT.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-26c77b0a60daf64bd452c2b157dfb8d5b253ffb01ba778df0613e04a5e69795f" }
+            {"path": "apps/desktop/src/components/Sidebar.tsx", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-a9034d5bc3d12dd2925117e42e100b888058594e30dd773eb5db899d5a039d48"},
+            {"path": "apps/desktop/src/store/actions.ts", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-a2a74a810ff712fda4ad421e0d3c8f752ce18986899be40a72abd06facb18b55"}
           ],
           "comments": [],
           "links": []
         },
         {
-          "id": "open-file",
-          "title": "Open / restore a file during indexing",
-          "kind": "user action",
-          "x": 170,
-          "y": -10,
-          "summary": "The user opens a file explicitly, or Hubble restores the remembered last-opened file, even before the sidebar tree is ready.",
-          "details": [
-            "PRODUCT 4–5: explicit picks and readable remembered files load while indexing continues.",
-            "PRODUCT 10: an ignored file stays viewable; ignore rules filter the sidebar, not file access."
-          ],
+          "id": "live",
+          "title": "Live edits update tree",
+          "kind": "result",
+          "x": 600,
+          "y": -20,
+          "summary": "Adding, editing, deleting files or ignore rules updates the sidebar incrementally.",
+          "details": ["Markdown add/change/unlink and folder add/remove flow through batched deltas without full reload.", "Editing .gitignore/.ignore recrawls and re-filters; unrelated non-markdown changes are ignored."],
           "files": [
-            { "path": "specs/gh-31/PRODUCT.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-26c77b0a60daf64bd452c2b157dfb8d5b253ffb01ba778df0613e04a5e69795f" }
-          ],
-          "comments": [],
-          "links": []
-        },
-        {
-          "id": "updates",
-          "title": "Incremental sidebar updates",
-          "kind": "feedback",
-          "x": 450,
-          "y": -10,
-          "summary": "As files change, the sidebar updates incrementally after a short debounce; unrelated non-markdown changes do not reload it.",
-          "details": [
-            "PRODUCT 14–18: add/edit/delete markdown and ignore-file edits update visible results.",
-            "PRODUCT 19 + 23: non-markdown changes cause no visible reload; rapid changes settle into one update."
-          ],
-          "files": [
-            { "path": "specs/gh-31/PRODUCT.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-26c77b0a60daf64bd452c2b157dfb8d5b253ffb01ba778df0613e04a5e69795f" }
+            {"path": "apps/desktop/electron/fileIndex.ts", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-6ca9e7b13464bcb0b8be41769b07726db9fb0d8772060d1983cf35a7d9c9aebf"},
+            {"path": "apps/desktop/src/store/actions.ts", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-a2a74a810ff712fda4ad421e0d3c8f752ce18986899be40a72abd06facb18b55"}
           ],
           "comments": [],
           "links": []
         }
       ],
       "edges": [
-        { "source": "open-folder", "target": "shell", "label": "enters workspace" },
-        { "source": "shell", "target": "indexing", "label": "sidebar shows" },
-        { "source": "shell", "target": "open-file", "label": "user can open" },
-        { "source": "indexing", "target": "updates", "label": "completes into" },
-        { "source": "open-file", "target": "updates", "label": "file persists through" }
+        {"source": "open", "target": "shell", "label": "enters workspace"},
+        {"source": "shell", "target": "indexing", "label": "sidebar shows"},
+        {"source": "indexing", "target": "ready", "label": "snapshot completes"},
+        {"source": "ready", "target": "live", "label": "watcher updates"}
       ],
       "tour": [
-        { "nodeId": "open-folder", "title": "User opens a folder", "body": "The walkthrough starts with the triggering action: opening a (potentially large) folder, which today can hang the app." },
-        { "nodeId": "shell", "title": "Shell stays usable", "body": "The core behavioral promise: the editor shell stays interactive and Open File/Folder remain available while indexing runs." },
-        { "nodeId": "indexing", "title": "Sidebar shows indexing", "body": "Instead of a partial or frozen tree, the sidebar shows a dedicated indexing state, then swaps to a complete markdown-only tree." },
-        { "nodeId": "open-file", "title": "Open a file mid-index", "body": "The user can still open or restore a file during indexing — including ignored files — because the index filters the sidebar, not file access." },
-        { "nodeId": "updates", "title": "Incremental updates", "body": "Finally, file and ignore-rule changes update the sidebar incrementally after a debounce, while unrelated non-markdown churn causes no visible reload." }
+        {"nodeId": "open", "title": "User opens a folder", "body": "The flow starts when the user opens a folder; the workspace path is set and indexing begins without blocking."},
+        {"nodeId": "shell", "title": "Shell is usable right away", "body": "Because opening no longer awaits the crawl, the editor shell stays interactive and a remembered or explicitly picked file can load during indexing."},
+        {"nodeId": "indexing", "title": "Sidebar indicates progress", "body": "The sidebar shows a compact indexing state rather than a half-built tree, so the user knows discovery is in progress."},
+        {"nodeId": "ready", "title": "Tree appears", "body": "When the ready snapshot arrives, the sidebar swaps in the complete markdown-only tree; folder expansion is purely presentational."},
+        {"nodeId": "live", "title": "Live updates", "body": "After that, file and ignore-rule changes update the sidebar incrementally, while unrelated non-markdown churn leaves it untouched."}
       ]
     }
   ]
