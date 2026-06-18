@@ -1,0 +1,413 @@
+<!doctype html>
+        <html lang="en">
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>Spec stronger markdown crawling</title>
+          <style>:root {
+  --warp-bg: #121212;
+  --warp-panel: #1e1e1d;
+  --warp-panel-2: #292929;
+  --warp-border: #404040;
+  --warp-text: #faf9f6;
+  --warp-muted: #b4b4b2;
+  --warp-dim: #868584;
+  --warp-accent: #a43787;
+  --warp-green: #34895c;
+  --warp-blue: #2e5d9e;
+  --warp-purple: #754dac;
+  --warp-yellow: #c0872a;
+  --warp-font-sans: 'Matter', 'DM Sans', system-ui, sans-serif;
+  --warp-font-mono: 'Matter Mono', 'Roboto Mono', ui-monospace, monospace;
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: var(--warp-bg); color: var(--warp-text); font-family: var(--warp-font-sans); }
+a { color: var(--warp-text); text-decoration-color: var(--warp-accent); text-underline-offset: 3px; }
+button, input { font: inherit; }
+.d3-walkthrough-shell { min-height: 100vh; display: grid; grid-template-rows: auto 1fr; }
+.d3-walkthrough-header { display: grid; gap: 10px; padding: 28px 32px 20px; border-bottom: 1px solid var(--warp-border); background: linear-gradient(180deg, #1e1e1d, #121212); }
+.d3-kicker { color: var(--warp-accent); font-family: var(--warp-font-mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; }
+.d3-walkthrough-header h1 { margin: 0; max-width: 1080px; font-size: clamp(34px, 5vw, 72px); line-height: 0.95; letter-spacing: -0.04em; }
+.d3-meta-row { display: flex; flex-wrap: wrap; gap: 8px; color: var(--warp-muted); font-family: var(--warp-font-mono); font-size: 12px; }
+.d3-summary { max-width: 920px; margin: 0; color: var(--warp-muted); font-size: 17px; line-height: 1.45; }
+.d3-canvas-layout { min-height: 0; display: grid; grid-template-columns: 310px minmax(560px, 1fr) 390px; gap: 0; }
+.d3-control-panel, .d3-detail-panel { min-height: 0; overflow: auto; background: var(--warp-panel); border-right: 1px solid var(--warp-border); padding: 18px; }
+.d3-detail-panel { border-right: 0; border-left: 1px solid var(--warp-border); }
+.d3-panel-title { margin: 0 0 12px; font-size: 12px; color: var(--warp-muted); font-family: var(--warp-font-mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.d3-control-stack { display: grid; gap: 10px; margin-bottom: 18px; }
+.d3-control-button, .d3-graph-toggle { border: 1px solid var(--warp-border); background: var(--warp-panel-2); color: var(--warp-text); border-radius: 10px; padding: 10px 12px; cursor: pointer; text-align: left; }
+.d3-control-button:hover, .d3-graph-toggle:hover, .d3-control-button:focus, .d3-graph-toggle:focus { border-color: var(--warp-accent); outline: none; }
+.d3-graph-toggle[aria-pressed="true"] { border-color: var(--graph-color, var(--warp-accent)); box-shadow: inset 3px 0 0 var(--graph-color, var(--warp-accent)); }
+.d3-tour-card { border: 1px solid var(--warp-border); background: #121212; border-radius: 12px; padding: 12px; margin-bottom: 14px; }
+.d3-tour-step-label { color: var(--warp-accent); font-family: var(--warp-font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }
+.d3-tour-title { margin: 6px 0; font-size: 18px; line-height: 1.15; }
+.d3-tour-body { color: var(--warp-muted); line-height: 1.4; margin: 0; }
+.d3-search { width: 100%; border: 1px solid var(--warp-border); background: #121212; color: var(--warp-text); border-radius: 10px; padding: 10px 12px; }
+.d3-search:focus { border-color: var(--warp-accent); outline: none; }
+.d3-help { color: var(--warp-dim); font-family: var(--warp-font-mono); font-size: 11px; line-height: 1.5; }
+.d3-canvas-stage { min-height: 0; position: relative; overflow: hidden; background: radial-gradient(circle at 20% 20%, #a4378722, transparent 28%), radial-gradient(circle at 80% 70%, #2e5d9e22, transparent 26%), #121212; }
+#pr-walkthrough-canvas { width: 100%; height: 100%; min-height: 700px; display: block; }
+.d3-canvas-error { position: absolute; inset: 18px; display: none; place-items: center; border: 1px solid var(--warp-border); background: #1e1e1df2; color: var(--warp-text); padding: 24px; z-index: 2; }
+body.d3-canvas-error .d3-canvas-error { display: grid; }
+.d3-graph-title { fill: #faf9f6; opacity: 0.36; font-family: var(--warp-font-mono); font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; }
+.d3-edge path { fill: none; stroke: var(--edge-color, #868584); stroke-width: 2; stroke-opacity: 0.68; }
+.d3-edge-arrow path { fill: var(--edge-color, #868584); }
+.d3-edge text { fill: #cccbc8; font-family: var(--warp-font-mono); font-size: 11px; paint-order: stroke; stroke: #121212; stroke-width: 4px; stroke-linejoin: round; }
+.d3-node { cursor: pointer; }
+.d3-node rect { fill: #1e1e1d; stroke: var(--node-color, var(--warp-accent)); stroke-width: 2; filter: drop-shadow(0 10px 24px #00000066); }
+.d3-node.is-selected rect { stroke: var(--warp-accent); stroke-width: 4; }
+.d3-node.is-tour-node rect { stroke: var(--warp-accent); stroke-width: 4; filter: drop-shadow(0 0 18px #a4378788); }
+.d3-node.is-dimmed, .d3-edge.is-dimmed { opacity: 0.18; }
+.d3-node-title { fill: #faf9f6; font-family: var(--warp-font-sans); font-size: 15px; font-weight: 700; pointer-events: none; }
+.d3-node-kind { fill: #b4b4b2; font-family: var(--warp-font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; pointer-events: none; }
+.d3-node-summary { fill: #cccbc8; font-family: var(--warp-font-sans); font-size: 12px; pointer-events: none; }
+.d3-detail-title { margin: 0 0 6px; font-size: 24px; line-height: 1.1; }
+.d3-detail-kind { color: var(--warp-accent); font-family: var(--warp-font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }
+.d3-detail-summary { color: var(--warp-muted); line-height: 1.45; }
+.d3-detail-section { margin-top: 18px; }
+.d3-detail-section h3 { margin: 0 0 8px; color: var(--warp-muted); font-family: var(--warp-font-mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; }
+.d3-detail-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.d3-detail-list li { border: 1px solid var(--warp-border); background: #121212; border-radius: 10px; padding: 10px; color: var(--warp-muted); line-height: 1.35; }
+.d3-file-link { display: block; overflow-wrap: anywhere; color: var(--warp-text); font-family: var(--warp-font-mono); font-size: 12px; }
+.d3-comment-author { display: block; color: var(--warp-accent); font-family: var(--warp-font-mono); font-size: 11px; margin-bottom: 4px; }
+.d3-empty { color: var(--warp-dim); }
+@media (max-width: 1180px) { .d3-canvas-layout { grid-template-columns: 1fr; grid-template-rows: auto minmax(680px, 1fr) auto; } .d3-control-panel, .d3-detail-panel { border: 0; border-bottom: 1px solid var(--warp-border); max-height: 360px; } }</style>
+        </head>
+        <body>
+          <main class="d3-walkthrough-shell">
+            <header class="d3-walkthrough-header">
+              <div class="d3-kicker">Warp PR walkthrough</div>
+              <h1>Spec stronger markdown crawling</h1>
+              <div class="d3-meta-row"><span>main ← codex/issue-31-stronger-markdown-crawling</span><a href="https://github.com/bholmesdev/hubble.md/pull/61" target="_blank" rel="noreferrer">Open PR</a></div>
+              <p class="d3-summary">Docs-only PR (3 new files, +283/-0). It specs a redesign of Hubble Desktop markdown crawling so the editor shell stays usable while the sidebar builds an ignore-aware, incrementally-updated markdown index. No code changes yet; the views map the existing desktop file subsystem and the behavior/architecture the specs propose.</p>
+            </header>
+            <section class="d3-canvas-layout">
+              <aside class="d3-control-panel" aria-label="Canvas controls">
+          <p class="d3-panel-title">View</p>
+          <div class="d3-control-stack"><button class="d3-graph-toggle" type="button" data-graph-id="system-overview" aria-pressed="false" style="--graph-color: #c0872a">System overview</button>
+<button class="d3-graph-toggle" type="button" data-graph-id="data-flow" aria-pressed="false" style="--graph-color: #34895c">Data flow graph</button>
+<button class="d3-graph-toggle" type="button" data-graph-id="code-dependency" aria-pressed="false" style="--graph-color: #2e5d9e">Code dependency graph</button>
+<button class="d3-graph-toggle" type="button" data-graph-id="user-action" aria-pressed="false" style="--graph-color: #754dac">User action graph</button></div>
+          <p class="d3-panel-title">Tour</p>
+          <div class="d3-tour-card" aria-live="polite">
+            <div class="d3-tour-step-label">Step 0 / 0</div>
+            <h2 class="d3-tour-title">View tour</h2>
+            <p class="d3-tour-body">Use Next tour step to start.</p>
+          </div>
+          <div class="d3-control-stack">
+            <button class="d3-control-button" type="button" data-d3-action="tour-prev">Previous tour step</button>
+            <button class="d3-control-button" type="button" data-d3-action="tour-next">Next tour step</button>
+            <button class="d3-control-button" type="button" data-d3-action="tour-restart">Restart tour</button>
+          </div>
+          <p class="d3-panel-title">Canvas</p>
+          <div class="d3-control-stack">
+            <button class="d3-control-button" type="button" data-d3-action="fit">Fit to view</button>
+            <button class="d3-control-button" type="button" data-d3-action="reset">Reset zoom</button>
+          </div>
+          <label class="d3-panel-title" for="d3-node-search">Search active graph</label>
+          <input id="d3-node-search" class="d3-search" type="search" placeholder="Search nodes, files, comments" />
+          <p class="d3-help">Keyboard: n/→ next, p/← previous, 1 overview, 2 data, 3 code, 4 user, + zoom in, - zoom out, 0 reset, f fit, / search, Esc clear.</p>
+        </aside>
+              <section class="d3-canvas-stage">
+                <svg id="pr-walkthrough-canvas" role="img" aria-label="Interactive PR walkthrough graph"></svg>
+                <div class="d3-canvas-error" role="alert"></div>
+              </section>
+              <aside id="pr-walkthrough-details" class="d3-detail-panel" aria-label="Selected point details"></aside>
+            </section>
+            <script>window.PR_WALKTHROUGH_D3_DATA = {"meta": {"title": "Spec stronger markdown crawling", "prUrl": "https://github.com/bholmesdev/hubble.md/pull/61", "baseRef": "main", "headRef": "codex/issue-31-stronger-markdown-crawling", "summary": "Docs-only PR (3 new files, +283/-0). It specs a redesign of Hubble Desktop markdown crawling so the editor shell stays usable while the sidebar builds an ignore-aware, incrementally-updated markdown index. No code changes yet; the views map the existing desktop file subsystem and the behavior/architecture the specs propose."}, "graphs": [{"id": "system-overview", "label": "System overview", "color": "#c0872a", "summary": "How Hubble Desktop's file/sidebar subsystem is wired today: disk access lives in Electron main, reaches the renderer over a typed bridge, lands in a small store, and renders in the sidebar.", "nodes": [{"id": "main-process", "title": "Electron main process", "kind": "overview card", "x": -320, "y": -170, "width": 360, "height": 220, "summaryLines": 7, "summary": "The only layer that touches disk. apps/desktop/electron/main.ts holds a path-grant allowlist, registers IPC handlers (desktop:list-directory recursively crawls markdown, desktop:watch-path runs chokidar), parses layered .gitignore/.ignore via the `ignore` package, and always hard-ignores .git, dist, and node_modules.", "details": ["collectMarkdownFiles() walks directories depth-first, applies inherited ignore rules per directory, and emits FileEntry { path, modified_at } for .md/.markdown/.mdown only.", "A chokidar watcher per watchId streams add/change/unlink/addDir/unlinkDir events; editing a .gitignore/.ignore replaces the watcher so ignore scope stays current.", "Grants (granted files + roots) gate every path so the renderer can only reach explicitly allowed locations."], "files": [], "comments": [], "links": []}, {"id": "preload-bridge", "title": "Preload bridge (desktopApi)", "kind": "overview card", "x": 320, "y": -170, "width": 360, "height": 220, "summaryLines": 7, "summary": "apps/desktop/electron/preload.ts exposes a context-isolated, typed DesktopApi over ipcRenderer. The renderer never touches Node fs directly; listDirectory, readFileText, the pickers, and watchPath are all bridge calls. watchPath allocates a numeric watchId and turns main-process file events into a renderer subscription with an unsubscribe handle.", "details": ["The DesktopApi surface is typed in apps/desktop/src/desktopApi/types.ts, keeping renderer and main in sync.", "watchPath(path, { recursive }, callback) returns an Unsubscribe; recursive watches a folder, non-recursive watches a single file."], "files": [], "comments": [], "links": []}, {"id": "renderer-store", "title": "Renderer store", "kind": "overview card", "x": -320, "y": 175, "width": 360, "height": 220, "summaryLines": 7, "summary": "A @simplestack/store appStore split into workspaceStore (workspacePath, files, recentWorkspaces, lastOpenedPaths, sortMode) and viewerStore (currentPath, content, external-change status). apps/desktop/src/store/actions.ts owns refreshFiles, openWorkspace, loadPath, and file mutations; persistence.ts saves everything except the file list, so the list is rebuilt each launch.", "details": ["refreshFiles(path) calls listDirectory and replaces workspace.files, guarding against a stale workspacePath.", "isInWorkspace / lastOpenedPaths track which file to restore per workspace; touchFile bumps mtime on local saves."], "files": [], "comments": [], "links": []}, {"id": "sidebar-watchers", "title": "Sidebar + App watchers", "kind": "overview card", "x": 320, "y": 175, "width": 360, "height": 220, "summaryLines": 7, "summary": "apps/desktop/src/components/Sidebar.tsx adapts workspace.files into the shared @hubble.md/ui sidebar (relative display paths, sort modes, select→loadPath, rename/delete). apps/desktop/src/App.tsx runs two watcher effects: a recursive workspace watcher and a single-file active-document watcher that feeds external-change conflict handling.", "details": ["The workspace watcher effect currently reacts to any change by re-listing the whole folder.", "The active-file watcher re-reads the open document and classifies match/reload/conflict against the editor baseline."], "files": [], "comments": [], "links": []}], "edges": [], "tour": [{"nodeId": "main-process", "title": "Start where disk access lives", "body": "Electron main is the single owner of filesystem access: grants, recursive markdown crawling, ignore parsing, and chokidar watchers all live here. Everything else is downstream of this layer."}, {"nodeId": "preload-bridge", "title": "Cross the typed bridge", "body": "The renderer reaches main only through the context-isolated desktopApi. Knowing this bridge exists explains why file reads, lists, and watches are all async IPC calls rather than direct fs access."}, {"nodeId": "renderer-store", "title": "Land in the store", "body": "Bridge results populate a small @simplestack store split into workspace and document state. Note the file list is intentionally not persisted, so it is rebuilt on each launch."}, {"nodeId": "sidebar-watchers", "title": "Render and watch", "body": "The sidebar renders workspace.files through the shared UI, while App.tsx wires the folder and active-file watchers. This is the surface a reviewer will see behavior changes in."}]}, {"id": "data-flow", "label": "Data flow graph", "color": "#34895c", "summary": "How markdown file state moves from intent through crawling and watcher deltas into renderer state and the sidebar. The specs propose owning incremental index state instead of re-listing on every event.", "nodes": [{"id": "intent", "title": "Indexing intent (specs)", "kind": "input", "x": -420, "y": -20, "summary": "The specs define the target: keep the shell usable, show a sidebar indexing state, and update incrementally while respecting ignore files.", "details": ["PRODUCT.md sets the user-visible contract; TECH.md sets the module plan; ADR-0008 frames the sidebar index as ephemeral navigation state, not an access boundary.", "No existing PR review comments were found at the head commit."], "files": [{"path": "specs/gh-31/PRODUCT.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-26c77b0a60daf64bd452c2b157dfb8d5b253ffb01ba778df0613e04a5e69795f"}, {"path": "specs/gh-31/TECH.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-4b79c6d2de308f9cb2f1cb093f69b3090f2f78ec8e651e947e612a7783173acd"}], "comments": [], "links": [{"label": "PR #61", "url": "https://github.com/bholmesdev/hubble.md/pull/61"}]}, {"id": "crawl", "title": "Initial crawl + ignore rules", "kind": "main-process", "x": -130, "y": -150, "summary": "A recursive walk produces the markdown FileEntry[] for the open folder, filtering by layered ignore rules and hard-ignored dirs.", "details": ["Today collectMarkdownFiles() in main.ts emits the snapshot via desktop:list-directory.", "TECH.md proposes moving this into fileIndex.ts + ignoreRules.ts that own crawl state and emit an initial 'ready' snapshot.", "Crawl includes .md/.markdown/.mdown and always excludes .git, dist, node_modules."], "files": [{"path": "specs/gh-31/TECH.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-4b79c6d2de308f9cb2f1cb093f69b3090f2f78ec8e651e947e612a7783173acd"}], "comments": [], "links": []}, {"id": "watcher", "title": "Chokidar watcher deltas", "kind": "main-process", "x": -130, "y": 110, "summary": "The folder watcher emits add/change/unlink/dir events; ignore-config edits rebuild rules and replace the watcher.", "details": ["desktop:watch-path filters to markdown and ignore-config files, then notifies the renderer.", "TECH.md proposes batching these into typed index deltas (upsert/remove) with a short debounce instead of a full re-list."], "files": [{"path": "specs/gh-31/TECH.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-4b79c6d2de308f9cb2f1cb093f69b3090f2f78ec8e651e947e612a7783173acd"}], "comments": [], "links": []}, {"id": "store", "title": "workspace.files state", "kind": "state owner", "x": 190, "y": -20, "summary": "The renderer store holds the file list the sidebar renders. Today every watcher event triggers refreshFiles(); the spec replaces that with delta application.", "details": ["refreshFiles() sets workspace.files (guarded by workspacePath); touchFile() bumps mtime on save.", "TECH.md adds a fileIndexStatus (idle/indexing/ready/error) and upsert/remove reducers so live edits avoid full re-crawls."], "files": [{"path": "specs/gh-31/TECH.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-4b79c6d2de308f9cb2f1cb093f69b3090f2f78ec8e651e947e612a7783173acd"}], "comments": [], "links": []}, {"id": "sidebar-render", "title": "Sidebar render", "kind": "output", "x": 470, "y": -20, "summary": "The sidebar renders the current file list. The spec adds a dedicated indexing state and allows the open file to be absent from the list.", "details": ["Sidebar.tsx maps workspace.files into the shared @hubble.md/ui sidebar with relative paths and sort modes.", "PRODUCT.md requires an indexing/loading state during the first crawl and a complete tree afterward."], "files": [{"path": "specs/gh-31/PRODUCT.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-26c77b0a60daf64bd452c2b157dfb8d5b253ffb01ba778df0613e04a5e69795f"}], "comments": [], "links": []}], "edges": [{"source": "intent", "target": "crawl", "label": "drives initial crawl"}, {"source": "intent", "target": "watcher", "label": "drives live updates"}, {"source": "crawl", "target": "store", "label": "snapshot populates"}, {"source": "watcher", "target": "store", "label": "deltas update"}, {"source": "store", "target": "sidebar-render", "label": "renders from"}], "tour": [{"nodeId": "intent", "title": "Start with intent", "body": "Begin with what the specs are trying to achieve: a usable shell plus an ignore-aware, incremental sidebar index. This is the source of every flow below."}, {"nodeId": "crawl", "title": "Initial crawl", "body": "The first data to move is the initial markdown snapshot from a recursive, ignore-filtered crawl. The spec relocates this into a dedicated indexer module."}, {"nodeId": "watcher", "title": "Live deltas", "body": "After the snapshot, the chokidar watcher produces incremental file events. The spec batches these into typed upsert/remove deltas instead of full re-lists."}, {"nodeId": "store", "title": "Into renderer state", "body": "Both the snapshot and deltas land in workspace.files. The key spec change is applying deltas and an index status here rather than calling refreshFiles() on every event."}, {"nodeId": "sidebar-render", "title": "Out to the sidebar", "body": "Finally the store renders into the sidebar, which gains an explicit indexing state and tolerates the open file being absent from the list."}]}, {"id": "code-dependency", "label": "Code dependency graph", "color": "#2e5d9e", "summary": "Which modules the specs touch and how they depend on each other: specs guide renderer entry points, which depend on the store and the typed bridge, which invokes the main-process crawler that the spec splits into an indexer.", "nodes": [{"id": "specs", "title": "specs/gh-31 + ADR-0008", "kind": "spec entry", "x": -430, "y": 0, "summary": "The only files actually added by this PR. They define intent (PRODUCT), the module plan (TECH), and the architectural decision (ADR).", "details": ["PRODUCT.md: 28 numbered behaviors + a UX validation script.", "TECH.md: proposed fileIndex.ts/ignoreRules.ts modules and renderer/IPC changes.", "ADR-0008: sidebar index is ephemeral navigation state, refining ADR-0001."], "files": [{"path": "specs/gh-31/PRODUCT.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-26c77b0a60daf64bd452c2b157dfb8d5b253ffb01ba778df0613e04a5e69795f"}, {"path": "specs/gh-31/TECH.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-4b79c6d2de308f9cb2f1cb093f69b3090f2f78ec8e651e947e612a7783173acd"}, {"path": "docs/adr/0008-desktop-sidebar-index-is-ephemeral-navigation-state.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-244f0538177063b1d3622cab5d1efec1538d53099c458f1dfe1bfded097c85b1"}], "comments": [], "links": [{"label": "PR #61", "url": "https://github.com/bholmesdev/hubble.md/pull/61"}]}, {"id": "app", "title": "App.tsx watchers", "kind": "entry point", "x": -150, "y": -130, "summary": "Renderer entry that wires workspace + active-file watchers and startup path restoration. Spec target: subscribe to index updates instead of re-listing.", "details": ["Today the workspace watcher effect calls refreshFiles(workspacePath) on every change.", "TECH.md: subscribe to a workspace-index subscription and keep startup restoration independent of index readiness."], "files": [], "comments": [], "links": []}, {"id": "actions", "title": "store/actions.ts", "kind": "module", "x": -150, "y": 130, "summary": "Owns refreshFiles, openWorkspace, loadPath and file mutations. Spec target: add delta reducers and decouple loadPath from indexing.", "details": ["openWorkspace currently awaits refreshFiles before loading the remembered file.", "TECH.md: return without awaiting the crawl, apply upsert/remove deltas, keep full refresh only as a fallback."], "files": [], "comments": [], "links": []}, {"id": "bridge", "title": "preload + desktopApi types", "kind": "ipc seam", "x": 160, "y": 0, "summary": "The typed IPC contract between renderer and main. Spec target: add a watchWorkspaceFiles-style index subscription.", "details": ["types.ts defines DesktopApi; preload.ts implements watchPath/listDirectory over ipcRenderer.", "TECH.md: add a workspace-index subscription that sends { status, snapshot?, upsert?, remove? } guarded by watch id."], "files": [], "comments": [], "links": []}, {"id": "main", "title": "electron/main.ts", "kind": "module", "x": 450, "y": -120, "summary": "Deepest dependency: IPC registration, recursive crawl, ignore parsing, chokidar watching. Spec target: extract an indexer + ignore-rules module.", "details": ["Holds collectMarkdownFiles, collectWorkspaceIgnoreRules, isIgnoredByRules and the desktop:watch-path watcher.", "TECH.md: move discovery/watching into fileIndex.ts, ignore logic into ignoreRules.ts, keep grants + IPC in main."], "files": [], "comments": [], "links": []}, {"id": "sidebar", "title": "components/Sidebar.tsx", "kind": "leaf", "x": 450, "y": 140, "summary": "Leaf view that renders workspace.files via the shared UI. Spec target: render an indexing state and allow currentPath to be absent.", "details": ["Adapts files into @hubble.md/ui Sidebar and calls loadPath on select.", "PRODUCT/TECH: show a compact indexing affordance and no selected row when the open file is not indexed."], "files": [], "comments": [], "links": []}], "edges": [{"source": "specs", "target": "app", "label": "guides changes to"}, {"source": "app", "target": "actions", "label": "depends on"}, {"source": "app", "target": "bridge", "label": "subscribes via"}, {"source": "actions", "target": "bridge", "label": "calls"}, {"source": "bridge", "target": "main", "label": "invokes IPC in"}, {"source": "app", "target": "sidebar", "label": "renders"}, {"source": "sidebar", "target": "actions", "label": "calls"}], "tour": [{"nodeId": "specs", "title": "Start at the only changed files", "body": "This PR adds just three docs. They are the entry point for understanding which code seams the change will eventually touch."}, {"nodeId": "app", "title": "Renderer entry point", "body": "App.tsx is the highest-level seam: it owns the watcher effects and startup restoration the spec wants to rewire away from full re-lists."}, {"nodeId": "actions", "title": "Store actions", "body": "App depends on actions.ts for refreshFiles/openWorkspace/loadPath. The spec adds delta reducers here and decouples document loading from indexing."}, {"nodeId": "bridge", "title": "The IPC seam", "body": "Both App and actions depend on the typed desktopApi bridge. A new index-subscription contract is the main interface the spec introduces."}, {"nodeId": "main", "title": "Deepest dependency", "body": "The bridge invokes main.ts, the only disk owner. The spec extracts its crawl/ignore logic into fileIndex.ts and ignoreRules.ts."}, {"nodeId": "sidebar", "title": "Leaf view", "body": "Sidebar.tsx is the leaf: it consumes store state and calls actions. It gains the indexing state and absent-current-path tolerance."}]}, {"id": "user-action", "label": "User action graph", "color": "#754dac", "summary": "What the user does when opening a large folder and how the specced behavior responds: the shell stays usable, the sidebar shows an indexing state, files open during indexing, and the list updates incrementally.", "nodes": [{"id": "open-folder", "title": "Open a folder", "kind": "user action", "x": -420, "y": -10, "summary": "The user opens a Workspace Folder or Plain Folder (picker, menu, or launch path).", "details": ["openWorkspace sets workspacePath and clears files; PRODUCT behavior 1 requires entering the workspace immediately.", "Folder open is local-first; no Workspace config or Cloud Sync is required (PRODUCT 26)."], "files": [{"path": "specs/gh-31/PRODUCT.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-26c77b0a60daf64bd452c2b157dfb8d5b253ffb01ba778df0613e04a5e69795f"}], "comments": [], "links": [{"label": "PR #61", "url": "https://github.com/bholmesdev/hubble.md/pull/61"}]}, {"id": "shell", "title": "Editor shell stays usable", "kind": "surface", "x": -140, "y": -130, "summary": "The main editor shell remains interactive while the sidebar indexes; Open File and Open Folder stay available.", "details": ["PRODUCT 1–3: the shell must not block on the initial sidebar crawl.", "ADR-0008: the editor shell can become usable before the navigation index is ready."], "files": [{"path": "docs/adr/0008-desktop-sidebar-index-is-ephemeral-navigation-state.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-244f0538177063b1d3622cab5d1efec1538d53099c458f1dfe1bfded097c85b1"}], "comments": [], "links": []}, {"id": "indexing", "title": "Sidebar indexing state", "kind": "feedback", "x": -140, "y": 120, "summary": "During the first crawl the sidebar shows an indexing/loading state, not a partial tree, then swaps to a complete tree.", "details": ["PRODUCT 2 + 12: show indexing while crawling, then a complete markdown-only tree.", "PRODUCT 13: expanding a folder is presentational and does not trigger a new crawl."], "files": [{"path": "specs/gh-31/PRODUCT.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-26c77b0a60daf64bd452c2b157dfb8d5b253ffb01ba778df0613e04a5e69795f"}], "comments": [], "links": []}, {"id": "open-file", "title": "Open / restore a file during indexing", "kind": "user action", "x": 170, "y": -10, "summary": "The user opens a file explicitly, or Hubble restores the remembered last-opened file, even before the sidebar tree is ready.", "details": ["PRODUCT 4–5: explicit picks and readable remembered files load while indexing continues.", "PRODUCT 10: an ignored file stays viewable; ignore rules filter the sidebar, not file access."], "files": [{"path": "specs/gh-31/PRODUCT.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-26c77b0a60daf64bd452c2b157dfb8d5b253ffb01ba778df0613e04a5e69795f"}], "comments": [], "links": []}, {"id": "updates", "title": "Incremental sidebar updates", "kind": "feedback", "x": 450, "y": -10, "summary": "As files change, the sidebar updates incrementally after a short debounce; unrelated non-markdown changes do not reload it.", "details": ["PRODUCT 14–18: add/edit/delete markdown and ignore-file edits update visible results.", "PRODUCT 19 + 23: non-markdown changes cause no visible reload; rapid changes settle into one update."], "files": [{"path": "specs/gh-31/PRODUCT.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-26c77b0a60daf64bd452c2b157dfb8d5b253ffb01ba778df0613e04a5e69795f"}], "comments": [], "links": []}], "edges": [{"source": "open-folder", "target": "shell", "label": "enters workspace"}, {"source": "shell", "target": "indexing", "label": "sidebar shows"}, {"source": "shell", "target": "open-file", "label": "user can open"}, {"source": "indexing", "target": "updates", "label": "completes into"}, {"source": "open-file", "target": "updates", "label": "file persists through"}], "tour": [{"nodeId": "open-folder", "title": "User opens a folder", "body": "The walkthrough starts with the triggering action: opening a (potentially large) folder, which today can hang the app."}, {"nodeId": "shell", "title": "Shell stays usable", "body": "The core behavioral promise: the editor shell stays interactive and Open File/Folder remain available while indexing runs."}, {"nodeId": "indexing", "title": "Sidebar shows indexing", "body": "Instead of a partial or frozen tree, the sidebar shows a dedicated indexing state, then swaps to a complete markdown-only tree."}, {"nodeId": "open-file", "title": "Open a file mid-index", "body": "The user can still open or restore a file during indexing — including ignored files — because the index filters the sidebar, not file access."}, {"nodeId": "updates", "title": "Incremental updates", "body": "Finally, file and ignore-rule changes update the sidebar incrementally after a debounce, while unrelated non-markdown churn causes no visible reload."}]}]};</script>
+            <script id="pr-walkthrough-data" type="application/json">{"meta": {"title": "Spec stronger markdown crawling", "prUrl": "https://github.com/bholmesdev/hubble.md/pull/61", "baseRef": "main", "headRef": "codex/issue-31-stronger-markdown-crawling", "summary": "Docs-only PR (3 new files, +283/-0). It specs a redesign of Hubble Desktop markdown crawling so the editor shell stays usable while the sidebar builds an ignore-aware, incrementally-updated markdown index. No code changes yet; the views map the existing desktop file subsystem and the behavior/architecture the specs propose."}, "graphs": [{"id": "system-overview", "label": "System overview", "color": "#c0872a", "summary": "How Hubble Desktop's file/sidebar subsystem is wired today: disk access lives in Electron main, reaches the renderer over a typed bridge, lands in a small store, and renders in the sidebar.", "nodes": [{"id": "main-process", "title": "Electron main process", "kind": "overview card", "x": -320, "y": -170, "width": 360, "height": 220, "summaryLines": 7, "summary": "The only layer that touches disk. apps/desktop/electron/main.ts holds a path-grant allowlist, registers IPC handlers (desktop:list-directory recursively crawls markdown, desktop:watch-path runs chokidar), parses layered .gitignore/.ignore via the `ignore` package, and always hard-ignores .git, dist, and node_modules.", "details": ["collectMarkdownFiles() walks directories depth-first, applies inherited ignore rules per directory, and emits FileEntry { path, modified_at } for .md/.markdown/.mdown only.", "A chokidar watcher per watchId streams add/change/unlink/addDir/unlinkDir events; editing a .gitignore/.ignore replaces the watcher so ignore scope stays current.", "Grants (granted files + roots) gate every path so the renderer can only reach explicitly allowed locations."], "files": [], "comments": [], "links": []}, {"id": "preload-bridge", "title": "Preload bridge (desktopApi)", "kind": "overview card", "x": 320, "y": -170, "width": 360, "height": 220, "summaryLines": 7, "summary": "apps/desktop/electron/preload.ts exposes a context-isolated, typed DesktopApi over ipcRenderer. The renderer never touches Node fs directly; listDirectory, readFileText, the pickers, and watchPath are all bridge calls. watchPath allocates a numeric watchId and turns main-process file events into a renderer subscription with an unsubscribe handle.", "details": ["The DesktopApi surface is typed in apps/desktop/src/desktopApi/types.ts, keeping renderer and main in sync.", "watchPath(path, { recursive }, callback) returns an Unsubscribe; recursive watches a folder, non-recursive watches a single file."], "files": [], "comments": [], "links": []}, {"id": "renderer-store", "title": "Renderer store", "kind": "overview card", "x": -320, "y": 175, "width": 360, "height": 220, "summaryLines": 7, "summary": "A @simplestack/store appStore split into workspaceStore (workspacePath, files, recentWorkspaces, lastOpenedPaths, sortMode) and viewerStore (currentPath, content, external-change status). apps/desktop/src/store/actions.ts owns refreshFiles, openWorkspace, loadPath, and file mutations; persistence.ts saves everything except the file list, so the list is rebuilt each launch.", "details": ["refreshFiles(path) calls listDirectory and replaces workspace.files, guarding against a stale workspacePath.", "isInWorkspace / lastOpenedPaths track which file to restore per workspace; touchFile bumps mtime on local saves."], "files": [], "comments": [], "links": []}, {"id": "sidebar-watchers", "title": "Sidebar + App watchers", "kind": "overview card", "x": 320, "y": 175, "width": 360, "height": 220, "summaryLines": 7, "summary": "apps/desktop/src/components/Sidebar.tsx adapts workspace.files into the shared @hubble.md/ui sidebar (relative display paths, sort modes, select→loadPath, rename/delete). apps/desktop/src/App.tsx runs two watcher effects: a recursive workspace watcher and a single-file active-document watcher that feeds external-change conflict handling.", "details": ["The workspace watcher effect currently reacts to any change by re-listing the whole folder.", "The active-file watcher re-reads the open document and classifies match/reload/conflict against the editor baseline."], "files": [], "comments": [], "links": []}], "edges": [], "tour": [{"nodeId": "main-process", "title": "Start where disk access lives", "body": "Electron main is the single owner of filesystem access: grants, recursive markdown crawling, ignore parsing, and chokidar watchers all live here. Everything else is downstream of this layer."}, {"nodeId": "preload-bridge", "title": "Cross the typed bridge", "body": "The renderer reaches main only through the context-isolated desktopApi. Knowing this bridge exists explains why file reads, lists, and watches are all async IPC calls rather than direct fs access."}, {"nodeId": "renderer-store", "title": "Land in the store", "body": "Bridge results populate a small @simplestack store split into workspace and document state. Note the file list is intentionally not persisted, so it is rebuilt on each launch."}, {"nodeId": "sidebar-watchers", "title": "Render and watch", "body": "The sidebar renders workspace.files through the shared UI, while App.tsx wires the folder and active-file watchers. This is the surface a reviewer will see behavior changes in."}]}, {"id": "data-flow", "label": "Data flow graph", "color": "#34895c", "summary": "How markdown file state moves from intent through crawling and watcher deltas into renderer state and the sidebar. The specs propose owning incremental index state instead of re-listing on every event.", "nodes": [{"id": "intent", "title": "Indexing intent (specs)", "kind": "input", "x": -420, "y": -20, "summary": "The specs define the target: keep the shell usable, show a sidebar indexing state, and update incrementally while respecting ignore files.", "details": ["PRODUCT.md sets the user-visible contract; TECH.md sets the module plan; ADR-0008 frames the sidebar index as ephemeral navigation state, not an access boundary.", "No existing PR review comments were found at the head commit."], "files": [{"path": "specs/gh-31/PRODUCT.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-26c77b0a60daf64bd452c2b157dfb8d5b253ffb01ba778df0613e04a5e69795f"}, {"path": "specs/gh-31/TECH.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-4b79c6d2de308f9cb2f1cb093f69b3090f2f78ec8e651e947e612a7783173acd"}], "comments": [], "links": [{"label": "PR #61", "url": "https://github.com/bholmesdev/hubble.md/pull/61"}]}, {"id": "crawl", "title": "Initial crawl + ignore rules", "kind": "main-process", "x": -130, "y": -150, "summary": "A recursive walk produces the markdown FileEntry[] for the open folder, filtering by layered ignore rules and hard-ignored dirs.", "details": ["Today collectMarkdownFiles() in main.ts emits the snapshot via desktop:list-directory.", "TECH.md proposes moving this into fileIndex.ts + ignoreRules.ts that own crawl state and emit an initial 'ready' snapshot.", "Crawl includes .md/.markdown/.mdown and always excludes .git, dist, node_modules."], "files": [{"path": "specs/gh-31/TECH.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-4b79c6d2de308f9cb2f1cb093f69b3090f2f78ec8e651e947e612a7783173acd"}], "comments": [], "links": []}, {"id": "watcher", "title": "Chokidar watcher deltas", "kind": "main-process", "x": -130, "y": 110, "summary": "The folder watcher emits add/change/unlink/dir events; ignore-config edits rebuild rules and replace the watcher.", "details": ["desktop:watch-path filters to markdown and ignore-config files, then notifies the renderer.", "TECH.md proposes batching these into typed index deltas (upsert/remove) with a short debounce instead of a full re-list."], "files": [{"path": "specs/gh-31/TECH.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-4b79c6d2de308f9cb2f1cb093f69b3090f2f78ec8e651e947e612a7783173acd"}], "comments": [], "links": []}, {"id": "store", "title": "workspace.files state", "kind": "state owner", "x": 190, "y": -20, "summary": "The renderer store holds the file list the sidebar renders. Today every watcher event triggers refreshFiles(); the spec replaces that with delta application.", "details": ["refreshFiles() sets workspace.files (guarded by workspacePath); touchFile() bumps mtime on save.", "TECH.md adds a fileIndexStatus (idle/indexing/ready/error) and upsert/remove reducers so live edits avoid full re-crawls."], "files": [{"path": "specs/gh-31/TECH.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-4b79c6d2de308f9cb2f1cb093f69b3090f2f78ec8e651e947e612a7783173acd"}], "comments": [], "links": []}, {"id": "sidebar-render", "title": "Sidebar render", "kind": "output", "x": 470, "y": -20, "summary": "The sidebar renders the current file list. The spec adds a dedicated indexing state and allows the open file to be absent from the list.", "details": ["Sidebar.tsx maps workspace.files into the shared @hubble.md/ui sidebar with relative paths and sort modes.", "PRODUCT.md requires an indexing/loading state during the first crawl and a complete tree afterward."], "files": [{"path": "specs/gh-31/PRODUCT.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-26c77b0a60daf64bd452c2b157dfb8d5b253ffb01ba778df0613e04a5e69795f"}], "comments": [], "links": []}], "edges": [{"source": "intent", "target": "crawl", "label": "drives initial crawl"}, {"source": "intent", "target": "watcher", "label": "drives live updates"}, {"source": "crawl", "target": "store", "label": "snapshot populates"}, {"source": "watcher", "target": "store", "label": "deltas update"}, {"source": "store", "target": "sidebar-render", "label": "renders from"}], "tour": [{"nodeId": "intent", "title": "Start with intent", "body": "Begin with what the specs are trying to achieve: a usable shell plus an ignore-aware, incremental sidebar index. This is the source of every flow below."}, {"nodeId": "crawl", "title": "Initial crawl", "body": "The first data to move is the initial markdown snapshot from a recursive, ignore-filtered crawl. The spec relocates this into a dedicated indexer module."}, {"nodeId": "watcher", "title": "Live deltas", "body": "After the snapshot, the chokidar watcher produces incremental file events. The spec batches these into typed upsert/remove deltas instead of full re-lists."}, {"nodeId": "store", "title": "Into renderer state", "body": "Both the snapshot and deltas land in workspace.files. The key spec change is applying deltas and an index status here rather than calling refreshFiles() on every event."}, {"nodeId": "sidebar-render", "title": "Out to the sidebar", "body": "Finally the store renders into the sidebar, which gains an explicit indexing state and tolerates the open file being absent from the list."}]}, {"id": "code-dependency", "label": "Code dependency graph", "color": "#2e5d9e", "summary": "Which modules the specs touch and how they depend on each other: specs guide renderer entry points, which depend on the store and the typed bridge, which invokes the main-process crawler that the spec splits into an indexer.", "nodes": [{"id": "specs", "title": "specs/gh-31 + ADR-0008", "kind": "spec entry", "x": -430, "y": 0, "summary": "The only files actually added by this PR. They define intent (PRODUCT), the module plan (TECH), and the architectural decision (ADR).", "details": ["PRODUCT.md: 28 numbered behaviors + a UX validation script.", "TECH.md: proposed fileIndex.ts/ignoreRules.ts modules and renderer/IPC changes.", "ADR-0008: sidebar index is ephemeral navigation state, refining ADR-0001."], "files": [{"path": "specs/gh-31/PRODUCT.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-26c77b0a60daf64bd452c2b157dfb8d5b253ffb01ba778df0613e04a5e69795f"}, {"path": "specs/gh-31/TECH.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-4b79c6d2de308f9cb2f1cb093f69b3090f2f78ec8e651e947e612a7783173acd"}, {"path": "docs/adr/0008-desktop-sidebar-index-is-ephemeral-navigation-state.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-244f0538177063b1d3622cab5d1efec1538d53099c458f1dfe1bfded097c85b1"}], "comments": [], "links": [{"label": "PR #61", "url": "https://github.com/bholmesdev/hubble.md/pull/61"}]}, {"id": "app", "title": "App.tsx watchers", "kind": "entry point", "x": -150, "y": -130, "summary": "Renderer entry that wires workspace + active-file watchers and startup path restoration. Spec target: subscribe to index updates instead of re-listing.", "details": ["Today the workspace watcher effect calls refreshFiles(workspacePath) on every change.", "TECH.md: subscribe to a workspace-index subscription and keep startup restoration independent of index readiness."], "files": [], "comments": [], "links": []}, {"id": "actions", "title": "store/actions.ts", "kind": "module", "x": -150, "y": 130, "summary": "Owns refreshFiles, openWorkspace, loadPath and file mutations. Spec target: add delta reducers and decouple loadPath from indexing.", "details": ["openWorkspace currently awaits refreshFiles before loading the remembered file.", "TECH.md: return without awaiting the crawl, apply upsert/remove deltas, keep full refresh only as a fallback."], "files": [], "comments": [], "links": []}, {"id": "bridge", "title": "preload + desktopApi types", "kind": "ipc seam", "x": 160, "y": 0, "summary": "The typed IPC contract between renderer and main. Spec target: add a watchWorkspaceFiles-style index subscription.", "details": ["types.ts defines DesktopApi; preload.ts implements watchPath/listDirectory over ipcRenderer.", "TECH.md: add a workspace-index subscription that sends { status, snapshot?, upsert?, remove? } guarded by watch id."], "files": [], "comments": [], "links": []}, {"id": "main", "title": "electron/main.ts", "kind": "module", "x": 450, "y": -120, "summary": "Deepest dependency: IPC registration, recursive crawl, ignore parsing, chokidar watching. Spec target: extract an indexer + ignore-rules module.", "details": ["Holds collectMarkdownFiles, collectWorkspaceIgnoreRules, isIgnoredByRules and the desktop:watch-path watcher.", "TECH.md: move discovery/watching into fileIndex.ts, ignore logic into ignoreRules.ts, keep grants + IPC in main."], "files": [], "comments": [], "links": []}, {"id": "sidebar", "title": "components/Sidebar.tsx", "kind": "leaf", "x": 450, "y": 140, "summary": "Leaf view that renders workspace.files via the shared UI. Spec target: render an indexing state and allow currentPath to be absent.", "details": ["Adapts files into @hubble.md/ui Sidebar and calls loadPath on select.", "PRODUCT/TECH: show a compact indexing affordance and no selected row when the open file is not indexed."], "files": [], "comments": [], "links": []}], "edges": [{"source": "specs", "target": "app", "label": "guides changes to"}, {"source": "app", "target": "actions", "label": "depends on"}, {"source": "app", "target": "bridge", "label": "subscribes via"}, {"source": "actions", "target": "bridge", "label": "calls"}, {"source": "bridge", "target": "main", "label": "invokes IPC in"}, {"source": "app", "target": "sidebar", "label": "renders"}, {"source": "sidebar", "target": "actions", "label": "calls"}], "tour": [{"nodeId": "specs", "title": "Start at the only changed files", "body": "This PR adds just three docs. They are the entry point for understanding which code seams the change will eventually touch."}, {"nodeId": "app", "title": "Renderer entry point", "body": "App.tsx is the highest-level seam: it owns the watcher effects and startup restoration the spec wants to rewire away from full re-lists."}, {"nodeId": "actions", "title": "Store actions", "body": "App depends on actions.ts for refreshFiles/openWorkspace/loadPath. The spec adds delta reducers here and decouples document loading from indexing."}, {"nodeId": "bridge", "title": "The IPC seam", "body": "Both App and actions depend on the typed desktopApi bridge. A new index-subscription contract is the main interface the spec introduces."}, {"nodeId": "main", "title": "Deepest dependency", "body": "The bridge invokes main.ts, the only disk owner. The spec extracts its crawl/ignore logic into fileIndex.ts and ignoreRules.ts."}, {"nodeId": "sidebar", "title": "Leaf view", "body": "Sidebar.tsx is the leaf: it consumes store state and calls actions. It gains the indexing state and absent-current-path tolerance."}]}, {"id": "user-action", "label": "User action graph", "color": "#754dac", "summary": "What the user does when opening a large folder and how the specced behavior responds: the shell stays usable, the sidebar shows an indexing state, files open during indexing, and the list updates incrementally.", "nodes": [{"id": "open-folder", "title": "Open a folder", "kind": "user action", "x": -420, "y": -10, "summary": "The user opens a Workspace Folder or Plain Folder (picker, menu, or launch path).", "details": ["openWorkspace sets workspacePath and clears files; PRODUCT behavior 1 requires entering the workspace immediately.", "Folder open is local-first; no Workspace config or Cloud Sync is required (PRODUCT 26)."], "files": [{"path": "specs/gh-31/PRODUCT.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-26c77b0a60daf64bd452c2b157dfb8d5b253ffb01ba778df0613e04a5e69795f"}], "comments": [], "links": [{"label": "PR #61", "url": "https://github.com/bholmesdev/hubble.md/pull/61"}]}, {"id": "shell", "title": "Editor shell stays usable", "kind": "surface", "x": -140, "y": -130, "summary": "The main editor shell remains interactive while the sidebar indexes; Open File and Open Folder stay available.", "details": ["PRODUCT 1–3: the shell must not block on the initial sidebar crawl.", "ADR-0008: the editor shell can become usable before the navigation index is ready."], "files": [{"path": "docs/adr/0008-desktop-sidebar-index-is-ephemeral-navigation-state.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-244f0538177063b1d3622cab5d1efec1538d53099c458f1dfe1bfded097c85b1"}], "comments": [], "links": []}, {"id": "indexing", "title": "Sidebar indexing state", "kind": "feedback", "x": -140, "y": 120, "summary": "During the first crawl the sidebar shows an indexing/loading state, not a partial tree, then swaps to a complete tree.", "details": ["PRODUCT 2 + 12: show indexing while crawling, then a complete markdown-only tree.", "PRODUCT 13: expanding a folder is presentational and does not trigger a new crawl."], "files": [{"path": "specs/gh-31/PRODUCT.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-26c77b0a60daf64bd452c2b157dfb8d5b253ffb01ba778df0613e04a5e69795f"}], "comments": [], "links": []}, {"id": "open-file", "title": "Open / restore a file during indexing", "kind": "user action", "x": 170, "y": -10, "summary": "The user opens a file explicitly, or Hubble restores the remembered last-opened file, even before the sidebar tree is ready.", "details": ["PRODUCT 4–5: explicit picks and readable remembered files load while indexing continues.", "PRODUCT 10: an ignored file stays viewable; ignore rules filter the sidebar, not file access."], "files": [{"path": "specs/gh-31/PRODUCT.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-26c77b0a60daf64bd452c2b157dfb8d5b253ffb01ba778df0613e04a5e69795f"}], "comments": [], "links": []}, {"id": "updates", "title": "Incremental sidebar updates", "kind": "feedback", "x": 450, "y": -10, "summary": "As files change, the sidebar updates incrementally after a short debounce; unrelated non-markdown changes do not reload it.", "details": ["PRODUCT 14–18: add/edit/delete markdown and ignore-file edits update visible results.", "PRODUCT 19 + 23: non-markdown changes cause no visible reload; rapid changes settle into one update."], "files": [{"path": "specs/gh-31/PRODUCT.md", "url": "https://github.com/bholmesdev/hubble.md/pull/61/files#diff-26c77b0a60daf64bd452c2b157dfb8d5b253ffb01ba778df0613e04a5e69795f"}], "comments": [], "links": []}], "edges": [{"source": "open-folder", "target": "shell", "label": "enters workspace"}, {"source": "shell", "target": "indexing", "label": "sidebar shows"}, {"source": "shell", "target": "open-file", "label": "user can open"}, {"source": "indexing", "target": "updates", "label": "completes into"}, {"source": "open-file", "target": "updates", "label": "file persists through"}], "tour": [{"nodeId": "open-folder", "title": "User opens a folder", "body": "The walkthrough starts with the triggering action: opening a (potentially large) folder, which today can hang the app."}, {"nodeId": "shell", "title": "Shell stays usable", "body": "The core behavioral promise: the editor shell stays interactive and Open File/Folder remain available while indexing runs."}, {"nodeId": "indexing", "title": "Sidebar shows indexing", "body": "Instead of a partial or frozen tree, the sidebar shows a dedicated indexing state, then swaps to a complete markdown-only tree."}, {"nodeId": "open-file", "title": "Open a file mid-index", "body": "The user can still open or restore a file during indexing — including ignored files — because the index filters the sidebar, not file access."}, {"nodeId": "updates", "title": "Incremental updates", "body": "Finally, file and ignore-rule changes update the sidebar incrementally after a debounce, while unrelated non-markdown churn causes no visible reload."}]}]}</script>
+            <script>
+(() => {
+  const D3_CDN_URL = 'https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js';
+  let attemptedLoad = false;
+  let activeGraphId = null;
+  let selectedNodeId = null;
+  let tourIndex = 0;
+  const REQUIRED_GRAPH_IDS = ['system-overview', 'data-flow', 'code-dependency', 'user-action'];
+  const DEFAULT_NODE_WIDTH = 220;
+  const DEFAULT_NODE_HEIGHT = 116;
+  const OVERVIEW_NODE_WIDTH = 360;
+  const OVERVIEW_NODE_HEIGHT = 220;
+  let zoomBehavior = null;
+  let svgSelection = null;
+  let viewportSelection = null;
+  let currentData = null;
+
+  function setError(error) {
+    console.warn('D3 canvas render unavailable.', error || 'unknown error');
+    document.body.classList.add('d3-canvas-error');
+    const errorNode = document.querySelector('.d3-canvas-error');
+    if (errorNode) errorNode.textContent = `D3 canvas failed to render: ${error?.message || error || 'unknown error'}`;
+  }
+
+  function readInlineData() {
+    if (window.PR_WALKTHROUGH_D3_DATA) return window.PR_WALKTHROUGH_D3_DATA;
+    const script = document.getElementById('pr-walkthrough-data');
+    if (!script) throw new Error('Missing pr-walkthrough-data script tag');
+    return JSON.parse(script.textContent || '{}');
+  }
+
+  function activeGraph() {
+    return (currentData.graphs || []).find((graph) => graph.id === activeGraphId) || (currentData.graphs || [])[0];
+  }
+
+  function nodeMap(graph) { return new Map((graph.nodes || []).map((node) => [node.id, node])); }
+  function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+  }
+  function listItems(items, render) {
+    if (!items || items.length === 0) return '<p class="d3-empty">None attached.</p>';
+    return `<ul class="d3-detail-list">${items.map(render).join('')}</ul>`;
+  }
+
+  function renderTour(graph) {
+    const step = (graph.tour || [])[tourIndex];
+    const label = document.querySelector('.d3-tour-step-label');
+    const title = document.querySelector('.d3-tour-title');
+    const body = document.querySelector('.d3-tour-body');
+    const card = document.querySelector('.d3-tour-card');
+    if (card) card.dataset.tourIndex = String(tourIndex);
+    if (label) label.textContent = `Step ${Math.min(tourIndex + 1, (graph.tour || []).length)} / ${(graph.tour || []).length || 0}`;
+    if (title) title.textContent = step?.title || graph.label || 'View tour';
+    if (body) body.textContent = step?.body || graph.summary || '';
+  }
+
+  function renderDetails(node, graph) {
+    const panel = document.getElementById('pr-walkthrough-details');
+    if (!panel) return;
+    const step = (graph.tour || [])[tourIndex];
+    if (!node) {
+      panel.innerHTML = '<p class="d3-panel-title">Selected point</p><p class="d3-empty">Select a node or use the tour controls.</p>';
+      return;
+    }
+    const details = Array.isArray(node.details) ? node.details : [];
+    const files = Array.isArray(node.files) ? node.files : [];
+    const comments = Array.isArray(node.comments) ? node.comments : [];
+    const links = Array.isArray(node.links) ? node.links : [];
+    panel.innerHTML = `
+      <span class="d3-detail-kind">${escapeHtml(graph.label)} · ${escapeHtml(node.kind || 'point of interest')}</span>
+      <h2 class="d3-detail-title">${escapeHtml(node.title)}</h2>
+      <p class="d3-detail-summary">${escapeHtml(node.summary || '')}</p>
+      ${step?.nodeId === node.id ? `<section class="d3-detail-section"><h3>Tour context</h3><ul class="d3-detail-list"><li>${escapeHtml(step.body || '')}</li></ul></section>` : ''}
+      <section class="d3-detail-section"><h3>Explanation</h3>${details.length ? `<ul class="d3-detail-list">${details.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : '<p class="d3-empty">No additional detail provided.</p>'}</section>
+      <section class="d3-detail-section"><h3>Changed files</h3>${listItems(files, (file) => `<li><a class="d3-file-link" href="${escapeHtml(file.url || '#')}" target="_blank" rel="noreferrer">${escapeHtml(file.path || file.label || 'file')}</a>${file.note ? `<p>${escapeHtml(file.note)}</p>` : ''}</li>`)}</section>
+      <section class="d3-detail-section"><h3>Existing review discussion</h3>${listItems(comments, (comment) => `<li><span class="d3-comment-author">${escapeHtml(comment.author || 'reviewer')}</span>${escapeHtml(comment.body || '')}${comment.url ? `<br><a href="${escapeHtml(comment.url)}" target="_blank" rel="noreferrer">Open comment</a>` : ''}</li>`)}</section>
+      <section class="d3-detail-section"><h3>Links</h3>${listItems(links, (link) => `<li><a href="${escapeHtml(link.url || '#')}" target="_blank" rel="noreferrer">${escapeHtml(link.label || link.url || 'link')}</a></li>`)}</section>
+    `;
+  }
+
+  function wrapText(selection, width, maxLines = 3) {
+    selection.each(function wrapEach() {
+      const text = window.d3.select(this);
+      const datum = text.datum();
+      const resolvedWidth = typeof width === 'function' ? Number(width(datum)) : Number(width);
+      const resolvedMaxLines = typeof maxLines === 'function' ? Number(maxLines(datum)) : Number(maxLines);
+      const words = text.text().split(new RegExp('\\s+')).filter(Boolean);
+      const lineHeight = 15;
+      const y = Number(text.attr('y') || 0);
+      text.text('');
+      let line = [];
+      let lineNumber = 0;
+      let tspan = text.append('tspan').attr('x', text.attr('x')).attr('y', y);
+      for (const word of words) {
+        line.push(word);
+        tspan.text(line.join(' '));
+        if (tspan.node().getComputedTextLength() > resolvedWidth && line.length > 1) {
+          line.pop();
+          tspan.text(line.join(' '));
+          line = [word];
+          lineNumber += 1;
+          if (lineNumber >= resolvedMaxLines) { tspan.text(`${tspan.text()}…`); break; }
+          tspan = text.append('tspan').attr('x', text.attr('x')).attr('y', y + lineNumber * lineHeight).text(word);
+        }
+      }
+    });
+  }
+  function nodeWidth(node, graph) {
+    return Number(node.width || (graph?.id === 'system-overview' ? OVERVIEW_NODE_WIDTH : DEFAULT_NODE_WIDTH));
+  }
+  function nodeHeight(node, graph) {
+    return Number(node.height || (graph?.id === 'system-overview' ? OVERVIEW_NODE_HEIGHT : DEFAULT_NODE_HEIGHT));
+  }
+  function nodeBoundaryPoint(from, to, padding, graph) {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    if (dx === 0 && dy === 0) return { x: from.x, y: from.y };
+    const scale = 1 / Math.max(Math.abs(dx) / (nodeWidth(from, graph) / 2 + padding), Math.abs(dy) / (nodeHeight(from, graph) / 2 + padding));
+    return { x: from.x + dx * scale, y: from.y + dy * scale };
+  }
+  function pathForEdge(edge, nodes, graph) {
+    const source = nodes.get(edge.source);
+    const target = nodes.get(edge.target);
+    if (!source || !target) return '';
+    const start = nodeBoundaryPoint(source, target, 10, graph);
+    const end = nodeBoundaryPoint(target, source, 18, graph);
+    const dx = end.x - start.x;
+    const control = Math.max(80, Math.abs(dx) * 0.42);
+    return `M ${start.x} ${start.y} C ${start.x + control} ${start.y}, ${end.x - control} ${end.y}, ${end.x} ${end.y}`;
+  }
+
+  function applyFilters(graph) {
+    const query = (document.querySelector('.d3-search')?.value || '').trim().toLowerCase();
+    const tourNodeId = (graph.tour || [])[tourIndex]?.nodeId;
+    const matches = (node) => {
+      if (!query) return true;
+      const haystack = [node.title, node.kind, node.summary, ...(node.details || []), ...(node.files || []).map((file) => file.path || file.label || ''), ...(node.comments || []).map((comment) => `${comment.author || ''} ${comment.body || ''}`)].join(' ').toLowerCase();
+      return haystack.includes(query);
+    };
+    const visible = new Set((graph.nodes || []).filter(matches).map((node) => node.id));
+    window.d3.selectAll('.d3-node')
+      .classed('is-dimmed', (node) => !visible.has(node.id))
+      .classed('is-selected', (node) => node.id === selectedNodeId)
+      .classed('is-tour-node', (node) => node.id === tourNodeId);
+    window.d3.selectAll('.d3-edge').classed('is-dimmed', (edge) => !visible.has(edge.source) || !visible.has(edge.target));
+  }
+
+  function fitToView() {
+    if (!svgSelection || !viewportSelection || !zoomBehavior) return;
+    const svg = svgSelection.node();
+    const bounds = viewportSelection.node().getBBox();
+    const fullWidth = svg.clientWidth || 1000;
+    const fullHeight = svg.clientHeight || 700;
+    const width = Math.max(bounds.width, 1);
+    const height = Math.max(bounds.height, 1);
+    const scale = Math.min(1.25, 0.86 / Math.max(width / fullWidth, height / fullHeight));
+    const translate = [fullWidth / 2 - scale * (bounds.x + width / 2), fullHeight / 2 - scale * (bounds.y + height / 2)];
+    svgSelection.transition().duration(300).call(zoomBehavior.transform, window.d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale));
+  }
+  function focusNode(node) {
+    if (!node || !svgSelection || !zoomBehavior) return;
+    const svg = svgSelection.node();
+    const scale = Math.max(0.85, window.d3.zoomTransform(svg).k || 1);
+    const translate = [(svg.clientWidth || 1000) / 2 - node.x * scale, (svg.clientHeight || 700) / 2 - node.y * scale];
+    svgSelection.transition().duration(260).call(zoomBehavior.transform, window.d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale));
+  }
+  function resetZoom() { if (svgSelection && zoomBehavior) svgSelection.transition().duration(220).call(zoomBehavior.transform, window.d3.zoomIdentity); }
+  function zoomBy(factor) { if (svgSelection && zoomBehavior) svgSelection.transition().duration(140).call(zoomBehavior.scaleBy, factor); }
+
+  function selectTourStep(index, options = {}) {
+    const graph = activeGraph();
+    const tour = graph.tour || [];
+    if (!tour.length) return;
+    tourIndex = Math.max(0, Math.min(index, tour.length - 1));
+    const nodes = nodeMap(graph);
+    const node = nodes.get(tour[tourIndex].nodeId) || (graph.nodes || [])[0];
+    selectedNodeId = node?.id || null;
+    renderTour(graph);
+    renderDetails(node, graph);
+    applyFilters(graph);
+    if (!options.noFocus) focusNode(node);
+  }
+  function nextTourStep() { selectTourStep(tourIndex + 1); }
+  function previousTourStep() { selectTourStep(tourIndex - 1); }
+  function restartTour() { selectTourStep(0); }
+
+  function renderActiveGraph(options = {}) {
+    const graph = activeGraph();
+    if (!graph) throw new Error('No active graph');
+    const svg = window.d3.select('#pr-walkthrough-canvas');
+    if (svg.empty()) throw new Error('Missing #pr-walkthrough-canvas');
+    svg.selectAll('*').remove();
+    svgSelection = svg;
+    const nodesById = nodeMap(graph);
+    const defs = svg.append('defs');
+    defs.append('marker').attr('id', `d3-arrowhead-${graph.id}`).attr('class', 'd3-edge-arrow').attr('viewBox', '0 -6 12 12').attr('refX', 11).attr('refY', 0).attr('markerWidth', 9).attr('markerHeight', 9).attr('orient', 'auto').attr('markerUnits', 'strokeWidth').style('--edge-color', graph.color || '#868584').append('path').attr('d', 'M0,-6L12,0L0,6Z');
+    const root = svg.append('g').attr('class', 'd3-zoom-root');
+    viewportSelection = root.append('g').attr('class', 'd3-viewport');
+    viewportSelection.append('text').attr('class', 'd3-graph-title').attr('x', -420).attr('y', -300).attr('fill', graph.color || '#a43787').text(graph.label || graph.id);
+    const edgeLayer = viewportSelection.append('g').attr('class', 'd3-edges');
+    const nodeLayer = viewportSelection.append('g').attr('class', 'd3-nodes');
+    const edges = edgeLayer.selectAll('.d3-edge').data(graph.edges || []).join('g').attr('class', 'd3-edge').attr('data-edge-id', (edge, index) => edge.id || `${edge.source}-${edge.target}-${index}`).style('--edge-color', graph.color || '#868584');
+    edges.append('path').attr('d', (edge) => pathForEdge(edge, nodesById, graph)).attr('marker-end', `url(#d3-arrowhead-${graph.id})`);
+    edges.append('text').append('textPath').attr('href', function href(_, index) { const path = window.d3.select(edges.nodes()[index]).select('path'); const id = `d3-edge-path-${graph.id}-${index}`; path.attr('id', id); return `#${id}`; }).attr('startOffset', '50%').attr('text-anchor', 'middle').text((edge) => edge.label || '');
+    const nodes = nodeLayer.selectAll('.d3-node').data(graph.nodes || []).join('g').attr('class', (node) => `d3-node${graph.id === 'system-overview' ? ' is-overview-card' : ''}`).attr('data-node-id', (node) => node.id).attr('tabindex', 0).attr('role', 'button').attr('aria-label', (node) => node.title).attr('transform', (node) => `translate(${node.x || 0}, ${node.y || 0})`).style('--node-color', graph.color || '#a43787').on('click keydown', (event, node) => {
+      if (event.type === 'keydown' && event.key !== 'Enter' && event.key !== ' ') return;
+      selectedNodeId = node.id;
+      const tourPosition = (graph.tour || []).findIndex((step) => step.nodeId === node.id);
+      if (tourPosition >= 0) tourIndex = tourPosition;
+      renderTour(graph);
+      renderDetails(node, graph);
+      applyFilters(graph);
+    });
+    nodes.append('rect').attr('x', (node) => -nodeWidth(node, graph) / 2).attr('y', (node) => -nodeHeight(node, graph) / 2).attr('width', (node) => nodeWidth(node, graph)).attr('height', (node) => nodeHeight(node, graph)).attr('rx', 12);
+    nodes.append('text').attr('class', 'd3-node-kind').attr('x', (node) => -nodeWidth(node, graph) / 2 + 20).attr('y', (node) => -nodeHeight(node, graph) / 2 + 27).text((node) => node.kind || 'point');
+    nodes.append('text').attr('class', 'd3-node-title').attr('x', (node) => -nodeWidth(node, graph) / 2 + 20).attr('y', (node) => -nodeHeight(node, graph) / 2 + 53).text((node) => node.title || node.id).call(wrapText, (node) => nodeWidth(node, graph) - 40, 2);
+    nodes.append('text').attr('class', 'd3-node-summary').attr('x', (node) => -nodeWidth(node, graph) / 2 + 20).attr('y', (node) => -nodeHeight(node, graph) / 2 + 96).text((node) => node.summary || '').call(wrapText, (node) => nodeWidth(node, graph) - 40, (node) => Number(node.summaryLines || (graph.id === 'system-overview' ? 7 : 2)));
+    zoomBehavior = window.d3.zoom().scaleExtent([0.18, 3.5]).on('zoom', (event) => root.attr('transform', event.transform));
+    svg.call(zoomBehavior);
+    document.querySelectorAll('.d3-graph-toggle').forEach((button) => button.setAttribute('aria-pressed', button.dataset.graphId === graph.id ? 'true' : 'false'));
+    selectTourStep(Math.min(tourIndex, Math.max((graph.tour || []).length - 1, 0)), { noFocus: true });
+    if (!options.skipFit) window.setTimeout(fitToView, 40);
+  }
+
+  function switchGraph(graphId) {
+    activeGraphId = graphId;
+    selectedNodeId = null;
+    tourIndex = 0;
+    const search = document.querySelector('.d3-search');
+    if (search) search.value = '';
+    renderActiveGraph();
+  }
+
+  function setupControls() {
+    document.querySelector('[data-d3-action="fit"]')?.addEventListener('click', fitToView);
+    document.querySelector('[data-d3-action="reset"]')?.addEventListener('click', resetZoom);
+    document.querySelector('[data-d3-action="tour-prev"]')?.addEventListener('click', previousTourStep);
+    document.querySelector('[data-d3-action="tour-next"]')?.addEventListener('click', nextTourStep);
+    document.querySelector('[data-d3-action="tour-restart"]')?.addEventListener('click', restartTour);
+    document.querySelectorAll('.d3-graph-toggle').forEach((button) => button.addEventListener('click', () => switchGraph(button.dataset.graphId)));
+    document.querySelector('.d3-search')?.addEventListener('input', () => applyFilters(activeGraph()));
+    document.addEventListener('keydown', (event) => {
+      if (event.target?.matches?.('input, textarea')) { if (event.key === 'Escape') event.target.blur(); else return; }
+      if (event.key === 'ArrowRight' || event.key.toLowerCase() === 'n') nextTourStep();
+      else if (event.key === 'ArrowLeft' || event.key.toLowerCase() === 'p') previousTourStep();
+      else if (event.key === '1') switchGraph('system-overview');
+      else if (event.key === '2') switchGraph('data-flow');
+      else if (event.key === '3') switchGraph('code-dependency');
+      else if (event.key === '4') switchGraph('user-action');
+      else if (event.key === '+' || event.key === '=') zoomBy(1.2);
+      else if (event.key === '-') zoomBy(0.82);
+      else if (event.key === '0') resetZoom();
+      else if (event.key.toLowerCase() === 'f') fitToView();
+      else if (event.key === '/') { event.preventDefault(); document.querySelector('.d3-search')?.focus(); }
+      else if (event.key === 'Escape') { selectedNodeId = null; const search = document.querySelector('.d3-search'); if (search) search.value = ''; renderDetails(null, activeGraph()); applyFilters(activeGraph()); }
+    });
+  }
+
+  function renderD3Canvas() {
+    if (!window.d3) { setError('D3 library was not loaded'); return; }
+    currentData = readInlineData();
+    const graphIds = new Set((currentData.graphs || []).map((graph) => graph.id));
+    const missing = REQUIRED_GRAPH_IDS.filter((id) => !graphIds.has(id));
+    if (missing.length) throw new Error(`Missing required graphs: ${missing.join(', ')}`);
+    activeGraphId = activeGraphId || (currentData.graphs || [])[0]?.id;
+    setupControls();
+    renderActiveGraph();
+    document.body.classList.add('d3-canvas-ready');
+    document.body.classList.remove('d3-canvas-error');
+  }
+
+  function loadD3Runtime() {
+    if (attemptedLoad) return;
+    attemptedLoad = true;
+    if (window.d3) { try { renderD3Canvas(); } catch (error) { setError(error); } return; }
+    const script = document.createElement('script');
+    script.src = D3_CDN_URL;
+    script.async = true;
+    script.onload = () => { try { renderD3Canvas(); } catch (error) { setError(error); } };
+    script.onerror = () => setError(`Failed to load pinned D3 CDN script: ${D3_CDN_URL}`);
+    document.head.appendChild(script);
+  }
+
+  window.prWalkthroughD3Render = renderD3Canvas;
+  window.prWalkthroughD3SwitchGraph = switchGraph;
+  window.prWalkthroughD3NextTourStep = nextTourStep;
+  window.prWalkthroughD3PreviousTourStep = previousTourStep;
+  window.prWalkthroughD3FitToView = fitToView;
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', loadD3Runtime, { once: true });
+  else loadD3Runtime();
+})();
+</script>
+          </main>
+        </body>
+        </html>
