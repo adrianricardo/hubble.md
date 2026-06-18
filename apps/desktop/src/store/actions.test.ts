@@ -193,6 +193,45 @@ describe("desktop renameMarkdownFile", () => {
 	});
 });
 
+describe("desktop loadPath", () => {
+	beforeEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	it("refreshes the sidebar when a selected file no longer exists", async () => {
+		const api = createDesktopApi();
+		const missingPath = "/workspace/missing.md";
+		const remainingPath = "/workspace/remaining.md";
+		api.readFileText.mockRejectedValue(
+			new Error(`ENOENT: no such file or directory, open '${missingPath}'`),
+		);
+		api.listDirectory.mockResolvedValue([
+			{ path: remainingPath, modified_at: 2 },
+		]);
+		const { appStore, loadPath, workspaceStore } = await loadStoreActions(api);
+
+		appStore.set((current) => ({
+			...current,
+			workspace: {
+				...current.workspace,
+				workspacePath: "/workspace",
+				files: [
+					{ path: missingPath, modified_at: 1 },
+					{ path: remainingPath, modified_at: 2 },
+				],
+			},
+		}));
+
+		await loadPath(missingPath);
+
+		await vi.waitFor(() => {
+			expect(workspaceStore.get().files).toEqual([
+				{ path: remainingPath, modified_at: 2 },
+			]);
+		});
+	});
+});
+
 describe("desktop pinned notes", () => {
 	beforeEach(() => {
 		vi.unstubAllGlobals();
