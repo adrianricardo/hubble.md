@@ -64,8 +64,8 @@ export function FilePropertiesPanel({
 	}
 
 	return (
-		<div className="px-4 py-3">
-			<div className="flex max-w-3xl flex-col gap-1.5">
+		<div className="editorPropertiesPanel">
+			<div className="flex flex-col gap-1.5">
 				{properties.map((property, index) => (
 					<PropertyRow
 						key={property.draftId ?? property.key}
@@ -135,8 +135,8 @@ function InvalidFrontMatter({
 }) {
 	const [raw, setRaw] = useState(state.raw);
 	return (
-		<div className="border-b border-border/70 px-4 py-3">
-			<div className="flex max-w-3xl flex-col gap-2 text-[12px]">
+		<div className="editorPropertiesPanel border-b border-border/70">
+			<div className="flex flex-col gap-2 text-[12px]">
 				<p className="m-0 text-muted-foreground">Properties unavailable</p>
 				<details className="rounded-sm border border-border bg-muted/30">
 					<summary className="cursor-pointer px-2 py-1 text-[11px] text-muted-foreground">

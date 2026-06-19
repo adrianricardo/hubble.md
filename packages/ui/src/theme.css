@@ -90,6 +90,12 @@
 	--default-transition-duration: 180ms;
 }
 
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
 /* Selected row goes yellow only while the sidebar pane is focused (else gray). */
 [data-sidebar-root]:focus-within {
 	--sidebar-accent: var(--selected);
