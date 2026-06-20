@@ -1,6 +1,12 @@
-import { Button, Sidebar as SharedSidebar, SidebarFrame } from "@hubble.md/ui";
+import {
+	Button,
+	Sidebar as SharedSidebar,
+	type SidebarFocusedItem,
+	SidebarFrame,
+} from "@hubble.md/ui";
 import { useStoreValue } from "@simplestack/store/react";
 import type { ReactNode } from "react";
+import { toast } from "sonner";
 import { desktopApi } from "../desktopApi";
 import { revealFileLabel } from "../lib/revealFile";
 import {
@@ -22,7 +28,13 @@ import {
 } from "../store/state";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 
-export function Sidebar({ footer }: { footer?: ReactNode }) {
+export function Sidebar({
+	footer,
+	onFocusedPathChange,
+}: {
+	footer?: ReactNode;
+	onFocusedPathChange?: (path: string | null) => void;
+}) {
 	const workspace = useStoreValue(workspaceStore);
 	const sidebarOpen = useStoreValue(sidebarOpenStore);
 	const currentPath = useStoreValue(currentPathStore);
@@ -67,6 +79,14 @@ export function Sidebar({ footer }: { footer?: ReactNode }) {
 			? `${workspacePath}${normalized}`
 			: `${workspacePath}/${normalized}`;
 	};
+	const copyFilePath = async (path: string) => {
+		try {
+			await navigator.clipboard.writeText(path);
+			toast.success("File path copied");
+		} catch {
+			toast.error("Failed to copy file path");
+		}
+	};
 
 	return (
 		<SharedSidebar
@@ -85,9 +105,19 @@ export function Sidebar({ footer }: { footer?: ReactNode }) {
 			onSortModeChange={setSortMode}
 			onSelectFile={(path) => void loadPath(path)}
 			onRevealFile={(path) => void desktopApi.revealFile(path)}
+			onCopyFilePath={(path) => void copyFilePath(path)}
 			onRevealFolder={(folderId) =>
 				void desktopApi.revealFile(absolutePath(folderId))
 			}
+			onFocusedItemChange={(item: SidebarFocusedItem) => {
+				if (!item) {
+					onFocusedPathChange?.(null);
+					return;
+				}
+				onFocusedPathChange?.(
+					item.kind === "file" ? item.path : absolutePath(item.folderId),
+				);
+			}}
 			revealLabel={revealFileLabel(desktopApi.platform)}
 			onRenameFile={(path, nextName) => void renameMarkdownFile(path, nextName)}
 			onDeleteFile={(path) => void deleteMarkdownFile(path)}

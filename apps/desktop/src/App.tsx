@@ -55,6 +55,27 @@ function focusSidebarNav() {
 	document.querySelector<HTMLElement>(SIDEBAR_NAV_SELECTOR)?.focus();
 }
 
+async function copyFilePath(path: string | null) {
+	if (!path) return;
+
+	try {
+		await navigator.clipboard.writeText(path);
+		toast.success("File path copied");
+	} catch {
+		toast.error("Failed to copy file path");
+	}
+}
+
+async function revealPath(path: string | null) {
+	if (!path) return;
+
+	try {
+		await desktopApi.revealFile(path);
+	} catch {
+		toast.error("Failed to reveal file");
+	}
+}
+
 function App() {
 	const state = useStoreValue(viewerStore);
 	const workspacePath = useStoreValue(workspacePathStore);
@@ -64,6 +85,9 @@ function App() {
 		useState<HTMLDivElement | null>(null);
 	const [settingsOpen, setSettingsOpen] = useState(false);
 	const [updateState, setUpdateState] = useState<DesktopUpdateState | null>(
+		null,
+	);
+	const [focusedSidebarPath, setFocusedSidebarPath] = useState<string | null>(
 		null,
 	);
 	const [dismissedVersion, setDismissedVersion] = useState<string | null>(null);
@@ -152,6 +176,10 @@ function App() {
 	}, [hasWorkspace]);
 
 	useEffect(() => {
+		if (!sidebarOpen) setFocusedSidebarPath(null);
+	}, [sidebarOpen]);
+
+	useEffect(() => {
 		const onKeyDown = async (event: KeyboardEvent) => {
 			if (keymatch(event, "CmdOrCtrl+N")) {
 				event.preventDefault();
@@ -169,6 +197,16 @@ function App() {
 			} else if (keymatch(event, "CmdOrCtrl+O")) {
 				event.preventDefault();
 				await openFilePicker();
+			} else if (keymatch(event, "CmdOrCtrl+Shift+C")) {
+				const path = focusedSidebarPath ?? viewerStore.get().currentPath;
+				if (!path) return;
+				event.preventDefault();
+				await copyFilePath(path);
+			} else if (keymatch(event, "CmdOrCtrl+Alt+R")) {
+				const path = focusedSidebarPath ?? viewerStore.get().currentPath;
+				if (!path) return;
+				event.preventDefault();
+				await revealPath(path);
 			} else if (keymatch(event, "CmdOrCtrl+Shift+E")) {
 				event.preventDefault();
 				const opening = !uiStore.get().sidebarOpen;
@@ -183,7 +221,7 @@ function App() {
 		};
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
-	}, [openFilePicker, openSettings]);
+	}, [focusedSidebarPath, openFilePicker, openSettings]);
 
 	useEffect(() => {
 		let active = true;
@@ -279,6 +317,7 @@ function App() {
 			/>
 			<div className="flex min-h-0 flex-1 overflow-hidden">
 				<Sidebar
+					onFocusedPathChange={setFocusedSidebarPath}
 					footer={
 						updateState?.status === "ready" && showUpdateCallout ? (
 							<SidebarUpdateCallout

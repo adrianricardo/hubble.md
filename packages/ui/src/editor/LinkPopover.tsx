@@ -1201,12 +1201,6 @@ export function LinkPopover({
 				dispatchMachineEvent({ type: "TOGGLE_ACTIONS_REQUESTED" });
 				return;
 			}
-			if (isVisible && keymatch(event, "CmdOrCtrl+Shift+C")) {
-				event.preventDefault();
-				event.stopPropagation();
-				void copyLinkToClipboard(linkClipboardText(activeLink), onMessage);
-				return;
-			}
 		};
 
 		window.addEventListener("keydown", onKeyDown, true);
@@ -1222,7 +1216,6 @@ export function LinkPopover({
 		moveSuggestion,
 		wikiSuggestions,
 		boundedActiveSuggestionIndex,
-		onMessage,
 	]);
 
 	const activeLinkTarget =
@@ -1354,7 +1347,7 @@ export function LinkPopover({
 							variant="ghost"
 							size="sm"
 							aria-label="Copy link"
-							title="Copy link (Cmd/Ctrl+Shift+C)"
+							title="Copy link"
 							className="relative z-20 flex h-full w-7 shrink-0 items-center justify-center border-0 bg-card p-0 text-muted-foreground transition-colors duration-[var(--default-transition-duration)] ease-snappy hover:bg-muted hover:text-foreground"
 							onClick={() => {
 								if (!activeLink) return;
@@ -1443,7 +1436,7 @@ export function LinkPopover({
 								);
 							}}
 							aria-label="Copy link"
-							title="Copy link (Cmd/Ctrl+Shift+C)"
+							title="Copy link"
 						>
 							<MingcuteCopy2Line aria-hidden="true" />
 							<span>Copy</span>

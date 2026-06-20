@@ -28,6 +28,7 @@ import {
 } from "react";
 import MingcuteAzSortAscendingLettersLine from "~icons/mingcute/az-sort-ascending-letters-line";
 import MingcuteCheckLine from "~icons/mingcute/check-line";
+import MingcuteCopy2Line from "~icons/mingcute/copy-2-line";
 import MingcuteDeleteLine from "~icons/mingcute/delete-line";
 import MingcuteEditLine from "~icons/mingcute/edit-line";
 import MingcuteFolderOpenLine from "~icons/mingcute/folder-open-line";
@@ -59,6 +60,11 @@ export type SidebarMoveItemInput = {
 	item: { kind: "file"; path: string } | { kind: "folder"; folderId: string };
 	targetFolderId: string | null;
 };
+
+export type SidebarFocusedItem =
+	| { kind: "file"; path: string }
+	| { kind: "folder"; folderId: string }
+	| null;
 
 const sidebarActionClass =
 	"flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-start text-[11px] font-normal outline-hidden select-none";
@@ -119,7 +125,9 @@ export function Sidebar({
 	onSortModeChange,
 	onSelectFile,
 	onRevealFile,
+	onCopyFilePath,
 	onRevealFolder,
+	onFocusedItemChange,
 	revealLabel,
 	onRenameFile,
 	onDeleteFile,
@@ -142,7 +150,9 @@ export function Sidebar({
 	onSortModeChange: (mode: SidebarSortMode) => void;
 	onSelectFile: (path: string) => void;
 	onRevealFile?: (path: string) => void;
+	onCopyFilePath?: (path: string) => void;
 	onRevealFolder?: (folderId: string) => void;
+	onFocusedItemChange?: (item: SidebarFocusedItem) => void;
 	revealLabel?: string;
 	onRenameFile?: (path: string, nextName: string) => void;
 	onDeleteFile?: (path: string) => void;
@@ -246,6 +256,18 @@ export function Sidebar({
 		navRef,
 		activeIndex,
 	});
+	useEffect(() => {
+		const row = focusedIndex === null ? null : rows[focusedIndex];
+		if (!row || row.kind === "section") {
+			onFocusedItemChange?.(null);
+			return;
+		}
+		onFocusedItemChange?.(
+			row.kind === "file"
+				? { kind: "file", path: row.file.path }
+				: { kind: "folder", folderId: row.id },
+		);
+	}, [focusedIndex, onFocusedItemChange, rows]);
 	const handleDragStart = useCallback((event: DragStartEvent) => {
 		const data = event.active.data.current as DragItemData | undefined;
 		setActiveDragLabel(data?.label ?? null);
@@ -478,6 +500,7 @@ export function Sidebar({
 										if (
 											row.kind === "file" &&
 											!onRevealFile &&
+											!onCopyFilePath &&
 											!onRenameFile &&
 											!onDeleteFile
 										)
@@ -602,6 +625,7 @@ export function Sidebar({
 										)}
 										{row.kind === "file" &&
 											(onRevealFile ||
+												onCopyFilePath ||
 												onRenameFile ||
 												onDeleteFile ||
 												onTogglePinnedFile) && (
@@ -613,6 +637,7 @@ export function Sidebar({
 														setOpenActionsPath(open ? row.file.path : null)
 													}
 													onRevealFile={onRevealFile}
+													onCopyFilePath={onCopyFilePath}
 													revealLabel={revealLabel}
 													onRenameFile={beginRename}
 													onTogglePinnedFile={onTogglePinnedFile}
@@ -1189,6 +1214,7 @@ function FolderActionsMenu({
 				<ActionItem
 					icon={<MingcuteFolderOpenLine />}
 					onClick={() => onRevealFolder(id)}
+					shortcut="⌘⌥R"
 				>
 					{revealLabel ?? "Reveal in File Manager"}
 				</ActionItem>
@@ -1224,6 +1250,7 @@ function FileActionsMenu({
 	open,
 	onOpenChange,
 	onRevealFile,
+	onCopyFilePath,
 	revealLabel,
 	onRenameFile,
 	onTogglePinnedFile,
@@ -1234,6 +1261,7 @@ function FileActionsMenu({
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	onRevealFile?: (path: string) => void;
+	onCopyFilePath?: (path: string) => void;
 	revealLabel?: string;
 	onRenameFile?: (file: SidebarFile, label: string) => void;
 	onTogglePinnedFile?: (path: string) => void;
@@ -1245,8 +1273,18 @@ function FileActionsMenu({
 				<ActionItem
 					icon={<MingcuteFolderOpenLine />}
 					onClick={() => onRevealFile(file.path)}
+					shortcut="⌘⌥R"
 				>
 					{revealLabel ?? "Reveal in File Manager"}
+				</ActionItem>
+			)}
+			{onCopyFilePath && (
+				<ActionItem
+					icon={<MingcuteCopy2Line />}
+					onClick={() => onCopyFilePath(file.path)}
+					shortcut="⌘⇧C"
+				>
+					Copy file path
 				</ActionItem>
 			)}
 			{onRenameFile && (
@@ -1312,7 +1350,7 @@ function ActionsMenu({
 			</Menu.Trigger>
 			<Menu.Portal>
 				<Menu.Positioner align="end" side="bottom" sideOffset={4}>
-					<Menu.Popup className="z-50 w-36 origin-(--transform-origin) rounded-[var(--radius-popover)] border border-border bg-popover p-1 text-[11px] text-popover-foreground shadow-overlay outline-hidden transition-[transform,opacity] data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95">
+					<Menu.Popup className="z-50 w-44 origin-(--transform-origin) rounded-[var(--radius-popover)] border border-border bg-popover p-1 text-[11px] text-popover-foreground shadow-overlay outline-hidden transition-[transform,opacity] data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95">
 						{children}
 					</Menu.Popup>
 				</Menu.Positioner>
@@ -1326,11 +1364,13 @@ function ActionItem({
 	destructive,
 	icon,
 	onClick,
+	shortcut,
 }: {
 	children: React.ReactNode;
 	destructive?: boolean;
 	icon: React.ReactNode;
 	onClick: () => void;
+	shortcut?: string;
 }) {
 	return (
 		<Menu.Item
@@ -1342,8 +1382,20 @@ function ActionItem({
 			onClick={onClick}
 		>
 			<span className={sidebarActionIconClass}>{icon}</span>
-			<span>{children}</span>
+			<span className="min-w-0 flex-1">{children}</span>
+			{shortcut ? <ShortcutHint>{shortcut}</ShortcutHint> : null}
 		</Menu.Item>
+	);
+}
+
+function ShortcutHint({ children }: { children: string }) {
+	return (
+		<span
+			className="ms-auto shrink-0 text-[11px] leading-none text-muted-foreground/60"
+			aria-hidden="true"
+		>
+			{children}
+		</span>
 	);
 }
 

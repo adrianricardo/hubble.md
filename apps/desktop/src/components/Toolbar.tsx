@@ -90,18 +90,33 @@ function NoteActionsMenu({ path }: { path: string }) {
 							onClick={() => void revealFile()}
 						>
 							<MingcuteFolderOpenLine className="size-3 shrink-0" />
-							<span>{revealFileLabel(desktopApi.platform)}</span>
+							<span className="min-w-0 flex-1">
+								{revealFileLabel(desktopApi.platform)}
+							</span>
+							<ShortcutHint>⌘⌥R</ShortcutHint>
 						</Menu.Item>
 						<Menu.Item
 							className="flex w-full cursor-pointer items-center gap-2 rounded-sm [padding-block:0.375rem] [padding-inline:0.5rem] text-start text-[11px] outline-hidden select-none data-highlighted:bg-accent"
 							onClick={() => void copyFilePath()}
 						>
 							<MingcuteCopy2Line className="size-3 shrink-0" />
-							<span>Copy file path</span>
+							<span className="min-w-0 flex-1">Copy file path</span>
+							<ShortcutHint>⌘⇧C</ShortcutHint>
 						</Menu.Item>
 					</Menu.Popup>
 				</Menu.Positioner>
 			</Menu.Portal>
 		</Menu.Root>
+	);
+}
+
+function ShortcutHint({ children }: { children: string }) {
+	return (
+		<span
+			className="ms-auto shrink-0 text-[11px] leading-none text-muted-foreground/60"
+			aria-hidden="true"
+		>
+			{children}
+		</span>
 	);
 }

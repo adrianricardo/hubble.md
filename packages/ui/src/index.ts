@@ -2,6 +2,7 @@ export { AppShellFrame } from "./components/AppShellFrame";
 export {
 	Sidebar,
 	type SidebarFile,
+	type SidebarFocusedItem,
 	SidebarFrame,
 	type SidebarMoveItemInput,
 	type SidebarSortMode,
