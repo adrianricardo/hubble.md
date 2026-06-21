@@ -4,26 +4,25 @@ Glossary for shared terms across the project. Implementation details belong in c
 
 ## Flagged ambiguities
 
-- **A Workspace is defined by its configuration, not by the cloud.** Don't conflate "is this a Workspace?" (does the folder have a `.hubble/` configuration) with "is it synced?" ([[Cloud Sync]] enabled). A desktop Workspace can be local-only and gain Cloud Sync later. *(Note: not yet true in code — `init()` requires a Convex backend to mint a `workspaceId`. This is the subject of an active spec; see the deferred-cloud-sync handoff.)*
-- **"Open folder" (desktop runtime) vs "Workspace."** The desktop editor operates on any open folder path and reads/writes the filesystem directly; that folder may be a [[Workspace Folder]] or a [[Plain Folder]]. Say "open folder" for the runtime notion, "Workspace" for the configured logical entity.
+- **"Open folder" (desktop runtime) vs "Workspace."** The desktop editor operates on any open folder path and reads/writes the filesystem directly. Say "open folder" for the runtime notion and "Workspace" for the folder-first product notion.
 
 ## Glossary
 
 ### Workspace
 
-A logical container of Markdown Files and Assets, defined by a **workspace configuration** (`.hubble/config.json`) — *not* by the cloud. A Workspace has a stable identity from the moment it is created.
+A logical container of Markdown Files and Assets. On desktop, a Workspace is a folder the user has added to Hubble. Adding a Workspace does not require `.hubble/config.json`; optional capabilities create configuration only when needed.
 
-[[Cloud Sync]] is an optional capability layered on top. A Workspace may be **local-only** (configured, no cloud backend) or **synced** (bound to a Convex deployment, with a row in the `workspaces` table). On the **web** a Workspace is always synced — there is no local filesystem to fall back to. On **desktop** a Workspace can be created local-only and have Cloud Sync enabled later.
+[[Cloud Sync]] is an optional capability layered on top. A Workspace may be **local-only** (no cloud backend) or **synced** (bound to a Convex deployment, with a row in the `workspaces` table). On the **web** a Workspace is always synced — there is no local filesystem to fall back to. On **desktop** a Workspace starts local-only and can have Cloud Sync enabled later.
 
 The Workspace is the unit; the **access path differs by surface**. The web app reads/writes through the Convex backend. The desktop app reads/writes the [[Workspace Folder]] directly on disk (the working source of truth), with the background sync engine reconciling to Convex when Cloud Sync is on. Features that must run on both surfaces — notably [[Embed]]s — target the Workspace as the unit and resolve against whichever backend the current surface provides; they never assume Convex.
 
 ### Workspace Folder
 
-The on-disk realization of a [[Workspace]]: a folder containing the workspace configuration at `.hubble/config.json`. **Configuration presence — not cloud binding — is what makes a folder a Workspace Folder.** When [[Cloud Sync]] is enabled the config also carries the Convex linkage (today: `workspaceId`, `workspaceName`); a local-only Workspace Folder has configuration without it. Multiple Workspace Folders across devices can map to the same synced Workspace.
+The on-disk realization of a [[Workspace]]: a folder the desktop app has added to Hubble. The folder may have no `.hubble/` directory. `.hubble/config.json` is created only when an optional capability needs Workspace Configuration, such as [[Cloud Sync]], agent instructions, or embeds. Multiple Workspace Folders across devices can map to the same synced Workspace when they share Cloud Sync linkage.
 
 ### Plain Folder
 
-A folder open in the desktop app with **no** workspace configuration (no `.hubble/`). It is not a [[Workspace]]: the desktop app reads and edits it as a general markdown viewer, nothing syncs, and Workspace-scoped features (e.g. [[Embed]]s) do not resolve. Adding a configuration promotes it to a [[Workspace Folder]].
+A folder opened directly in the desktop app without being added as a Workspace. The desktop app may read and edit it as a general markdown viewer, nothing syncs, and Workspace-scoped features may be unavailable until the folder is added as a Workspace.
 
 ### Folder
 
@@ -37,7 +36,23 @@ _Avoid_: Compacted directory name
 
 ### Cloud Sync
 
-The optional capability that binds a [[Workspace]] to a Convex deployment, enabling multi-device sync and web access. Required for web Workspaces; opt-in on desktop, where it can be enabled after a Workspace is created by supplying a Convex deployment URL. Whether Cloud Sync is on is orthogonal to whether a folder is a Workspace.
+The optional capability that binds a [[Workspace]] to a Convex deployment, enabling multi-device sync and web access. Required for web Workspaces; opt-in on desktop, where it can be enabled after a Workspace is created by supplying a Convex deployment URL.
+
+Cloud Sync configuration lives under `cloudSync` in `.hubble/config.json`:
+
+```json
+{
+	"cloudSync": {
+		"provider": "convex",
+		"deploymentUrl": "https://...",
+		"workspaceId": "convex workspace id",
+		"deviceId": "local sync device uuid",
+		"backgroundSync": true
+	}
+}
+```
+
+`cloudSync.backgroundSync` controls automatic daemon sync only. Manual sync can still run when background sync is off. Turning off background sync preserves `cloudSync` and `.hubble/state.json`; disconnecting Cloud Sync removes the `cloudSync` configuration.
 
 ### Markdown File
 
