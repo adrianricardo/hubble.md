@@ -56,3 +56,19 @@ jobs:
             export CSC_IDENTITY_AUTO_DISCOVERY=false
           fi
           pnpm --filter @hubble.md/desktop exec electron-builder --mac --publish always
+
+      - name: Attach changelog as release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#desktop-v}"
+          awk -v ver="$VERSION" '
+            $0 ~ "^## \\[" ver "\\]" { flag=1; next }
+            /^## / && flag { flag=0 }
+            flag { print }
+          ' CHANGELOG.md | sed -e '/./,$!d' > notes.md
+          if [ -s notes.md ]; then
+            gh release edit "$GITHUB_REF_NAME" --notes-file notes.md
+          else
+            echo "No CHANGELOG section for $VERSION; leaving release notes as-is."
+          fi
