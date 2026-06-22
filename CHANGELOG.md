@@ -12,6 +12,7 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 ### Changed
 
 ### Fixed
+- Pressing Enter at the end of a link no longer carries the link onto the next line
 
 ## [0.1.11] - 2026-06-21
 

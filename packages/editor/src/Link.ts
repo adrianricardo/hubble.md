@@ -4,6 +4,7 @@ import type { EditorState } from "@tiptap/pm/state";
 export const LinkExtension = Mark.create({
 	name: "link",
 	inclusive: true,
+	keepOnSplit: false,
 
 	addAttributes() {
 		return {
