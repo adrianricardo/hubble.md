@@ -10,6 +10,8 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 ### Added
 
 ### Changed
+- New app icon
+- Lowercase hubble wordmark on the welcome screen
 
 ### Fixed
 - Pressing Enter at the end of a link no longer carries the link onto the next line
