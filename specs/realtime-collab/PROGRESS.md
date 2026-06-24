@@ -48,7 +48,7 @@ tests fail or a step was skipped, say so in the task note.
 | Stage | Status | Summary |
 |---|---|---|
 | 1. Realtime editing POC | 🟢 Done | Merged Stage 1 POC: conflict-free two-browser editing, presence cursors, and live agent edits verified. |
-| 2. Documents as cloud entities | 🔴 Not started | Stable doc IDs, doc CRUD, markdown projection |
+| 2. Documents as cloud entities | 🟡 In progress | Stable doc IDs started; doc CRUD, markdown projection next |
 | 3. Team permissions | 🔴 Not started | Users, members, per-doc roles, sharing |
 | 4. Agent collaboration (Model C) | 🔴 Not started | Doc patch API + MCP/CLI, projection, legacy shim |
 | 5. Version history & review | 🔴 Not started | Revisions + restore, comments, suggestions |
@@ -128,9 +128,13 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
       Adrian/Codex · Started: 2026-06-24 · Landed: 2026-06-24 · PR:
       https://github.com/adrianricardo/hubble.md/pull/1*
 
-## Stage 2 — Documents as cloud entities 🔴
+## Stage 2 — Documents as cloud entities 🟡
 
-- [ ] `documents` table with **stable IDs**; path/title become mutable metadata. — *_*
+- [~] `documents` table with **stable IDs**; path/title become mutable metadata.
+      Added Convex `documents` table using Convex `_id` as the stable document ID,
+      with mutable `title`, optional `path`, created/updated metadata, soft-delete
+      timestamp, and workspace indexes. Unmerged. — *Owner: Codex · Started:
+      2026-06-24*
 - [ ] Document CRUD (list/create/rename/delete) in the web app. — *_*
 - [ ] One-way markdown **projection on read** (doc → markdown). — *_*
 - [ ] Migrate the whole-file sync path (`packages/sync`) to an import/export role. — *_*
@@ -179,6 +183,9 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 
 Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
 
+- 2026-06-24 — Codex — Started Stage 2: added the Convex `documents` table with
+  stable Convex IDs and mutable title/path metadata. Kept the task `[~]` until
+  this branch is merged and verified.
 - 2026-06-24 — Codex — Merged Stage 1 PR #1 and marked Realtime editing POC
   complete: all Stage 1 tasks now record Landed `2026-06-24` and PR
   https://github.com/adrianricardo/hubble.md/pull/1.
