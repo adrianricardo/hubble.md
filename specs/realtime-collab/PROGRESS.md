@@ -148,13 +148,14 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
       mutation because the upstream component requires a mutation-capable context.
       — *Owner: Codex · Started: 2026-06-24 · Landed: 2026-06-24 · PR:
       https://github.com/adrianricardo/hubble.md/pull/4*
-- [~] Migrate the whole-file sync path (`packages/sync`) to an import/export role.
+- [x] Migrate the whole-file sync path (`packages/sync`) to an import/export role.
       Added explicit `importLiveDocumentFromMarkdown` and
       `exportLiveDocumentToMarkdown` package APIs plus Convex-backed Live Document
       import/export methods. The existing `sync()` path remains file-authoritative
       for non-Live-Document workspaces; Live Documents now have named
-      import/export bridges instead of ambient whole-file authority. Unmerged. —
-      *Owner: Codex · Started: 2026-06-24*
+      import/export bridges instead of ambient whole-file authority. — *Owner:
+      Codex · Started: 2026-06-24 · Landed: 2026-06-24 · PR:
+      https://github.com/adrianricardo/hubble.md/pull/5*
 - [ ] "Last edited by / at" on documents. — *_*
 
 ## Stage 3 — Team permissions 🔴
@@ -200,6 +201,9 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 
 Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
 
+- 2026-06-24 — Codex — Merged Stage 2 import/export PR #5 and marked the
+  whole-file sync import/export-role task complete with PR
+  https://github.com/adrianricardo/hubble.md/pull/5.
 - 2026-06-24 — Codex — Started migrating whole-file sync toward an import/export
   role for Live Documents: added explicit sync package APIs and Convex client
   methods for markdown import/export while leaving ordinary file-authoritative
