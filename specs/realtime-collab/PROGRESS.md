@@ -130,11 +130,12 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 
 ## Stage 2 — Documents as cloud entities 🟡
 
-- [~] `documents` table with **stable IDs**; path/title become mutable metadata.
+- [x] `documents` table with **stable IDs**; path/title become mutable metadata.
       Added Convex `documents` table using Convex `_id` as the stable document ID,
       with mutable `title`, optional `path`, created/updated metadata, soft-delete
-      timestamp, and workspace indexes. Unmerged. — *Owner: Codex · Started:
-      2026-06-24*
+      timestamp, and workspace indexes. — *Owner: Codex · Started: 2026-06-24 ·
+      Landed: 2026-06-24 · PR:
+      https://github.com/adrianricardo/hubble.md/pull/2*
 - [ ] Document CRUD (list/create/rename/delete) in the web app. — *_*
 - [ ] One-way markdown **projection on read** (doc → markdown). — *_*
 - [ ] Migrate the whole-file sync path (`packages/sync`) to an import/export role. — *_*
@@ -183,6 +184,9 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 
 Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
 
+- 2026-06-24 — Codex — Merged Stage 2 documents-table PR #2 and marked the
+  stable-ID `documents` table task complete with PR
+  https://github.com/adrianricardo/hubble.md/pull/2.
 - 2026-06-24 — Codex — Started Stage 2: added the Convex `documents` table with
   stable Convex IDs and mutable title/path metadata. Kept the task `[~]` until
   this branch is merged and verified.
