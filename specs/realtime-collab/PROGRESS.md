@@ -156,7 +156,10 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
       import/export bridges instead of ambient whole-file authority. — *Owner:
       Codex · Started: 2026-06-24 · Landed: 2026-06-24 · PR:
       https://github.com/adrianricardo/hubble.md/pull/5*
-- [ ] "Last edited by / at" on documents. — *_*
+- [~] "Last edited by / at" on documents. The Live Documents sidebar panel now
+      displays each document's `updatedAt` timestamp and optional `updatedBy`
+      actor from the `documents` table. Unmerged. — *Owner: Codex · Started:
+      2026-06-24*
 
 ## Stage 3 — Team permissions 🔴
 
@@ -201,6 +204,9 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 
 Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
 
+- 2026-06-24 — Codex — Started Stage 2 edited metadata display: Live Documents
+  now show last edited time and actor in the web sidebar. Kept the task `[~]`
+  until this branch is merged and verified.
 - 2026-06-24 — Codex — Merged Stage 2 import/export PR #5 and marked the
   whole-file sync import/export-role task complete with PR
   https://github.com/adrianricardo/hubble.md/pull/5.

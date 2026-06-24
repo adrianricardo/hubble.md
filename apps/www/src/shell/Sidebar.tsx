@@ -232,11 +232,11 @@ function LiveDocumentsPanel({
 						>
 							<div className="min-w-0 flex-1">
 								<div className="truncate text-foreground">{document.title}</div>
-								{document.path && (
-									<div className="truncate text-[10px] text-muted-foreground">
-										{document.path}
-									</div>
-								)}
+								<div className="truncate text-[10px] text-muted-foreground">
+									{document.path
+										? `${document.path} - ${editedLabel(document)}`
+										: editedLabel(document)}
+								</div>
 							</div>
 							<Button
 								type="button"
@@ -278,4 +278,14 @@ function LiveDocumentsPanel({
 
 function errorMessage(err: unknown): string {
 	return err instanceof Error ? err.message : "Live Document action failed";
+}
+
+function editedLabel(document: Doc<"documents">): string {
+	const editedAt = new Intl.DateTimeFormat(undefined, {
+		dateStyle: "short",
+		timeStyle: "short",
+	}).format(new Date(document.updatedAt));
+	return document.updatedBy
+		? `Edited ${editedAt} by ${document.updatedBy}`
+		: `Edited ${editedAt}`;
 }
