@@ -1,8 +1,13 @@
 # Realtime Collaboration — Progress Tracker
 
-**This is the single source of truth for where the realtime-collab fork stands.**
-Read `PRODUCT.md` and `TECH.md` for *what* and *why*; read this file for *what's
-done, in flight, and next*.
+**This is the single source of truth for where implementation stands.**
+Next agents can start here and continue the first unfinished task in the lowest
+numbered incomplete stage.
+
+For the share-back packet around the fork, this folder is self-contained:
+`README.md` gives the overview, `PRODUCT.md` gives the product direction,
+`TECH.md` gives the architecture, `DECISIONS.md` gives the decision log and
+reasoning, and `SPIKE.md` gives the prosemirror-sync spike findings.
 
 ---
 
@@ -42,7 +47,7 @@ tests fail or a step was skipped, say so in the task note.
 
 | Stage | Status | Summary |
 |---|---|---|
-| 1. Realtime editing POC | 🟡 In progress | Spike scaffolded; gate provisionally passed (see SPIKE.md). Live two-browser test pending. |
+| 1. Realtime editing POC | 🟡 In progress | Spike scaffolded; gate provisionally passed (see SPIKE.md). POC identity gate added locally; live two-browser test pending. |
 | 2. Documents as cloud entities | 🔴 Not started | Stable doc IDs, doc CRUD, markdown projection |
 | 3. Team permissions | 🔴 Not started | Users, members, per-doc roles, sharing |
 | 4. Agent collaboration (Model C) | 🔴 Not started | Doc patch API + MCP/CLI, projection, legacy shim |
@@ -66,20 +71,49 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 - [~] Decision gate outcome: **provisionally ADOPT prosemirror-sync** (hard gates
       pass on existing Convex stack). Finalize to `[x]` after the live two-browser
       + doc-size test. Fallback documented in SPIKE.md if a hard gate fails. — *_*
-- [ ] Run `pnpm install` + `convex dev` (interactive login) to generate the
-      component API so `prosemirror.ts` typechecks. — *_*
-- [ ] Export the editor ProseMirror schema from `packages/editor` and wire the
-      `transform()` body in `agentAppendParagraph`. — *_*
-- [ ] Add the collaboration binding (`useTiptapSync`) to the Tiptap editor
-      (`packages/ui` / `apps/www`). — *_*
-- [ ] Auth-gate the web app enough to identify two distinct users for the POC. — *_*
-- [ ] One shared document renders live for two browsers; concurrent edits merge
-      with no conflict file. — *_*
-- [ ] Presence cursors (who's here, where their caret is). — *_*
-- [ ] Confirm agent edit (`agentAppendParagraph` from the Convex dashboard) appears
-      live in both browsers. — *_*
-- [ ] **Exit criteria:** two browsers, simultaneous typing, conflict-free, cursors
-      visible, agent edit shows live. Demoable.
+- [~] Run `pnpm install` + `convex dev` (interactive login) to generate the
+      component API so `prosemirror.ts` typechecks. Local anonymous deployment
+      generated; `convex dev --once --typecheck enable` passes. Unmerged. —
+      *Owner: Codex · Started: 2026-06-24*
+- [~] Export the editor ProseMirror schema from `packages/editor` and wire the
+      `transform()` body in `agentAppendParagraph`. Implemented locally with
+      shared schema helper; `agentAppendParagraph` now calls
+      `prosemirrorSync.transform`. Unmerged. — *Owner: Codex · Started: 2026-06-24*
+- [~] Add the collaboration binding (`useTiptapSync`) to the Tiptap editor
+      (`packages/ui` / `apps/www`). Implemented locally for web POC docs behind
+      `ConvexProvider`; live two-browser test pending. Unmerged. —
+      *Owner: Codex · Started: 2026-06-24*
+- [~] Auth-gate the web app enough to identify two distinct users for the POC.
+      Implemented locally as a browser-scoped test identity gate for `?test=1`
+      (`?testUser=Ada` or in-app prompt) plus a Convex `livePocUsers` heartbeat
+      so two browser sessions can identify themselves on one POC doc. This is
+      intentionally not the Stage 3 production auth provider. Verified `pnpm
+      check`, `@hubble.md/www` typecheck/build, `pnpm build:desktop`, and
+      `convex dev --once --typecheck enable`; in-app browser smoke was blocked by
+      browser runtime startup failure. Unmerged. — *Owner: Codex · Started:
+      2026-06-24*
+- [~] One shared document renders live for two browsers; concurrent edits merge
+      with no conflict file. Locally verified by human test on `realtime-poc.md`
+      with two browser identities; no conflict banner/file appeared. Unmerged. —
+      *Owner: Adrian/Codex · Started: 2026-06-24*
+- [~] Presence cursors (who's here, where their caret is). Implemented locally as
+      a Convex-backed POC cursor layer: `livePocUsers` now stores optional
+      ProseMirror `anchor/head`, the web editor publishes throttled selection
+      heartbeats, and `packages/ui` renders remote cursor/selection
+      decorations. Locally human-verified in two browsers. Verified `pnpm
+      check`, UI/www typechecks, `@hubble.md/www` build, and `pnpm
+      build:desktop`; Convex one-shot typecheck was skipped because the local
+      backend was already running on port 3210. Unmerged. — *Owner: Codex ·
+      Started: 2026-06-24*
+- [~] Confirm agent edit (`agentAppendParagraph` from the Convex dashboard) appears
+      live in both browsers. Locally verified via Convex CLI against
+      `poc:jd72rs2kfn4gj8yeavk2m05ccs899r3t:realtime-poc.md`; both browser
+      sessions updated live. Unmerged. — *Owner: Adrian/Codex · Started:
+      2026-06-24*
+- [~] **Exit criteria:** two browsers, simultaneous typing, conflict-free, cursors
+      visible, agent edit shows live. Locally human-verified on
+      `realtime-poc.md`; demoable from local Convex + web dev servers. Keep `[~]`
+      until merged. — *Owner: Adrian/Codex · Started: 2026-06-24*
 
 ## Stage 2 — Documents as cloud entities 🔴
 
@@ -132,6 +166,38 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 
 Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
 
+- 2026-06-24 — Codex — Continued Stage 1 local implementation: added a `?test=1`
+  POC collaborator identity gate (`?testUser=...` or prompt), Convex-backed
+  `livePocUsers` heartbeat/listing, and a live editor identity bar. Verified
+  `pnpm check`, `@hubble.md/www` typecheck/build, `pnpm build:desktop`, and
+  Convex `dev --once --typecheck enable`. Browser smoke via the in-app browser
+  was blocked by a `node_repl` startup error; HTTP route served from Vite.
+- 2026-06-24 — Adrian/Codex — Locally verified Stage 1 two-browser realtime
+  editing on `realtime-poc.md` with no conflict banner/file, and verified
+  `agentAppendParagraph` streams an agent paragraph live into both browsers.
+  Remaining Stage 1 blocker: presence cursors.
+- 2026-06-24 — Codex — Implemented the Stage 1 POC presence cursor layer:
+  selection heartbeats now write `anchor/head` to Convex, active collaborators are
+  rendered as remote caret/selection decorations in the shared editor, and builds
+  pass. Remaining: human two-browser visual confirmation.
+- 2026-06-24 — Adrian/Codex — Human-verified Stage 1 exit criteria locally:
+  simultaneous two-browser editing merged without conflict files, presence cursors
+  rendered across browsers, and `agentAppendParagraph` appeared live. Stage stays
+  `[~]` until merged.
+- 2026-06-24 — Codex — Added realtime-collab `README.md` and `DECISIONS.md` so
+  the fork has a self-contained context packet for share-back. `PROGRESS.md`
+  remains the implementation pickup source of truth.
+- 2026-06-24 — Codex — Documented the authority-model decision: Live Documents
+  are cloud-authoritative, while local-only Workspace editing, Plain Folder
+  editing, and Loose File editing remain file-authoritative. Added ADR-0009 and
+  glossary/spec language.
+- 2026-06-24 — Codex — Continued Stage 1 local implementation: ran `pnpm install`,
+  generated Convex component API on a local anonymous deployment, added shared
+  editor schema export, wired `agentAppendParagraph` transform, and added web
+  `useTiptapSync` POC binding. Verified `pnpm check`, `pnpm build:desktop`,
+  `@hubble.md/www` typecheck, and Convex `dev --once --typecheck enable`.
+  Remaining: live two-browser test, presence strategy, auth identity, and agent
+  dashboard proof.
 - 2026-06-24 — spike — Stage 1 `prosemirror-sync` spike: gate findings recorded in
   SPIKE.md (server-side agent edits ✅, versioning ✅, auth hooks ✅, Tiptap ✅;
   offline ❌; doc-size + 2-browser ⚠️ unverified). Provisional decision: ADOPT.

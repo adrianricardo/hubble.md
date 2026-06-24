@@ -17,34 +17,35 @@ real two-browser test still pending (needs an interactive `convex dev`).
 | **Doc-size limits** | ⚠️ Unverified | Needs a live test with a large doc. Convex per-document/step size limits apply; measure before committing to very large docs. |
 | **Two-browser conflict-free merge** | ⚠️ Unverified | Needs a running deployment + the editor wired. The component is OT-based and designed for this; confirm empirically in the POC. |
 
-## What was scaffolded (this branch)
+## What is scaffolded / locally wired
 
 - `packages/sync-backend/convex/convex.config.ts` — registers the component.
 - `packages/sync-backend/convex/prosemirror.ts` — exports the sync API and an
-  `agentAppendParagraph` mutation stub proving the server-side agent edit path.
+  `agentAppendParagraph` mutation using `prosemirrorSync.transform` and the
+  shared Hubble editor schema.
 - `packages/sync-backend/package.json` — adds `@convex-dev/prosemirror-sync@^0.2.4`.
+- `packages/editor/src/schema.ts` — exports the shared base Tiptap extension list
+  and ProseMirror schema helper used by the server transform.
+- `apps/www/src/shell/EditorView.tsx` — local POC wiring for `useTiptapSync`.
 
-**Not yet done / blocked on interactive steps:**
+**Done locally (unmerged):**
 
-- `pnpm install` was **not** run (avoids triggering the Electron postinstall and a
-  lockfile churn in this session). Lockfile is therefore out of sync on this branch.
-- `convex dev` was **not** run — it requires interactive Convex login. Until it
-  runs once, `components.prosemirrorSync` and the typed `_generated/api` don't
-  exist, so `prosemirror.ts` will not typecheck. **This is expected.**
+- `pnpm install` was run and the lockfile is updated.
+- `convex dev --once --typecheck enable` configured a local anonymous deployment,
+  generated `_generated/api.d.ts` with `components.prosemirrorSync`, installed the
+  component, and typechecked successfully.
+- `pnpm check`, `pnpm build:desktop`, `@hubble.md/www` typecheck, and Convex
+  `dev --once --typecheck enable` pass.
 
-## How to finish the spike (next session)
+## How to finish the spike
 
-1. `pnpm install` at the repo root (installs the component).
-2. From `packages/sync-backend`: run `pnpm dev` (`convex dev`) and complete the
-   interactive Convex login. This regenerates `_generated/api` with the component.
-3. Export the editor's ProseMirror schema from `packages/editor`
-   (`getSchema(extensions)`) and wire it into `prosemirror.ts`; uncomment the
-   `transform()` body in `agentAppendParagraph`.
-4. Add `useTiptapSync` to the Tiptap editor in `packages/ui` / `apps/www`.
-5. Open two browsers on one `docId`, type simultaneously → confirm conflict-free
+1. Decide presence strategy. The installed `@convex-dev/prosemirror-sync` package
+   exposes sync APIs but no obvious presence/cursor API in source.
+2. Auth-gate or dev-identify two distinct POC users.
+3. Open two browsers on one `docId`, type simultaneously → confirm conflict-free
    merge + presence. Call `agentAppendParagraph` from the Convex dashboard and
    confirm it appears live in both browsers (agent-edit proof).
-6. Measure a large doc for size/perf. Record results in the table above and flip
+4. Measure a large doc for size/perf. Record results in the table above and flip
    the PROGRESS.md decision-gate task to `[x]` with the final adopt/fallback call.
 
 ## Fallback (only if a hard gate fails)

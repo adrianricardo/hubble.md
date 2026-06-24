@@ -12,12 +12,14 @@ a background engine reconciles whole files to Convex with **last-write-wins** an
 `*.conflict-<timestamp>` copies on divergence. That is Dropbox-for-markdown — the
 opposite of Google Docs, where concurrent edits *merge*.
 
-This effort replaces the whole-file sync model with a **CRDT/operational realtime
-document** as the authoritative representation, keeps Tiptap as the editor, keeps
-Convex as the backend, and adds the things a team product requires: users, teams,
-permissions, presence, comments, and version history. AI agents become
-first-class collaborators whose edits appear live to everyone — not file-writers
-racing humans through a serializer.
+This effort introduces **Live Documents**: synced, realtime-editable documents
+whose authoritative representation is a **CRDT/operational realtime document** in
+Convex. It does not redefine every Hubble editing mode. Local-only workspaces,
+plain folders, and loose files remain file-authoritative. For Live Documents,
+Tiptap remains the editor, Convex remains the backend, and the team product layer
+adds users, teams, permissions, presence, comments, and version history. AI agents
+become first-class collaborators whose edits appear live to everyone — not
+file-writers racing humans through a serializer.
 
 ## Problem
 
@@ -47,6 +49,8 @@ racing humans through a serializer.
 
 - Not preserving the whole-file last-write-wins sync engine for *live* documents.
   (File sync survives only as an import/export/projection subsystem — see TECH.)
+- Not replacing local-only, plain-folder, or loose-file editing. Those remain
+  file-authoritative outside Live Document mode.
 - Not git-style branching/merging. Version history is linear restore points.
 - Not a real-time *binary* asset co-editing model (assets stay last-write-wins).
 - Not building our own CRDT or realtime transport — we adopt an existing one.

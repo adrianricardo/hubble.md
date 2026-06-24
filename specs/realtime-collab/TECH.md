@@ -26,12 +26,15 @@ Companion to `PRODUCT.md`. Grounded in the current source as of the fork point.
 
 ## Core architectural decision
 
-> **The cloud realtime document (CRDT/OT, stored in Convex) is authoritative.
-> Filesystem sync becomes an import/export/projection subsystem. Everything else
-> — permissions, history, agent workflows — depends on this.**
+> **For Live Documents, the cloud realtime document (CRDT/OT, stored in Convex)
+> is authoritative. Filesystem sync becomes an import/export/projection subsystem
+> for those Live Documents. Everything else — permissions, history, agent
+> workflows — depends on this.**
 
 Make this commitment *before* building permissions, history, or the agent layer.
-Retrofitting authority later means reworking every query.
+Retrofitting authority later means reworking every query. This commitment is
+scoped to Live Documents; local-only Workspace editing, Plain Folder editing, and
+Loose File editing remain file-authoritative.
 
 ## Target stack
 
@@ -132,8 +135,9 @@ Key shifts:
 
 1. **POC**: add collab component, bind to Tiptap, auth-gate, presence cursors, one
    shared doc. Spike answers the decision gate.
-2. **Doc entities**: `documents` table + stable IDs, doc CRUD in web app, markdown
-   projection on read, migrate file-sync to import/export.
+2. **Doc entities**: `documents` table + stable IDs, Live Document CRUD in web app,
+   markdown projection on read, migrate file-sync to import/export for Live
+   Documents.
 3. **Permissions**: `users`/`members`/`docShares`, auth provider, server-side
    enforcement, share dialog + link sharing.
 4. **Agent layer**: patch API + MCP/CLI, projection writer, legacy shim, suggestion
