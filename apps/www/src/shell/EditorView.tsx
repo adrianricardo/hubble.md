@@ -13,7 +13,7 @@ import {
 } from "@hubble.md/ui";
 import { useStoreValue } from "@simplestack/store/react";
 import { useMutation, useQuery } from "convex/react";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TestIdentity } from "../App";
 import {
 	loadPath,
@@ -21,8 +21,27 @@ import {
 	updateEditorContent,
 } from "../store/actions";
 import { filesStore } from "../store/state";
+import {
+	createDurableOfflinePersister,
+	createIndexedDbBufferStore,
+	type DurableBuffer,
+	type DurableBufferStore,
+	hydrateSessionCache,
+} from "./durableOfflineBuffer";
+import { createDurableOfflineExtension } from "./DurableOfflineExtension";
 import { handleImageDrop, handleImagePaste } from "./handleImageUpload";
 import { createWebImageExtension } from "./WebImageExtension";
+
+// One IndexedDB-backed store shared across editor mounts (keyed internally by
+// sync doc id). Created lazily so SSR / no-IndexedDB environments degrade to a
+// no-op store instead of crashing at import time.
+let sharedBufferStore: DurableBufferStore | null = null;
+function getDurableBufferStore(): DurableBufferStore {
+	if (!sharedBufferStore) {
+		sharedBufferStore = createIndexedDbBufferStore();
+	}
+	return sharedBufferStore;
+}
 
 type Props = {
 	workspaceId: string;
@@ -46,7 +65,63 @@ const REMOTE_CURSOR_COLORS = [
 
 const noopChange = () => {};
 
-export function EditorView({
+export function EditorView(props: Props) {
+	const docId = useMemo(
+		() => props.syncDocumentId ?? `poc:${props.workspaceId}:${props.path}`,
+		[props.syncDocumentId, props.workspaceId, props.path],
+	);
+	// Hydrate the durable offline buffer (IndexedDB -> sessionStorage) BEFORE the
+	// editor mounts, so the package's `getCachedState` read path finds restored
+	// steps even after a full app restart (sessionStorage alone does not survive
+	// that). Gate the live editor on this so the synchronous read sees the seed.
+	const hydration = useDurableOfflineHydration(docId);
+	if (!hydration.ready) {
+		return (
+			<div className="flex h-full items-center justify-center p-6">
+				<p className="text-sm text-muted-foreground">Loading live document…</p>
+			</div>
+		);
+	}
+	return (
+		<LiveEditorView
+			{...props}
+			docId={docId}
+			restoredBuffer={hydration.restoredBuffer}
+		/>
+	);
+}
+
+function useDurableOfflineHydration(docId: string): {
+	ready: boolean;
+	restoredBuffer: DurableBuffer | null;
+} {
+	const [state, setState] = useState<{
+		docId: string;
+		ready: boolean;
+		restoredBuffer: DurableBuffer | null;
+	}>({ docId, ready: false, restoredBuffer: null });
+
+	useEffect(() => {
+		let cancelled = false;
+		setState({ docId, ready: false, restoredBuffer: null });
+		void hydrateSessionCache(docId, getDurableBufferStore()).then((buffer) => {
+			if (cancelled) return;
+			setState({ docId, ready: true, restoredBuffer: buffer });
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, [docId]);
+
+	// Guard against a stale value during the docId-change render before the
+	// effect re-runs.
+	if (state.docId !== docId) {
+		return { ready: false, restoredBuffer: null };
+	}
+	return { ready: state.ready, restoredBuffer: state.restoredBuffer };
+}
+
+function LiveEditorView({
 	workspaceId,
 	path,
 	initialMarkdown,
@@ -54,12 +129,10 @@ export function EditorView({
 	testIdentity,
 	onLiveDocumentEdit,
 	onSelectionChange: onExternalSelectionChange,
-}: Props) {
+	docId,
+	restoredBuffer,
+}: Props & { docId: string; restoredBuffer: DurableBuffer | null }) {
 	const files = useStoreValue(filesStore);
-	const docId = useMemo(
-		() => syncDocumentId ?? `poc:${workspaceId}:${path}`,
-		[syncDocumentId, workspaceId, path],
-	);
 	const convexWorkspaceId = workspaceId as Id<"workspaces">;
 	const initialBody = useMemo(
 		() => parseMarkdownFrontMatter(initialMarkdown).body,
@@ -133,6 +206,21 @@ export function EditorView({
 		[onLiveDocumentEdit],
 	);
 
+	// Durable in-editor offline: persists unsynced collab steps to IndexedDB +
+	// sessionStorage as the user types, and clears them once acknowledged. The
+	// editor is keyed by docId, so this persister is stable for its lifetime.
+	const durableOfflineExtension = useMemo(
+		() =>
+			createDurableOfflineExtension(
+				createDurableOfflinePersister({
+					docId,
+					store: getDurableBufferStore(),
+					restoredBuffer,
+				}),
+			),
+		[docId, restoredBuffer],
+	);
+
 	useEffect(() => {
 		if (
 			sync.isLoading ||
@@ -166,7 +254,11 @@ export function EditorView({
 			initialContent={sync.initialContent}
 			wikiTargets={wikiTargets}
 			remotePresence={remotePresence}
-			extensions={[sync.extension, createWebImageExtension()]}
+			extensions={[
+				sync.extension,
+				createWebImageExtension(),
+				durableOfflineExtension,
+			]}
 			onPaste={(editor, event) => handleImagePaste({ editor, event })}
 			onDrop={(editor, event) => handleImageDrop({ editor, event })}
 			onSelectionChange={publishSelection}
