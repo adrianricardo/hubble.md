@@ -12,6 +12,7 @@ import type * as auth from "../auth.js";
 import type * as authIdentity from "../authIdentity.js";
 import type * as crons from "../crons.js";
 import type * as documents from "../documents.js";
+import type * as folders from "../folders.js";
 import type * as http from "../http.js";
 import type * as orphanAssets from "../orphanAssets.js";
 import type * as permissions from "../permissions.js";
@@ -31,6 +32,7 @@ declare const fullApi: ApiFromModules<{
   authIdentity: typeof authIdentity;
   crons: typeof crons;
   documents: typeof documents;
+  folders: typeof folders;
   http: typeof http;
   orphanAssets: typeof orphanAssets;
   permissions: typeof permissions;

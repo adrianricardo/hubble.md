@@ -52,7 +52,7 @@ tests fail or a step was skipped, say so in the task note.
 | 3. Team permissions | 🟡 In progress | Convex Auth password provider wired locally; memberships, shares, and enforcement pending |
 | 4. Agent collaboration (Model C) | 🟡 In progress | Agent read API started; patch API + MCP/CLI, projection, legacy shim pending |
 | 5. Version history & review | 🟡 In progress | Revisions table and materialization started; restore/comments/review UI pending |
-| 6. Docs-parity polish | 🔴 Not started | Folders, search, export/import, offline, admin |
+| 6. Docs-parity polish | 🟡 In progress | Folder data/API started; search/export/offline/admin pending |
 
 ---
 
@@ -284,9 +284,13 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
       Verified `convex codegen`, `pnpm check`, and `pnpm build:desktop`.
       Unmerged. — *Owner: Codex · Started: 2026-06-25*
 
-## Stage 6 — Docs-parity polish 🔴
+## Stage 6 — Docs-parity polish 🟡
 
-- [ ] Folders / shared drives. — *_*
+- [~] Folders / shared drives. Folder data/API started locally with a `folders`
+      table, optional `documents.folderId`, folder list/create/rename/delete,
+      and document move mutation. Shared-drive semantics and UI remain pending.
+      Verified `convex codegen`, `pnpm check`, and `pnpm build:desktop`.
+      Unmerged. — *Owner: Codex · Started: 2026-06-25*
 - [ ] Cross-document search. — *_*
 - [ ] Export (md/PDF/docx) + import. — *_*
 - [ ] Offline edit + merge on reconnect. — *_*
@@ -298,6 +302,11 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 
 Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
 
+- 2026-06-25 — Codex — Started Stage 6 docs-parity polish: added folder data
+  modeling with optional `documents.folderId`, a `folders` table, and backend
+  folder list/create/rename/delete plus document move APIs. Shared-drive
+  semantics and UI remain pending. Verified `convex codegen`, `pnpm check`,
+  and `pnpm build:desktop`.
 - 2026-06-25 — Codex — Continued Stage 5 activity feed: added
   `activityEvents`, a `documents.listActivity` query, and activity logging for
   document patches, restores, comments, and suggestion lifecycle events.

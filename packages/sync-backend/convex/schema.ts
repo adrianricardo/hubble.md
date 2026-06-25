@@ -35,6 +35,7 @@ export default defineSchema({
 
 	documents: defineTable({
 		workspaceId: v.id("workspaces"),
+		folderId: v.optional(v.id("folders")),
 		title: v.string(),
 		path: v.optional(v.string()),
 		createdBy: v.optional(v.string()),
@@ -44,7 +45,20 @@ export default defineSchema({
 		deletedAt: v.optional(v.number()),
 	})
 		.index("by_workspace", ["workspaceId", "updatedAt"])
+		.index("by_workspace_folder", ["workspaceId", "folderId"])
 		.index("by_workspace_path", ["workspaceId", "path"]),
+
+	folders: defineTable({
+		workspaceId: v.id("workspaces"),
+		parentId: v.optional(v.id("folders")),
+		name: v.string(),
+		createdBy: v.optional(v.string()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+		deletedAt: v.optional(v.number()),
+	})
+		.index("by_workspace", ["workspaceId", "updatedAt"])
+		.index("by_workspace_parent", ["workspaceId", "parentId"]),
 
 	docShares: defineTable({
 		documentId: v.id("documents"),
