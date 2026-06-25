@@ -14,6 +14,7 @@ import {
 	sync as runSync,
 	type SyncResult,
 	writeCloudSyncConfig,
+	writeLiveDocumentProjections,
 	writeSyncState,
 } from "@hubble.md/sync";
 import { createNodeFileSystem } from "@hubble.md/sync/node";
@@ -97,6 +98,9 @@ async function runCloudCommand(parsed: CliArgs) {
 		case "export":
 			await runExport(workspacePath);
 			return;
+		case "project":
+			await runProject(workspacePath);
+			return;
 		case "document":
 			await runDocumentCommand(workspacePath, parsed);
 			return;
@@ -146,6 +150,21 @@ async function runExport(workspacePath: string) {
 			(result.skipped.length > 0
 				? ` (${result.skipped.length} without paths skipped)`
 				: ""),
+	);
+}
+
+async function runProject(workspacePath: string) {
+	const cloudSync = await readCloudSyncConfig(workspacePath);
+	if (!cloudSync) return;
+
+	const backend = createConvexBackend(cloudSync.deploymentUrl);
+	const result = await writeLiveDocumentProjections(backend, fs, {
+		workspaceId: cloudSync.workspaceId,
+		workspacePath,
+	});
+	console.log(
+		`live projection: ${result.written.length} file${result.written.length === 1 ? "" : "s"} written to ${result.root}` +
+			(result.skipped.length > 0 ? ` (${result.skipped.length} skipped)` : ""),
 	);
 }
 
@@ -547,6 +566,9 @@ function printHelp(args: CliArgs) {
 		case "export":
 			printExportHelp();
 			return;
+		case "project":
+			printProjectHelp();
+			return;
 		case "document":
 			printDocumentHelp();
 			return;
@@ -579,6 +601,9 @@ function printCloudHelp() {
 	console.log("  sync        Run one sync");
 	console.log("  import      Import local markdown as Live Documents");
 	console.log("  export      Export Live Documents as markdown projections");
+	console.log(
+		"  project     Write read-only Live Document projections for agents",
+	);
 	console.log("  document    Read or patch a Live Document for agents");
 	console.log("  watch       Sync continuously");
 	console.log("  disconnect  Remove Cloud Sync config");
@@ -628,6 +653,15 @@ function printExportHelp() {
 	);
 }
 
+function printProjectHelp() {
+	console.log("Usage:");
+	console.log("  hubble [--cwd path] cloud project");
+	console.log("");
+	console.log(
+		"Writes Live Documents to .hubble/projections/live-documents for read-only agent access.",
+	);
+}
+
 function printDocumentHelp() {
 	console.log("Usage:");
 	console.log("  hubble [--cwd path] cloud document get --id documentId");
@@ -663,6 +697,7 @@ function printUsage() {
 	console.error("  hubble [--cwd path] cloud sync");
 	console.error("  hubble [--cwd path] cloud import");
 	console.error("  hubble [--cwd path] cloud export");
+	console.error("  hubble [--cwd path] cloud project");
 	console.error("  hubble [--cwd path] cloud document get --id documentId");
 	console.error(
 		"  hubble [--cwd path] cloud document patch --id documentId --base-revision n (--replace markdown|--append markdown|--after-heading heading --markdown markdown)",

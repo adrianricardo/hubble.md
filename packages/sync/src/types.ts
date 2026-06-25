@@ -60,6 +60,12 @@ export type LiveDocumentExportResult = {
 	skipped: string[];
 };
 
+export type LiveDocumentProjectionWriteResult = {
+	root: string;
+	written: string[];
+	skipped: string[];
+};
+
 export type LiveDocumentImportResult = {
 	imported: string[];
 	created: string[];

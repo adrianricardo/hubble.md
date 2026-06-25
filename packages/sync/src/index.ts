@@ -22,6 +22,7 @@ export {
 	init,
 	status,
 	sync,
+	writeLiveDocumentProjections,
 } from "./sync.js";
 export type {
 	CloudSyncConfig,
@@ -30,6 +31,7 @@ export type {
 	LiveDocumentImport,
 	LiveDocumentImportResult,
 	LiveDocumentProjection,
+	LiveDocumentProjectionWriteResult,
 	RemoteAsset,
 	RemoteFile,
 	SyncResult,

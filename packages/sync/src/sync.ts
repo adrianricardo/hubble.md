@@ -13,6 +13,7 @@ import type {
 	FileState,
 	LiveDocumentExportResult,
 	LiveDocumentImportResult,
+	LiveDocumentProjectionWriteResult,
 	RemoteAsset,
 	SyncResult,
 	WorkspaceConfig,
@@ -326,6 +327,41 @@ export async function exportLiveDocuments(
 			document.markdown,
 		);
 		result.exported.push(document.path);
+	}
+
+	return result;
+}
+
+/** Write cloud Live Documents to a separate read-only projection tree for agents. */
+export async function writeLiveDocumentProjections(
+	backend: SyncBackend,
+	fs: Pick<FileSystem, "ensureDir" | "writeFile">,
+	opts: {
+		workspaceId: string;
+		workspacePath: string;
+		projectionRoot?: string;
+	},
+): Promise<LiveDocumentProjectionWriteResult> {
+	const documents = await backend.getLiveDocuments(opts.workspaceId);
+	const root =
+		opts.projectionRoot ??
+		`${opts.workspacePath}/.hubble/projections/live-documents`;
+	const result: LiveDocumentProjectionWriteResult = {
+		root,
+		written: [],
+		skipped: [],
+	};
+
+	for (const document of documents) {
+		const projectionPath = document.path ?? `${document._id}.md`;
+		const normalizedPath = normalizeRelativePath(projectionPath);
+		if (!normalizedPath || normalizedPath.startsWith("../")) {
+			result.skipped.push(document.title);
+			continue;
+		}
+		await ensureParentDir(fs, root, normalizedPath);
+		await fs.writeFile(`${root}/${normalizedPath}`, document.markdown);
+		result.written.push(normalizedPath);
 	}
 
 	return result;

@@ -225,7 +225,13 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
       MCP server remains pending. Verified `pnpm check`, `@hubble.md/cli`
       build, and `pnpm build:desktop`. Unmerged. — *Owner: Codex · Started:
       2026-06-25*
-- [ ] Read-only markdown projection writer on disk. — *_*
+- [~] Read-only markdown projection writer on disk. Implemented locally as
+      `writeLiveDocumentProjections`, writing live document markdown into
+      `.hubble/projections/live-documents` so agents can read projected files
+      without treating normal workspace files as the live authority. Exposed via
+      `hubble cloud project`. Verified `@hubble.md/sync` build,
+      `@hubble.md/cli` build, `pnpm check`, and `pnpm build:desktop`.
+      Unmerged. — *Owner: Codex · Started: 2026-06-25*
 - [ ] Legacy file-only **shim**: staging file → `applyPatch(markdown-patch)`. — *_*
 - [ ] Suggestion mode (agent proposes, human accepts). — *_*
 
@@ -252,6 +258,11 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 
 Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
 
+- 2026-06-25 — Codex — Continued Stage 4 agent collaboration: added a
+  read-only markdown projection writer that materializes Live Documents under
+  `.hubble/projections/live-documents` for agent reads, plus `hubble cloud
+  project` to refresh the projection tree. Verified `@hubble.md/sync` build,
+  `@hubble.md/cli` build, `pnpm check`, and `pnpm build:desktop`.
 - 2026-06-25 — Codex — Continued Stage 4 agent collaboration: added a `hubble`
   CLI surface for the agent document API with `cloud document get` and
   `cloud document patch` commands supporting replace, append, and
