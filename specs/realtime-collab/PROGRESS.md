@@ -528,16 +528,26 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
         single-instance lock is respected. No sync/watcher yet. Tray appearance +
         close/hide/quit behavior are **human-verification-pending** (can't run
         Electron headlessly).
-  - [~] **Phase 2** (host reconcile engine in main, manual trigger) — `[WIP]`,
-        interrupted by a session limit. Begins hosting `@hubble.md/sync`'s
-        `reconcileProjectionFile` in the Electron main process
-        (`apps/desktop/electron/liveSync.ts`) with an IPC surface
-        (`preload.ts`, `src/desktopApi/types.ts`) and the convex/`@hubble.md/sync`
-        deps. **Compiles** (`pnpm build:desktop` green) but the manual-trigger
-        reconcile path is **not yet wired/verified end-to-end**. Checkpointed at
-        commit `d3c46d9`. Resume: finish the IPC trigger + a renderer call, then
-        verify a manual reconcile round-trips. Phases 3–5 (synced-folder watcher,
-        reconcile routing, backstop + offline queue) follow per `SYNCED-FOLDER.md`.
+  - [~] **Phase 2** (host reconcile engine in main, manual trigger) — engine +
+        IPC complete and unit-tested; one renderer call deferred to Phase 3.
+        `LiveSyncService` (`apps/desktop/electron/liveSync.ts`) hosts
+        `reconcileProjectionFile` with injectable backend/fs; IPC handlers
+        `desktop:live-sync:connect|disconnect|status|reconcile` are wired in
+        `main.ts` and bridged in `preload.ts`/`src/desktopApi/types.ts`. New
+        `electron/liveSync.test.ts` (7 tests) proves the service round-trips
+        headlessly: connect/idle/throw-before-connect, reconciled outcome updates
+        `lastReconciledAt`, backstop surfaced (not swallowed), backend error →
+        `error` state + re-throw, disconnect reset. **The renderer caller is
+        genuinely deferred to Phase 3**: there is no cloud-workspace connect/
+        disconnect flow in the renderer today (the renderer only knows local
+        folder-picker workspaces — no `deploymentUrl`/`workspaceId`), so
+        `desktopApi.connectLiveSync` (already bridged) has no honest call site
+        until Phase 3's synced-folder store action exists. Verified
+        `pnpm build:desktop` green, `pnpm typecheck` clean across all 6 TS
+        packages, desktop vitest 42/42 (was 35/35). Live Electron+Convex
+        round-trip and tray behavior remain **human-gated** (can't run Electron
+        headlessly). Stays `[~]` until merged. Phases 3–5 follow per
+        `SYNCED-FOLDER.md`. — *Owner: Sonnet (orchestrated) · 2026-06-25*
 - [~] Offline edit + merge on reconnect — two flavors (Decision 6): in-editor (CRDT
       local buffer/replay) and external-file (watcher queues edits, flushes on
       reconnect via the reconcile path). Decision: **no Yjs fork** — keep
@@ -562,6 +572,16 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 ## Changelog
 
 Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
+
+- 2026-06-25 — Sonnet (orchestrated) — Desktop Phase 2 finished: added
+  `LiveSyncService` unit tests (`apps/desktop/electron/liveSync.test.ts`, 7 tests
+  — connect/idle/throw-before-connect, reconciled, backstop-surfaced, error+rethrow,
+  disconnect-reset). `pnpm build:desktop` + `pnpm typecheck` clean, desktop vitest
+  42/42 (was 35/35). The renderer `connectLiveSync` call is genuinely deferred to
+  Phase 3 — no cloud-workspace connect flow exists in the renderer yet (it only
+  knows local folder-picker workspaces); the `desktopApi.connectLiveSync` bridge is
+  already live in `preload.ts`. Live Electron+Convex round-trip remains human-gated.
+  Unmerged.
 
 - 2026-06-25 — Sonnet (orchestrated) — Stage 6 fast-follow: added the
   `docShares.by_user` index (`schema.ts`) and the `documents.listSharedWithMe`
