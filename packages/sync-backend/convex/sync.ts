@@ -12,6 +12,7 @@ import {
 	orphanAssetCandidates,
 	referencedAssetPaths,
 } from "./orphanAssets";
+import { requireWorkspaceMember, workspaceRole } from "./permissions";
 
 async function contentHash(content: string): Promise<string> {
 	const data = new TextEncoder().encode(content);
@@ -89,10 +90,12 @@ async function ensureWorkspaceMember(
 export const getWorkspace = query({
 	args: { name: v.string() },
 	handler: async (ctx, { name }) => {
-		return ctx.db
+		const workspace = await ctx.db
 			.query("workspaces")
 			.withIndex("by_name", (q) => q.eq("name", name))
 			.unique();
+		if (!workspace) return null;
+		return (await workspaceRole(ctx, workspace._id)) ? workspace : null;
 	},
 });
 
@@ -147,6 +150,7 @@ export const listWorkspaces = query({
 export const listWorkspaceMembers = query({
 	args: { workspaceId: v.id("workspaces") },
 	handler: async (ctx, { workspaceId }) => {
+		await requireWorkspaceMember(ctx, workspaceId);
 		const members = await ctx.db
 			.query("members")
 			.withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
@@ -167,6 +171,7 @@ export const getFilesByWorkspace = query({
 		includeDeleted: v.optional(v.boolean()),
 	},
 	handler: async (ctx, { workspaceId, since, includeDeleted }) => {
+		await requireWorkspaceMember(ctx, workspaceId);
 		const q = ctx.db.query("files").withIndex("by_workspace", (q) => {
 			const base = q.eq("workspaceId", workspaceId);
 			return since !== undefined ? base.gt("updatedAt", since) : base;
@@ -188,6 +193,7 @@ export const pushFile = mutation({
 		ctx,
 		{ workspaceId, path, contentHash, content, deviceId },
 	) => {
+		await requireWorkspaceMember(ctx, workspaceId);
 		return upsertFile(ctx, {
 			workspaceId,
 			path,
@@ -205,6 +211,7 @@ export const softDeleteFile = mutation({
 		deviceId: v.string(),
 	},
 	handler: async (ctx, { workspaceId, path, deviceId }) => {
+		await requireWorkspaceMember(ctx, workspaceId);
 		const existing = await ctx.db
 			.query("files")
 			.withIndex("by_workspace_path", (q) =>
@@ -267,8 +274,9 @@ async function upsertAsset(
 }
 
 export const generateAssetUploadUrl = mutation({
-	args: {},
-	handler: async (ctx) => {
+	args: { workspaceId: v.id("workspaces") },
+	handler: async (ctx, { workspaceId }) => {
+		await requireWorkspaceMember(ctx, workspaceId);
 		return ctx.storage.generateUploadUrl();
 	},
 });
@@ -285,6 +293,7 @@ export const pushAsset = mutation({
 		ctx,
 		{ workspaceId, path, storageId, contentHash, deviceId },
 	) => {
+		await requireWorkspaceMember(ctx, workspaceId);
 		return upsertAsset(ctx, {
 			workspaceId,
 			path,
@@ -301,6 +310,7 @@ export const getAssetsByWorkspace = query({
 		since: v.optional(v.number()),
 	},
 	handler: async (ctx, { workspaceId, since }) => {
+		await requireWorkspaceMember(ctx, workspaceId);
 		const q = ctx.db.query("assets").withIndex("by_workspace", (q) => {
 			const base = q.eq("workspaceId", workspaceId);
 			return since !== undefined ? base.gt("updatedAt", since) : base;
@@ -312,6 +322,12 @@ export const getAssetsByWorkspace = query({
 export const getAssetDownloadUrl = query({
 	args: { storageId: v.id("_storage") },
 	handler: async (ctx, { storageId }) => {
+		const asset = await ctx.db
+			.query("assets")
+			.withIndex("by_storage", (q) => q.eq("storageId", storageId))
+			.unique();
+		if (!asset || asset.deleted) return null;
+		await requireWorkspaceMember(ctx, asset.workspaceId);
 		return ctx.storage.getUrl(storageId);
 	},
 });
@@ -323,6 +339,7 @@ export const softDeleteAsset = mutation({
 		deviceId: v.string(),
 	},
 	handler: async (ctx, { workspaceId, path, deviceId }) => {
+		await requireWorkspaceMember(ctx, workspaceId);
 		const existing = await ctx.db
 			.query("assets")
 			.withIndex("by_workspace_path", (q) =>
@@ -344,6 +361,7 @@ export const softDeleteAsset = mutation({
 export const listOrphanAssetCandidates = query({
 	args: { workspaceId: v.id("workspaces") },
 	handler: async (ctx, { workspaceId }) => {
+		await requireWorkspaceMember(ctx, workspaceId);
 		// Full-workspace scan for admin inspection. Avoid calling from reactive UI
 		// paths or save/sync flows; large workspaces should use an indexed design.
 		const [files, assets] = await Promise.all([
@@ -403,6 +421,7 @@ async function markOrphanAssetCandidatesForWorkspace(
 export const markOrphanAssetCandidates = mutation({
 	args: { workspaceId: v.id("workspaces") },
 	handler: async (ctx, { workspaceId }) => {
+		await requireWorkspaceMember(ctx, workspaceId);
 		return markOrphanAssetCandidatesForWorkspace(ctx, workspaceId);
 	},
 });
@@ -460,6 +479,7 @@ export const deleteOrphanAssets = mutation({
 		gracePeriodMs: v.number(),
 	},
 	handler: async (ctx, { workspaceId, gracePeriodMs }) => {
+		await requireWorkspaceMember(ctx, workspaceId);
 		return deleteOrphanAssetsForWorkspace(ctx, workspaceId, gracePeriodMs);
 	},
 });
@@ -501,6 +521,7 @@ export const debugRemoteEdit = mutation({
 		deviceId: v.optional(v.string()),
 	},
 	handler: async (ctx, { workspaceId, path, content, deviceId }) => {
+		await requireWorkspaceMember(ctx, workspaceId);
 		return upsertFile(ctx, {
 			workspaceId,
 			path,

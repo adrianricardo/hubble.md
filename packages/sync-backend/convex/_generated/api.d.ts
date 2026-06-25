@@ -14,6 +14,7 @@ import type * as crons from "../crons.js";
 import type * as documents from "../documents.js";
 import type * as http from "../http.js";
 import type * as orphanAssets from "../orphanAssets.js";
+import type * as permissions from "../permissions.js";
 import type * as pocIdentity from "../pocIdentity.js";
 import type * as prosemirror from "../prosemirror.js";
 import type * as sync from "../sync.js";
@@ -32,6 +33,7 @@ declare const fullApi: ApiFromModules<{
   documents: typeof documents;
   http: typeof http;
   orphanAssets: typeof orphanAssets;
+  permissions: typeof permissions;
   pocIdentity: typeof pocIdentity;
   prosemirror: typeof prosemirror;
   sync: typeof sync;

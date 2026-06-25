@@ -50,6 +50,6 @@ export interface SyncBackend {
 		deviceId: string;
 	}): Promise<void>;
 
-	generateAssetUploadUrl(): Promise<string>;
+	generateAssetUploadUrl(workspaceId: string): Promise<string>;
 	getAssetDownloadUrl(storageId: string): Promise<string | null>;
 }

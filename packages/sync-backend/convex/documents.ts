@@ -16,6 +16,13 @@ import {
 	query,
 } from "./_generated/server";
 import { currentActorName } from "./authIdentity";
+import {
+	documentRole,
+	requireDocumentOwner,
+	requireDocumentRead,
+	requireDocumentWrite,
+	requireWorkspaceMember,
+} from "./permissions";
 
 const prosemirrorSync = new ProsemirrorSync(components.prosemirrorSync);
 
@@ -156,19 +163,25 @@ async function projectMarkdown(
 export const list = query({
 	args: { workspaceId: v.id("workspaces") },
 	handler: async (ctx, { workspaceId }) => {
+		await requireWorkspaceMember(ctx, workspaceId);
 		const documents = await ctx.db
 			.query("documents")
 			.withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
 			.collect();
-		return documents
+		const activeDocuments = documents
 			.filter((document) => document.deletedAt === undefined)
 			.sort((a, b) => b.updatedAt - a.updatedAt);
+		const roles = await Promise.all(
+			activeDocuments.map((document) => documentRole(ctx, document._id)),
+		);
+		return activeDocuments.filter((_, index) => roles[index] !== null);
 	},
 });
 
 export const get = query({
 	args: { documentId: v.id("documents") },
 	handler: async (ctx, { documentId }) => {
+		await requireDocumentRead(ctx, documentId);
 		const document = await ctx.db.get(documentId);
 		if (!document || document.deletedAt !== undefined) return null;
 		return document;
@@ -178,6 +191,7 @@ export const get = query({
 export const getWithMarkdown = query({
 	args: { documentId: v.id("documents") },
 	handler: async (ctx, { documentId }) => {
+		await requireDocumentRead(ctx, documentId);
 		const document = await ctx.db.get(documentId);
 		if (!document || document.deletedAt !== undefined) return null;
 		const projection = await projectMarkdown(ctx, documentId);
@@ -192,6 +206,7 @@ export const getWithMarkdown = query({
 export const listWithMarkdown = query({
 	args: { workspaceId: v.id("workspaces") },
 	handler: async (ctx, { workspaceId }) => {
+		await requireWorkspaceMember(ctx, workspaceId);
 		const documents = await ctx.db
 			.query("documents")
 			.withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
@@ -199,8 +214,14 @@ export const listWithMarkdown = query({
 		const activeDocuments = documents
 			.filter((document) => document.deletedAt === undefined)
 			.sort((a, b) => b.updatedAt - a.updatedAt);
+		const readableDocuments = [];
+		for (const document of activeDocuments) {
+			if ((await documentRole(ctx, document._id)) !== null) {
+				readableDocuments.push(document);
+			}
+		}
 		return Promise.all(
-			activeDocuments.map(async (document) => {
+			readableDocuments.map(async (document) => {
 				const projection = await projectMarkdown(ctx, document._id);
 				return {
 					...document,
@@ -220,6 +241,7 @@ export const create = mutation({
 		actor: v.optional(v.string()),
 	},
 	handler: async (ctx, { workspaceId, title, path, actor }) => {
+		await requireWorkspaceMember(ctx, workspaceId);
 		const now = Date.now();
 		const resolvedActor = await currentActorName(ctx, actor);
 		const documentId = await ctx.db.insert("documents", {
@@ -245,6 +267,7 @@ export const importMarkdown = mutation({
 		actor: v.optional(v.string()),
 	},
 	handler: async (ctx, { workspaceId, path, title, markdown, actor }) => {
+		await requireWorkspaceMember(ctx, workspaceId);
 		const resolvedActor = await currentActorName(ctx, actor);
 		const normalizedTitle = normalizeTitle(title);
 		const normalizedPath = path.trim();
@@ -293,6 +316,7 @@ export const importMarkdown = mutation({
 export const listShares = query({
 	args: { documentId: v.id("documents") },
 	handler: async (ctx, { documentId }) => {
+		await requireDocumentOwner(ctx, documentId);
 		const shares = await ctx.db
 			.query("docShares")
 			.withIndex("by_document", (q) => q.eq("documentId", documentId))
@@ -318,6 +342,7 @@ export const setUserShare = mutation({
 		),
 	},
 	handler: async (ctx, { documentId, userId, role }) => {
+		await requireDocumentOwner(ctx, documentId);
 		await ensureDocumentShare(ctx, { documentId, userId, role });
 	},
 });
@@ -328,6 +353,7 @@ export const removeUserShare = mutation({
 		userId: v.id("users"),
 	},
 	handler: async (ctx, { documentId, userId }) => {
+		await requireDocumentOwner(ctx, documentId);
 		const existing = await ctx.db
 			.query("docShares")
 			.withIndex("by_document_user", (q) =>
@@ -349,6 +375,7 @@ export const setLinkShare = mutation({
 		),
 	},
 	handler: async (ctx, { documentId, linkScope, role }) => {
+		await requireDocumentOwner(ctx, documentId);
 		await ensureDocumentShare(ctx, { documentId, linkScope, role });
 	},
 });
@@ -359,6 +386,7 @@ export const clearLinkShare = mutation({
 		linkScope: v.union(v.literal("workspace"), v.literal("public")),
 	},
 	handler: async (ctx, { documentId, linkScope }) => {
+		await requireDocumentOwner(ctx, documentId);
 		const existing = await ctx.db
 			.query("docShares")
 			.withIndex("by_document_link", (q) =>
@@ -375,6 +403,7 @@ export const markEdited = mutation({
 		actor: v.optional(v.string()),
 	},
 	handler: async (ctx, { documentId, actor }) => {
+		await requireDocumentWrite(ctx, documentId);
 		const document = await ctx.db.get(documentId);
 		if (!document || document.deletedAt !== undefined) return;
 		const resolvedActor = await currentActorName(ctx, actor);
@@ -393,6 +422,7 @@ export const rename = mutation({
 		actor: v.optional(v.string()),
 	},
 	handler: async (ctx, { documentId, title, path, actor }) => {
+		await requireDocumentWrite(ctx, documentId);
 		const document = await ctx.db.get(documentId);
 		if (!document || document.deletedAt !== undefined) {
 			throw new Error("Document not found");
@@ -413,6 +443,7 @@ export const remove = mutation({
 		actor: v.optional(v.string()),
 	},
 	handler: async (ctx, { documentId, actor }) => {
+		await requireDocumentWrite(ctx, documentId);
 		const document = await ctx.db.get(documentId);
 		if (!document || document.deletedAt !== undefined) return;
 		const now = Date.now();

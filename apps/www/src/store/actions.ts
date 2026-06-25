@@ -323,7 +323,7 @@ export async function uploadAssetFile(args: {
 	const bytes = await args.file.arrayBuffer();
 	const contentHash = await computeBytesHash(bytes);
 	const paths = assetPathsForNote(args.path, contentHash, args.file);
-	const uploadUrl = await backend.generateAssetUploadUrl();
+	const uploadUrl = await backend.generateAssetUploadUrl(workspaceId);
 	const uploadResponse = await fetch(uploadUrl, {
 		method: "POST",
 		headers: { "Content-Type": args.file.type || "application/octet-stream" },

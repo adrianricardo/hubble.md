@@ -207,7 +207,7 @@ export async function sync(
 	const remoteAssetByPath = new Map(remoteAssets.map((a) => [a.path, a]));
 
 	async function pushAsset(path: string, hash: string) {
-		const uploadUrl = await backend.generateAssetUploadUrl();
+		const uploadUrl = await backend.generateAssetUploadUrl(workspaceId);
 		const data = await fs.readBinaryFile(`${workspacePath}/${path}`);
 		const res = await fetch(uploadUrl, {
 			method: "POST",

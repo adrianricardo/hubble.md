@@ -184,8 +184,15 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
       APIs for the upcoming share dialog and enforcement pass. Verified
       `convex codegen`, `pnpm check`, and `pnpm build:desktop`. Unmerged. — *Owner: Codex ·
       Started: 2026-06-25*
-- [ ] **Server-side enforcement on every query/mutation** — a viewer never receives
-      editable steps. — *_*
+- [~] **Server-side enforcement on every query/mutation** — a viewer never receives
+      editable steps. Implemented locally with shared workspace/document
+      permission helpers, role-filtered Live Document list/read queries,
+      owner-only share APIs, editor-only document mutations, ProseMirror
+      `checkRead`/`checkWrite` hooks so viewers can read but not submit live
+      steps/snapshots, and workspace membership guards on legacy sync/assets
+      including upload/download URL generation. Verified `convex codegen`;
+      `pnpm check`, and `pnpm build:desktop`. Unmerged. — *Owner: Codex ·
+      Started: 2026-06-25*
 - [ ] Share dialog UI. — *_*
 
 ## Stage 4 — Agent collaboration layer (Model C) 🔴
@@ -222,6 +229,12 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 
 Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
 
+- 2026-06-25 — Codex — Continued Stage 3 team permissions: added shared
+  workspace/document permission helpers, filtered Live Document reads by role,
+  made share APIs owner-only, blocked non-editors from document mutations and
+  ProseMirror step/snapshot submission, and guarded legacy sync/assets by
+  workspace membership including asset upload/download URL paths. Verified
+  `convex codegen`, `pnpm check`, and `pnpm build:desktop`.
 - 2026-06-25 — Codex — Continued Stage 3 team permissions: added `docShares`
   for per-document user roles and workspace/public link-share roles, seeded
   owner shares on authenticated document create/import, and exposed backend

@@ -74,7 +74,8 @@ export default defineSchema({
 		deleted: v.boolean(),
 	})
 		.index("by_workspace", ["workspaceId", "updatedAt"])
-		.index("by_workspace_path", ["workspaceId", "path"]),
+		.index("by_workspace_path", ["workspaceId", "path"])
+		.index("by_storage", ["storageId"]),
 
 	livePocUsers: defineTable({
 		workspaceId: v.id("workspaces"),

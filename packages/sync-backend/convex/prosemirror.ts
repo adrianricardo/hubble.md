@@ -9,13 +9,28 @@ import { Transform } from "@tiptap/pm/transform";
 import { v } from "convex/values";
 import { components } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { mutation } from "./_generated/server";
+import { type MutationCtx, mutation, type QueryCtx } from "./_generated/server";
+import {
+	documentIdFromSyncId,
+	requireDocumentRead,
+	requireDocumentWrite,
+} from "./permissions";
 
 const prosemirrorSync = new ProsemirrorSync(components.prosemirrorSync);
 
+async function checkRead(ctx: QueryCtx, syncId: string) {
+	const documentId = documentIdFromSyncId(syncId);
+	if (!documentId) return;
+	await requireDocumentRead(ctx, documentId);
+}
+
+async function checkWrite(ctx: MutationCtx, syncId: string) {
+	const documentId = documentIdFromSyncId(syncId);
+	if (!documentId) return;
+	await requireDocumentWrite(ctx, documentId);
+}
+
 // Realtime sync endpoints consumed by the Tiptap client via `useTiptapSync`.
-// TODO(stage-3): gate these behind document permission checks (owner/editor/
-// viewer). A viewer must never receive `submitSteps`/`submitSnapshot`.
 export const {
 	getSnapshot,
 	submitSnapshot,
@@ -23,7 +38,8 @@ export const {
 	getSteps,
 	submitSteps,
 } = prosemirrorSync.syncApi({
-	// checkRead / checkWrite hooks go here in Stage 3.
+	checkRead,
+	checkWrite,
 });
 
 // --- Agent edit path (Model C) -------------------------------------------
@@ -37,6 +53,9 @@ export const {
 export const agentAppendParagraph = mutation({
 	args: { docId: v.string(), text: v.string() },
 	handler: async (ctx, { docId, text }) => {
+		const liveDocumentId = documentIdFromSyncId(docId);
+		if (liveDocumentId) await requireDocumentWrite(ctx, liveDocumentId);
+
 		const schema = getHubbleEditorSchema();
 		const paragraph = schema.nodes.paragraph;
 		if (!paragraph) {
@@ -54,8 +73,7 @@ export const agentAppendParagraph = mutation({
 		});
 
 		if (docId.startsWith("document:")) {
-			const documentId = docId.slice("document:".length);
-			await ctx.db.patch(documentId as Id<"documents">, {
+			await ctx.db.patch(docId.slice("document:".length) as Id<"documents">, {
 				updatedBy: "Agent",
 				updatedAt: Date.now(),
 			});

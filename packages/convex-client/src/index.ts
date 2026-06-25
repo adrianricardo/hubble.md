@@ -88,8 +88,10 @@ export function createConvexBackend(url: string): SyncBackend {
 				workspaceId: args.workspaceId as Id<"workspaces">,
 			});
 		},
-		async generateAssetUploadUrl() {
-			return client.mutation(api.sync.generateAssetUploadUrl, {});
+		async generateAssetUploadUrl(workspaceId) {
+			return client.mutation(api.sync.generateAssetUploadUrl, {
+				workspaceId: workspaceId as Id<"workspaces">,
+			});
 		},
 		async getAssetDownloadUrl(storageId) {
 			return client.query(api.sync.getAssetDownloadUrl, {
