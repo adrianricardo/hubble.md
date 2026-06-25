@@ -239,7 +239,13 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
       through `documents.applyPatch` with `file-shim` attribution by default.
       Verified `@hubble.md/cli` typecheck/build, `pnpm check`, and
       `pnpm build:desktop`. Unmerged. — *Owner: Codex · Started: 2026-06-25*
-- [ ] Suggestion mode (agent proposes, human accepts). — *_*
+- [~] Suggestion mode (agent proposes, human accepts). Backend substrate
+      implemented locally with `documentSuggestions`, `proposeSuggestion`,
+      `listSuggestions`, `acceptSuggestion`, and `rejectSuggestion`. Accepting a
+      suggestion reuses the same stale-revision checked `applyPatch` path, while
+      rejecting records resolution metadata. UI review flow remains for Stage 5.
+      Verified `convex codegen`, `pnpm check`, and `pnpm build:desktop`.
+      Unmerged. — *Owner: Codex · Started: 2026-06-25*
 
 ## Stage 5 — Version history & review 🔴
 
@@ -264,6 +270,11 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 
 Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
 
+- 2026-06-25 — Codex — Continued Stage 4 agent collaboration: added backend
+  suggestion mode with `documentSuggestions` plus propose/list/accept/reject
+  mutations. Accepting suggestions reuses the stale-revision checked
+  `applyPatch` transform path; UI review remains for Stage 5. Verified
+  `convex codegen`, `pnpm check`, and `pnpm build:desktop`.
 - 2026-06-25 — Codex — Continued Stage 4 agent collaboration: added a legacy
   file-only shim command, `hubble cloud document shim --id <documentId> --file
   <staging.md> [--watch]`, that converts staging-file writes into

@@ -63,6 +63,22 @@ export default defineSchema({
 		.index("by_document_user", ["documentId", "userId"])
 		.index("by_document_link", ["documentId", "linkScope"]),
 
+	documentSuggestions: defineTable({
+		documentId: v.id("documents"),
+		baseRevision: v.number(),
+		intent: v.any(),
+		actor: v.optional(v.string()),
+		status: v.union(
+			v.literal("pending"),
+			v.literal("accepted"),
+			v.literal("rejected"),
+		),
+		createdAt: v.number(),
+		resolvedAt: v.optional(v.number()),
+	})
+		.index("by_document", ["documentId", "createdAt"])
+		.index("by_document_status", ["documentId", "status", "createdAt"]),
+
 	assets: defineTable({
 		workspaceId: v.id("workspaces"),
 		path: v.string(),

@@ -28,6 +28,26 @@ const prosemirrorSync = new ProsemirrorSync(components.prosemirrorSync);
 
 type DocumentRole = "owner" | "editor" | "commenter" | "viewer";
 type LinkScope = "workspace" | "public";
+type PatchIntent =
+	| { kind: "replace-document"; markdown: string }
+	| { kind: "append-markdown"; markdown: string }
+	| { kind: "insert-after-heading"; heading: string; markdown: string };
+
+const patchIntentValidator = v.union(
+	v.object({
+		kind: v.literal("replace-document"),
+		markdown: v.string(),
+	}),
+	v.object({
+		kind: v.literal("append-markdown"),
+		markdown: v.string(),
+	}),
+	v.object({
+		kind: v.literal("insert-after-heading"),
+		heading: v.string(),
+		markdown: v.string(),
+	}),
+);
 
 function normalizeTitle(title: string): string {
 	const trimmed = title.trim();
@@ -215,6 +235,61 @@ async function transformLiveDocumentMarkdown(
 	);
 }
 
+async function applyPatchToDocument(
+	ctx: MutationCtx,
+	args: {
+		documentId: Id<"documents">;
+		baseRevision: number;
+		intent: PatchIntent;
+		actor?: string;
+	},
+) {
+	await requireDocumentWrite(ctx, args.documentId);
+	const document = await ctx.db.get(args.documentId);
+	if (!document || document.deletedAt !== undefined) {
+		throw new Error("Document not found");
+	}
+
+	const current = await projectMarkdown(ctx, args.documentId);
+	const currentRevision = current.version ?? 0;
+	if (currentRevision !== args.baseRevision) {
+		throw new Error(
+			`Stale base revision: expected ${currentRevision}, got ${args.baseRevision}`,
+		);
+	}
+
+	const nextMarkdown =
+		args.intent.kind === "replace-document"
+			? args.intent.markdown
+			: args.intent.kind === "append-markdown"
+				? appendMarkdown(current.markdown, args.intent.markdown)
+				: insertMarkdownAfterHeading(
+						current.markdown,
+						args.intent.heading,
+						args.intent.markdown,
+					);
+
+	await transformLiveDocumentMarkdown(
+		ctx,
+		args.documentId,
+		nextMarkdown,
+		"agent",
+	);
+	const now = Date.now();
+	await ctx.db.patch(args.documentId, {
+		updatedBy: args.actor?.trim() || "Agent",
+		updatedAt: now,
+	});
+	const projection = await projectMarkdown(ctx, args.documentId);
+	return {
+		documentId: args.documentId,
+		revision: projection.version ?? currentRevision,
+		markdown: projection.markdown,
+		outline: markdownOutline(projection.markdown),
+		updatedAt: now,
+	};
+}
+
 function markdownOutline(markdown: string) {
 	return markdown
 		.split(/\r?\n/)
@@ -334,63 +409,81 @@ export const applyPatch = mutation({
 	args: {
 		documentId: v.id("documents"),
 		baseRevision: v.number(),
-		intent: v.union(
-			v.object({
-				kind: v.literal("replace-document"),
-				markdown: v.string(),
-			}),
-			v.object({
-				kind: v.literal("append-markdown"),
-				markdown: v.string(),
-			}),
-			v.object({
-				kind: v.literal("insert-after-heading"),
-				heading: v.string(),
-				markdown: v.string(),
-			}),
-		),
+		intent: patchIntentValidator,
 		actor: v.optional(v.string()),
 	},
 	handler: async (ctx, { documentId, baseRevision, intent, actor }) => {
-		await requireDocumentWrite(ctx, documentId);
-		const document = await ctx.db.get(documentId);
-		if (!document || document.deletedAt !== undefined) {
-			throw new Error("Document not found");
-		}
-
-		const current = await projectMarkdown(ctx, documentId);
-		const currentRevision = current.version ?? 0;
-		if (currentRevision !== baseRevision) {
-			throw new Error(
-				`Stale base revision: expected ${currentRevision}, got ${baseRevision}`,
-			);
-		}
-
-		const nextMarkdown =
-			intent.kind === "replace-document"
-				? intent.markdown
-				: intent.kind === "append-markdown"
-					? appendMarkdown(current.markdown, intent.markdown)
-					: insertMarkdownAfterHeading(
-							current.markdown,
-							intent.heading,
-							intent.markdown,
-						);
-
-		await transformLiveDocumentMarkdown(ctx, documentId, nextMarkdown, "agent");
-		const now = Date.now();
-		await ctx.db.patch(documentId, {
-			updatedBy: actor?.trim() || "Agent",
-			updatedAt: now,
-		});
-		const projection = await projectMarkdown(ctx, documentId);
-		return {
+		return applyPatchToDocument(ctx, {
 			documentId,
-			revision: projection.version ?? currentRevision,
-			markdown: projection.markdown,
-			outline: markdownOutline(projection.markdown),
-			updatedAt: now,
-		};
+			baseRevision,
+			intent,
+			actor,
+		});
+	},
+});
+
+export const listSuggestions = query({
+	args: { documentId: v.id("documents") },
+	handler: async (ctx, { documentId }) => {
+		await requireDocumentRead(ctx, documentId);
+		return ctx.db
+			.query("documentSuggestions")
+			.withIndex("by_document", (q) => q.eq("documentId", documentId))
+			.collect();
+	},
+});
+
+export const proposeSuggestion = mutation({
+	args: {
+		documentId: v.id("documents"),
+		baseRevision: v.number(),
+		intent: patchIntentValidator,
+		actor: v.optional(v.string()),
+	},
+	handler: async (ctx, { documentId, baseRevision, intent, actor }) => {
+		await requireDocumentRead(ctx, documentId);
+		return ctx.db.insert("documentSuggestions", {
+			documentId,
+			baseRevision,
+			intent,
+			actor: actor?.trim() || "Agent",
+			status: "pending",
+			createdAt: Date.now(),
+		});
+	},
+});
+
+export const acceptSuggestion = mutation({
+	args: { suggestionId: v.id("documentSuggestions") },
+	handler: async (ctx, { suggestionId }) => {
+		const suggestion = await ctx.db.get(suggestionId);
+		if (!suggestion || suggestion.status !== "pending") {
+			throw new Error("Suggestion not found");
+		}
+		const result = await applyPatchToDocument(ctx, {
+			documentId: suggestion.documentId,
+			baseRevision: suggestion.baseRevision,
+			intent: suggestion.intent as PatchIntent,
+			actor: suggestion.actor,
+		});
+		await ctx.db.patch(suggestionId, {
+			status: "accepted",
+			resolvedAt: Date.now(),
+		});
+		return result;
+	},
+});
+
+export const rejectSuggestion = mutation({
+	args: { suggestionId: v.id("documentSuggestions") },
+	handler: async (ctx, { suggestionId }) => {
+		const suggestion = await ctx.db.get(suggestionId);
+		if (!suggestion || suggestion.status !== "pending") return;
+		await requireDocumentWrite(ctx, suggestion.documentId);
+		await ctx.db.patch(suggestionId, {
+			status: "rejected",
+			resolvedAt: Date.now(),
+		});
 	},
 });
 
