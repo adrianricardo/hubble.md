@@ -3,7 +3,7 @@ import { createConvexSubscriber } from "@hubble.md/convex-client";
 import { withMarkdownExtension } from "@hubble.md/editor";
 import { api } from "@hubble.md/sync-backend";
 import type { Id } from "@hubble.md/sync-backend/types";
-import { AppShellFrame } from "@hubble.md/ui";
+import { AppShellFrame, Modal } from "@hubble.md/ui";
 import { useStoreValue } from "@simplestack/store/react";
 import {
 	Authenticated,
@@ -559,8 +559,13 @@ function LiveDocumentView({
 	const document = useQuery(api.documents.getWithMarkdown, {
 		documentId: documentId as Id<"documents">,
 	});
+	const suggestions = useQuery(api.documents.listSuggestions, {
+		documentId: documentId as Id<"documents">,
+	});
 	const markEdited = useMutation(api.documents.markEdited);
 	const lastEditMarkRef = useRef(0);
+	const pendingSuggestions =
+		suggestions?.filter((suggestion) => suggestion.status === "pending") ?? [];
 	// Live Documents must not follow mutable path/title metadata; the Convex
 	// document ID is the stable collaboration authority.
 	const syncDocId = `document:${documentId}`;
@@ -604,9 +609,17 @@ function LiveDocumentView({
 			<div className="border-b border-border bg-muted/30">
 				<div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground [padding-block:0.5rem] [padding-inline:0.75rem]">
 					<span className="font-medium text-foreground">{document.title}</span>
-					<span>
-						{formatEditedMeta(document.updatedAt, document.updatedBy)}
-					</span>
+					<div className="flex items-center gap-2">
+						{pendingSuggestions.length > 0 && (
+							<SuggestionsReviewButton
+								documentTitle={document.title}
+								suggestions={pendingSuggestions}
+							/>
+						)}
+						<span>
+							{formatEditedMeta(document.updatedAt, document.updatedBy)}
+						</span>
+					</div>
 				</div>
 			</div>
 			<EditorView
@@ -619,6 +632,116 @@ function LiveDocumentView({
 			/>
 		</div>
 	);
+}
+
+function SuggestionsReviewButton({
+	documentTitle,
+	suggestions,
+}: {
+	documentTitle: string;
+	suggestions: Array<{
+		_id: Id<"documentSuggestions">;
+		actor?: string;
+		baseRevision: number;
+		intent: unknown;
+	}>;
+}) {
+	const [open, setOpen] = useState(false);
+	const acceptSuggestion = useMutation(api.documents.acceptSuggestion);
+	const rejectSuggestion = useMutation(api.documents.rejectSuggestion);
+	const [busyId, setBusyId] = useState<string | null>(null);
+
+	const runSuggestionAction = async (
+		suggestionId: Id<"documentSuggestions">,
+		action: "accept" | "reject",
+	) => {
+		setBusyId(suggestionId);
+		try {
+			if (action === "accept") {
+				await acceptSuggestion({ suggestionId });
+			} else {
+				await rejectSuggestion({ suggestionId });
+			}
+		} finally {
+			setBusyId(null);
+		}
+	};
+
+	return (
+		<>
+			<button
+				type="button"
+				className="rounded-sm border border-border bg-background text-xs font-medium text-foreground hover:bg-accent [padding-block:0.25rem] [padding-inline:0.5rem]"
+				onClick={() => setOpen(true)}
+			>
+				{suggestions.length} suggestion{suggestions.length === 1 ? "" : "s"}
+			</button>
+			<Modal
+				open={open}
+				onOpenChange={setOpen}
+				title={`Suggestions for ${documentTitle}`}
+				description="Review proposed agent changes before applying them."
+			>
+				<div className="flex flex-col gap-2">
+					{suggestions.map((suggestion) => (
+						<div
+							key={suggestion._id}
+							className="rounded-sm border border-border bg-background [padding-block:0.75rem] [padding-inline:0.75rem]"
+						>
+							<div className="flex flex-wrap items-center justify-between gap-2">
+								<div>
+									<p className="m-0 text-xs font-medium text-foreground">
+										{suggestion.actor ?? "Agent"}
+									</p>
+									<p className="m-0 mt-1 text-[11px] text-muted-foreground">
+										Base revision {suggestion.baseRevision}
+									</p>
+								</div>
+								<div className="flex gap-1">
+									<button
+										type="button"
+										disabled={busyId === suggestion._id}
+										className="rounded-sm bg-primary text-xs font-medium text-primary-foreground disabled:opacity-50 [padding-block:0.375rem] [padding-inline:0.625rem]"
+										onClick={() =>
+											void runSuggestionAction(suggestion._id, "accept")
+										}
+									>
+										Accept
+									</button>
+									<button
+										type="button"
+										disabled={busyId === suggestion._id}
+										className="rounded-sm text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50 [padding-block:0.375rem] [padding-inline:0.625rem]"
+										onClick={() =>
+											void runSuggestionAction(suggestion._id, "reject")
+										}
+									>
+										Reject
+									</button>
+								</div>
+							</div>
+							<pre className="mt-3 max-h-40 overflow-auto whitespace-pre-wrap rounded-sm bg-muted text-[11px] text-muted-foreground [padding-block:0.5rem] [padding-inline:0.5rem]">
+								{describeSuggestionIntent(suggestion.intent)}
+							</pre>
+						</div>
+					))}
+				</div>
+			</Modal>
+		</>
+	);
+}
+
+function describeSuggestionIntent(intent: unknown): string {
+	if (!intent || typeof intent !== "object") return "Unknown suggestion";
+	if (!("kind" in intent) || typeof intent.kind !== "string") {
+		return JSON.stringify(intent, null, 2);
+	}
+	if (intent.kind === "insert-after-heading" && "heading" in intent) {
+		return `Insert after heading: ${String(intent.heading)}`;
+	}
+	if (intent.kind === "append-markdown") return "Append markdown";
+	if (intent.kind === "replace-document") return "Replace document";
+	return intent.kind;
 }
 
 function formatEditedMeta(updatedAt: number, updatedBy?: string) {

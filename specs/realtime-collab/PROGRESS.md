@@ -270,7 +270,13 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
       actor attribution. @mention parsing/notifications and UI remain pending.
       Verified `convex codegen`, `pnpm check`, and `pnpm build:desktop`.
       Unmerged. — *Owner: Codex · Started: 2026-06-25*
-- [ ] Track-changes / suggestion review UI. — *_*
+- [~] Track-changes / suggestion review UI. Implemented locally as a Live
+      Document header Suggestions control that opens a review modal for pending
+      agent suggestions and lets users accept or reject them through the
+      backend suggestion APIs. This is an initial review surface, not full
+      inline track-changes rendering. Verified `@hubble.md/www` typecheck/build,
+      `pnpm check`, and `pnpm build:desktop`. Unmerged. — *Owner: Codex ·
+      Started: 2026-06-25*
 - [ ] Activity feed + notifications. — *_*
 
 ## Stage 6 — Docs-parity polish 🔴
@@ -287,6 +293,11 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 
 Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
 
+- 2026-06-25 — Codex — Continued Stage 5 review workflow: added an initial
+  suggestion review UI in the Live Document header, showing pending suggestions
+  in a modal with accept/reject actions backed by the suggestion APIs. Full
+  inline track-changes rendering remains pending. Verified `@hubble.md/www`
+  typecheck/build, `pnpm check`, and `pnpm build:desktop`.
 - 2026-06-25 — Codex — Continued Stage 5 review workflow: added backend
   comment thread support with anchored `commentThreads`, `comments`, create,
   reply, list, and resolve APIs with actor attribution. @mention parsing,
