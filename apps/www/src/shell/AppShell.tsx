@@ -610,6 +610,10 @@ function LiveDocumentView({
 				<div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground [padding-block:0.5rem] [padding-inline:0.75rem]">
 					<span className="font-medium text-foreground">{document.title}</span>
 					<div className="flex items-center gap-2">
+						<VersionHistoryButton
+							documentId={documentId}
+							testIdentity={testIdentity}
+						/>
 						{pendingSuggestions.length > 0 && (
 							<SuggestionsReviewButton
 								documentTitle={document.title}
@@ -742,6 +746,107 @@ function describeSuggestionIntent(intent: unknown): string {
 	if (intent.kind === "append-markdown") return "Append markdown";
 	if (intent.kind === "replace-document") return "Replace document";
 	return intent.kind;
+}
+
+function VersionHistoryButton({
+	documentId,
+	testIdentity,
+}: {
+	documentId: string;
+	testIdentity: TestIdentity | null;
+}) {
+	const [open, setOpen] = useState(false);
+	const revisions = useQuery(api.documents.listRevisions, {
+		documentId: documentId as Id<"documents">,
+	});
+	const restoreRevision = useMutation(api.documents.restoreRevision);
+	const [busyId, setBusyId] = useState<string | null>(null);
+
+	const handleRestore = async (revisionId: Id<"revisions">) => {
+		setBusyId(revisionId);
+		try {
+			await restoreRevision({
+				revisionId,
+				actor: testIdentity?.name ?? undefined,
+			});
+			setOpen(false);
+		} finally {
+			setBusyId(null);
+		}
+	};
+
+	return (
+		<>
+			<button
+				type="button"
+				className="rounded-sm border border-border bg-background text-xs font-medium text-foreground hover:bg-accent [padding-block:0.25rem] [padding-inline:0.5rem]"
+				onClick={() => setOpen(true)}
+			>
+				History
+			</button>
+			<Modal
+				open={open}
+				onOpenChange={setOpen}
+				title="Version history"
+				description="Browse and restore earlier versions of this document."
+				className="max-w-lg"
+			>
+				{revisions === undefined ? (
+					<p className="text-sm text-muted-foreground">Loading…</p>
+				) : revisions.length === 0 ? (
+					<p className="text-sm text-muted-foreground">
+						No saved revisions yet.
+					</p>
+				) : (
+					<div className="flex flex-col gap-2">
+						{revisions.map((revision) => (
+							<div
+								key={revision._id}
+								className="rounded-sm border border-border bg-background [padding-block:0.75rem] [padding-inline:0.75rem]"
+							>
+								<div className="flex flex-wrap items-center justify-between gap-2">
+									<div>
+										<p className="m-0 text-xs font-medium text-foreground">
+											{revision.label ??
+												(revision.actor ?? "Snapshot")}
+										</p>
+										<p className="m-0 mt-0.5 text-[11px] text-muted-foreground">
+											{formatRevisionDate(revision.createdAt)}
+											{revision.actor && revision.label
+												? ` · ${revision.actor}`
+												: ""}
+											{" · "}rev {revision.revision}
+										</p>
+									</div>
+									<button
+										type="button"
+										disabled={busyId !== null}
+										className="rounded-sm bg-primary text-xs font-medium text-primary-foreground disabled:opacity-50 [padding-block:0.375rem] [padding-inline:0.625rem]"
+										onClick={() => void handleRestore(revision._id)}
+									>
+										{busyId === revision._id ? "Restoring…" : "Restore"}
+									</button>
+								</div>
+								{revision.markdown.length > 0 && (
+									<pre className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap rounded-sm bg-muted text-[11px] text-muted-foreground [padding-block:0.5rem] [padding-inline:0.5rem]">
+										{revision.markdown.slice(0, 400)}
+										{revision.markdown.length > 400 ? "…" : ""}
+									</pre>
+								)}
+							</div>
+						))}
+					</div>
+				)}
+			</Modal>
+		</>
+	);
+}
+
+function formatRevisionDate(ms: number): string {
+	return new Intl.DateTimeFormat(undefined, {
+		dateStyle: "medium",
+		timeStyle: "short",
+	}).format(new Date(ms));
 }
 
 function formatEditedMeta(updatedAt: number, updatedBy?: string) {

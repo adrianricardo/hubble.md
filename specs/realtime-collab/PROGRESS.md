@@ -435,9 +435,14 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
       Backend restore path implemented locally with `documents.restoreRevision`:
       it materializes the current document as "Before restore", applies the
       selected revision markdown through the live ProseMirror document, and
-      updates document attribution. Browse/restore UI remains pending. Verified
-      `convex codegen`, `pnpm check`, and `pnpm build:desktop`. Unmerged. —
-      *Owner: Codex · Started: 2026-06-25*
+      updates document attribution. Web UI implemented: a "History" button in
+      the Live Document header opens a modal listing all revisions (newest first)
+      with date, actor/label, revision number, markdown preview, and a Restore
+      button per entry. Restore calls `restoreRevision` and closes the modal on
+      success. Verified `pnpm typecheck` clean across all 6 TS packages and
+      `pnpm --filter @hubble.md/www build` clean. Interactive Convex verification
+      (live two-browser, `convex dev` login) skipped — not available in this
+      session. Unmerged. — *Owner: Sonnet · Started: 2026-06-25 · Landed: 2026-06-25*
 - [~] Comments + threads anchored to text, @mentions, resolve. Backend
       substrate implemented locally with `commentThreads` and `comments` tables,
       anchored thread creation, replies, listing, and resolve mutation with
@@ -504,6 +509,13 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 
 Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
 
+- 2026-06-25 — Sonnet — Stage 5 version history UI: added `VersionHistoryButton`
+  to the Live Document header in `apps/www`; opens a modal listing all revisions
+  (newest first) with date, actor/label, revision number, and markdown preview.
+  Restore calls `documents.restoreRevision` (materializes "Before restore" first,
+  never mutates history) and closes the modal on success. Verified `pnpm typecheck`
+  clean across all 6 TS packages and `pnpm --filter @hubble.md/www build` clean.
+  Interactive verification skipped (no live `convex dev` login available).
 - 2026-06-25 — Adrian/Claude — Added the **🧭 START HERE handoff block** after
   verifying the tree against the task notes: confirmed the branch is ~25 commits
   ahead of `main` (so "Unmerged" = not-on-`main`, code IS committed), confirmed the
