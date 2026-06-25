@@ -16,6 +16,7 @@ import {
 	protocol,
 	screen,
 	shell,
+	type Tray,
 } from "electron";
 import electronUpdater from "electron-updater";
 import ignore from "ignore";
@@ -31,6 +32,7 @@ import {
 	markdownAssetFolderPath,
 	withMarkdownExtension,
 } from "../src/lib/filePath";
+import { createAppTray } from "./tray";
 import {
 	loadZoomFactor,
 	resetWindowZoom,
@@ -119,6 +121,11 @@ let updateState: DesktopUpdateState = {
 	lastCheckedAt: null,
 };
 const watchers = new Map<string, FSWatcher>();
+// Always-on lifecycle (Decision C): background mode + tray are only engaged
+// while a cloud Live-Document workspace is connected.
+let tray: Tray | null = null;
+let isQuitting = false;
+let backgroundActive = false;
 const grantedFiles = new Set<string>();
 const grantedRoots = new Set<string>();
 let grantsLoaded = false;
@@ -914,6 +921,54 @@ function matchesGlob(relativePath: string, glob: string): boolean {
 	return new RegExp(`^${source}$`).test(relativePath);
 }
 
+function trayIconPath(): string {
+	return path.join(app.getAppPath(), "assets", "icon.png");
+}
+
+/** Reopen or focus the main window, recreating it if it was destroyed. */
+function showMainWindow() {
+	if (mainWindow && !mainWindow.isDestroyed()) {
+		if (mainWindow.isMinimized()) mainWindow.restore();
+		mainWindow.show();
+		mainWindow.focus();
+		return;
+	}
+	void createWindow();
+}
+
+function ensureTray() {
+	if (tray) return;
+	tray = createAppTray(trayIconPath(), appName, {
+		onOpen: () => showMainWindow(),
+		onQuit: () => {
+			isQuitting = true;
+			app.quit();
+		},
+	});
+}
+
+function destroyTray() {
+	if (!tray) return;
+	tray.destroy();
+	tray = null;
+}
+
+/**
+ * Toggle always-on background mode. When active, closing the last window keeps
+ * the main process alive behind the tray; when inactive we fall back to today's
+ * quit-on-close behavior so purely-local users get no surprise background
+ * process (Decision C).
+ */
+function setBackgroundActive(active: boolean) {
+	if (backgroundActive === active) return;
+	backgroundActive = active;
+	if (active) {
+		ensureTray();
+	} else {
+		destroyTray();
+	}
+}
+
 async function createWindow() {
 	const windowState = await loadWindowState();
 	const zoomFactor = loadZoomFactor();
@@ -957,12 +1012,18 @@ async function createWindow() {
 	);
 	window.on("resize", () => queueSaveWindowState(window));
 	window.on("move", () => queueSaveWindowState(window));
-	window.on("close", () => {
+	window.on("close", (event) => {
 		if (saveWindowStateTimer) {
 			clearTimeout(saveWindowStateTimer);
 			saveWindowStateTimer = null;
 		}
 		saveWindowState(window);
+		// In always-on mode, closing the window hides it (keeping the main
+		// process + tray alive) unless the user is actually quitting.
+		if (backgroundActive && !isQuitting) {
+			event.preventDefault();
+			window.hide();
+		}
 	});
 	window.on("closed", () => {
 		if (mainWindow === window) mainWindow = null;
@@ -1301,6 +1362,10 @@ function registerIpc() {
 		menuState = { hasWorkspace: state.hasWorkspace === true };
 		buildMenu();
 	});
+
+	ipcMain.handle("desktop:set-background-active", (_event, active: boolean) => {
+		setBackgroundActive(active === true);
+	});
 }
 
 protocol.registerSchemesAsPrivileged([
@@ -1321,11 +1386,12 @@ if (!singleInstanceLock) {
 } else {
 	app.on("second-instance", (_event, argv) => {
 		const openPath = firstExistingFileArg(argv.slice(1));
+		// Reuse the reopen path so a re-launch surfaces the window even when it
+		// was hidden to the tray in background mode.
+		showMainWindow();
 		if (!openPath) return;
 		pendingOpenPath = openPath;
-		if (mainWindow) {
-			if (mainWindow.isMinimized()) mainWindow.restore();
-			mainWindow.focus();
+		if (mainWindow && !mainWindow.isDestroyed()) {
 			sendToRenderer("desktop:open-file", openPath);
 		}
 	});
@@ -1356,13 +1422,18 @@ if (!singleInstanceLock) {
 		await createWindow();
 	});
 
+	app.on("before-quit", () => {
+		isQuitting = true;
+	});
+
 	app.on("window-all-closed", () => {
+		// Keep the main process alive for background sync while a cloud
+		// workspace is connected; otherwise preserve today's quit-on-close.
+		if (backgroundActive) return;
 		if (process.platform !== "darwin") app.quit();
 	});
 
 	app.on("activate", () => {
-		if (BrowserWindow.getAllWindows().length === 0) {
-			void createWindow();
-		}
+		showMainWindow();
 	});
 }

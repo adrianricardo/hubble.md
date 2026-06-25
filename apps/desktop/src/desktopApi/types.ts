@@ -105,6 +105,13 @@ export type DesktopApi = {
 	getLaunchFilePath(): Promise<string | null>;
 	getLaunchWorkspacePath(): Promise<string | null>;
 	setMenuState(state: MenuState): Promise<void>;
+	/**
+	 * Engage/disengage always-on background mode (tray + survive window close).
+	 * Renderer calls this when a cloud Live-Document workspace is connected /
+	 * disconnected (Decision C). Phase 2's live-sync connect/disconnect drives
+	 * the same flag from the main process.
+	 */
+	setBackgroundActive(active: boolean): Promise<void>;
 	getUpdateState(): Promise<DesktopUpdateState>;
 	getFullScreen(): Promise<boolean>;
 	checkForUpdates(): Promise<void>;

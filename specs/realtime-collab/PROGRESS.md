@@ -517,6 +517,17 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
         same I/O, base-cache, read-only, and `--watch` semantics. Unit tests in
         `packages/sync/src/reconcile.test.ts`. Phases 1–6 (tray, watcher-in-main,
         routing, backstop wiring) remain gated on pending human decisions.
+  - [x] **Phase 1** (Tray + always-on lifecycle, Decision C): added an
+        `isQuitting` flag, a `Tray` (`apps/desktop/electron/tray.ts`), and a
+        `backgroundActive` gate in `main.ts`. While background mode is active
+        (engaged via `desktop:set-background-active` IPC), closing the window
+        hides it and `window-all-closed` is a no-op so the main process stays
+        alive behind the tray; when inactive, today's quit-on-close behavior is
+        preserved. Tray menu ("Open Hubble"/"Quit Hubble") and the `activate`/
+        `second-instance` paths reopen via a shared `showMainWindow()`; the
+        single-instance lock is respected. No sync/watcher yet. Tray appearance +
+        close/hide/quit behavior are **human-verification-pending** (can't run
+        Electron headlessly).
 - [ ] Offline edit + merge on reconnect — two flavors (Decision 6): in-editor (CRDT
       local buffer/replay; Yjs/`y-indexeddb` fallback if prosemirror-sync offline is
       insufficient) and external-file (watcher queues edits, flushes on reconnect via
@@ -534,6 +545,16 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 
 Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
 
+- 2026-06-25 — Opus — Desktop always-on Phase 1: added tray + always-on
+  lifecycle (Decision C). New `apps/desktop/electron/tray.ts`; `main.ts` gains an
+  `isQuitting` flag, a `backgroundActive` gate, and a `desktop:set-background-active`
+  IPC. While background mode is active, closing the window hides it and
+  `window-all-closed` is a no-op (process survives behind the tray); otherwise
+  today's quit-on-close is preserved. Tray menu + `activate`/`second-instance`
+  reopen via a shared `showMainWindow()`; single-instance lock respected. No sync
+  yet. `pnpm build:desktop` + `pnpm typecheck` clean across all 6 TS packages,
+  desktop tests pass (35), `pnpm check` clean. Tray/lifecycle behavior is
+  human-verification-pending (Electron can't run headlessly here).
 - 2026-06-25 — Opus — Desktop always-on Phase 0: extracted the CLI reconcile
   loop into a reusable `@hubble.md/sync` reconciler (`reconcileProjectionFile`
   + helpers, `toLocalEditName`) and added `getDocumentForAgent`/

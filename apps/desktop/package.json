@@ -80,7 +80,8 @@
 		},
 		"icon": "assets/icon.icns",
 		"files": [
-			"out/**"
+			"out/**",
+			"assets/icon.png"
 		],
 		"publish": [
 			{
