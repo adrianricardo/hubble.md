@@ -46,6 +46,23 @@ export default defineSchema({
 		.index("by_workspace", ["workspaceId", "updatedAt"])
 		.index("by_workspace_path", ["workspaceId", "path"]),
 
+	docShares: defineTable({
+		documentId: v.id("documents"),
+		userId: v.optional(v.id("users")),
+		linkScope: v.optional(v.union(v.literal("workspace"), v.literal("public"))),
+		role: v.union(
+			v.literal("owner"),
+			v.literal("editor"),
+			v.literal("commenter"),
+			v.literal("viewer"),
+		),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_document", ["documentId"])
+		.index("by_document_user", ["documentId", "userId"])
+		.index("by_document_link", ["documentId", "linkScope"]),
+
 	assets: defineTable({
 		workspaceId: v.id("workspaces"),
 		path: v.string(),

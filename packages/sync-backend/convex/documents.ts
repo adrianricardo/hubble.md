@@ -1,3 +1,4 @@
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { ProsemirrorSync } from "@convex-dev/prosemirror-sync";
 import {
 	getHubbleEditorSchema,
@@ -7,6 +8,7 @@ import {
 import { Step, Transform } from "@tiptap/pm/transform";
 import { v } from "convex/values";
 import { components } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import {
 	type MutationCtx,
 	mutation,
@@ -17,6 +19,9 @@ import { currentActorName } from "./authIdentity";
 
 const prosemirrorSync = new ProsemirrorSync(components.prosemirrorSync);
 
+type DocumentRole = "owner" | "editor" | "commenter" | "viewer";
+type LinkScope = "workspace" | "public";
+
 function normalizeTitle(title: string): string {
 	const trimmed = title.trim();
 	if (!trimmed) throw new Error("Document title is required");
@@ -25,6 +30,64 @@ function normalizeTitle(title: string): string {
 
 function syncDocumentId(documentId: string): string {
 	return `document:${documentId}`;
+}
+
+async function ensureDocumentShare(
+	ctx: MutationCtx,
+	args: {
+		documentId: Id<"documents">;
+		userId?: Id<"users">;
+		linkScope?: LinkScope;
+		role: DocumentRole;
+	},
+) {
+	const now = Date.now();
+	const existing =
+		args.userId !== undefined
+			? await ctx.db
+					.query("docShares")
+					.withIndex("by_document_user", (q) =>
+						q.eq("documentId", args.documentId).eq("userId", args.userId),
+					)
+					.unique()
+			: args.linkScope !== undefined
+				? await ctx.db
+						.query("docShares")
+						.withIndex("by_document_link", (q) =>
+							q
+								.eq("documentId", args.documentId)
+								.eq("linkScope", args.linkScope),
+						)
+						.unique()
+				: null;
+	if (existing) {
+		await ctx.db.patch(existing._id, {
+			role: args.role,
+			updatedAt: now,
+		});
+		return existing._id;
+	}
+	return ctx.db.insert("docShares", {
+		documentId: args.documentId,
+		userId: args.userId,
+		linkScope: args.linkScope,
+		role: args.role,
+		createdAt: now,
+		updatedAt: now,
+	});
+}
+
+async function ensureCurrentUserOwnerShare(
+	ctx: MutationCtx,
+	documentId: Id<"documents">,
+) {
+	const userId = await getAuthUserId(ctx);
+	if (!userId) return;
+	await ensureDocumentShare(ctx, {
+		documentId,
+		userId,
+		role: "owner",
+	});
 }
 
 async function replaceLiveDocumentMarkdown(
@@ -159,7 +222,7 @@ export const create = mutation({
 	handler: async (ctx, { workspaceId, title, path, actor }) => {
 		const now = Date.now();
 		const resolvedActor = await currentActorName(ctx, actor);
-		return ctx.db.insert("documents", {
+		const documentId = await ctx.db.insert("documents", {
 			workspaceId,
 			title: normalizeTitle(title),
 			path: path?.trim() || undefined,
@@ -168,6 +231,8 @@ export const create = mutation({
 			updatedBy: resolvedActor,
 			updatedAt: now,
 		});
+		await ensureCurrentUserOwnerShare(ctx, documentId);
+		return documentId;
 	},
 });
 
@@ -212,6 +277,8 @@ export const importMarkdown = mutation({
 				updatedBy: resolvedActor,
 				updatedAt: now,
 			});
+		} else {
+			await ensureCurrentUserOwnerShare(ctx, documentId);
 		}
 		await replaceLiveDocumentMarkdown(ctx, documentId, markdown);
 		return {
@@ -220,6 +287,85 @@ export const importMarkdown = mutation({
 			title: normalizedTitle,
 			created: !existing,
 		};
+	},
+});
+
+export const listShares = query({
+	args: { documentId: v.id("documents") },
+	handler: async (ctx, { documentId }) => {
+		const shares = await ctx.db
+			.query("docShares")
+			.withIndex("by_document", (q) => q.eq("documentId", documentId))
+			.collect();
+		return Promise.all(
+			shares.map(async (share) => ({
+				...share,
+				user: share.userId ? await ctx.db.get(share.userId) : null,
+			})),
+		);
+	},
+});
+
+export const setUserShare = mutation({
+	args: {
+		documentId: v.id("documents"),
+		userId: v.id("users"),
+		role: v.union(
+			v.literal("owner"),
+			v.literal("editor"),
+			v.literal("commenter"),
+			v.literal("viewer"),
+		),
+	},
+	handler: async (ctx, { documentId, userId, role }) => {
+		await ensureDocumentShare(ctx, { documentId, userId, role });
+	},
+});
+
+export const removeUserShare = mutation({
+	args: {
+		documentId: v.id("documents"),
+		userId: v.id("users"),
+	},
+	handler: async (ctx, { documentId, userId }) => {
+		const existing = await ctx.db
+			.query("docShares")
+			.withIndex("by_document_user", (q) =>
+				q.eq("documentId", documentId).eq("userId", userId),
+			)
+			.unique();
+		if (existing) await ctx.db.delete(existing._id);
+	},
+});
+
+export const setLinkShare = mutation({
+	args: {
+		documentId: v.id("documents"),
+		linkScope: v.union(v.literal("workspace"), v.literal("public")),
+		role: v.union(
+			v.literal("editor"),
+			v.literal("commenter"),
+			v.literal("viewer"),
+		),
+	},
+	handler: async (ctx, { documentId, linkScope, role }) => {
+		await ensureDocumentShare(ctx, { documentId, linkScope, role });
+	},
+});
+
+export const clearLinkShare = mutation({
+	args: {
+		documentId: v.id("documents"),
+		linkScope: v.union(v.literal("workspace"), v.literal("public")),
+	},
+	handler: async (ctx, { documentId, linkScope }) => {
+		const existing = await ctx.db
+			.query("docShares")
+			.withIndex("by_document_link", (q) =>
+				q.eq("documentId", documentId).eq("linkScope", linkScope),
+			)
+			.unique();
+		if (existing) await ctx.db.delete(existing._id);
 	},
 });
 

@@ -177,7 +177,13 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
       workspace creation remains available for CLI/test flows. Verified
       `convex codegen`, `pnpm check`, and `pnpm build:desktop`. Unmerged. — *Owner: Codex ·
       Started: 2026-06-25*
-- [ ] `docShares`: per-document roles (owner/editor/commenter/viewer) + link sharing. — *_*
+- [~] `docShares`: per-document roles (owner/editor/commenter/viewer) + link
+      sharing. Implemented locally with a `docShares` table for user-specific
+      roles and workspace/public link-share roles, owner-share seeding on
+      authenticated document create/import, plus backend share list/set/clear
+      APIs for the upcoming share dialog and enforcement pass. Verified
+      `convex codegen`, `pnpm check`, and `pnpm build:desktop`. Unmerged. — *Owner: Codex ·
+      Started: 2026-06-25*
 - [ ] **Server-side enforcement on every query/mutation** — a viewer never receives
       editable steps. — *_*
 - [ ] Share dialog UI. — *_*
@@ -216,6 +222,11 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 
 Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
 
+- 2026-06-25 — Codex — Continued Stage 3 team permissions: added `docShares`
+  for per-document user roles and workspace/public link-share roles, seeded
+  owner shares on authenticated document create/import, and exposed backend
+  share list/set/clear APIs for the upcoming share dialog and enforcement pass.
+  Verified `convex codegen`, `pnpm check`, and `pnpm build:desktop`.
 - 2026-06-25 — Codex — Continued Stage 3 team permissions: added workspace
   membership data modeling with Convex Auth `users`, workspace `ownerId`, and a
   `members` table keyed by workspace/user. Authenticated workspace creation now
