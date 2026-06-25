@@ -11,11 +11,94 @@ reasoning, and `SPIKE.md` gives the prosemirror-sync spike findings.
 
 ---
 
+## 🧭 START HERE — handoff state (verified 2026-06-25)
+
+This block is the authoritative pickup pointer. It was written after verifying
+the working tree against the task notes below, because the per-task notes are
+honest but easy to misread. **Read this before the protocol section.**
+
+### What "Unmerged" actually means
+
+Every task below says "Unmerged." That does **not** mean the code is missing.
+The code is **committed on this branch** (`spike/prosemirror-sync` is ~25 commits
+ahead of `main`). "Unmerged" = not yet merged to `main`. You can read, run, and
+build on all of it right now. Spot-checked and confirmed present: the Convex
+APIs (`documents.getForAgent`, `applyPatch`, `restoreRevision`, `search`,
+`listActivity`, suggestions, trash) and the CLI surface (`hubble cloud document
+get/patch/shim/reconcile/export`).
+
+### Tree state you are inheriting
+
+- **One uncommitted chunk is in the working tree** — the bidirectional reconcile
+  work (Stage 4 `replace-range`/`markdown-diff`, Stage 1 reconcile POC,
+  `scripts/reconcile-poc.mjs`, and the spec-doc updates). It's ~16 files. The
+  changelog describes it as complete and verified, but it is **not committed**.
+  **First action: review and commit it** so you start from a clean tree — don't
+  build on top of a dirty tree you didn't create.
+- `pnpm typecheck` passes clean across all 6 TS packages (editor, sync, ui,
+  convex-client, www, cli) as of this writing. Confirmed, not assumed.
+
+### Verification commands — what actually proves what
+
+The task notes lean heavily on `pnpm check`. **`pnpm check` is Biome lint/format
+only — it does not typecheck or build anything.** Use these instead:
+
+- `pnpm typecheck` — real TS check across the 6 TS packages. **This is the load-bearing check.**
+- `pnpm build:desktop` — desktop build + typecheck.
+- `pnpm --filter @hubble.md/www typecheck` / `build` — web app.
+- Convex backend (`packages/sync-backend`) has **no** typecheck script — it is only
+  verified by `npx convex codegen` (or `convex dev --once --typecheck enable`),
+  which needs a Convex deployment to be reachable. A clean `pnpm typecheck` does
+  **not** cover the Convex functions.
+
+### The foundation is still provisional — do not treat it as settled
+
+Stage 1's decision gate (adopt `prosemirror-sync`) is **provisional**, and
+Stages 2–6 are all built on top of it. The two hard gates are still open:
+**offline ❌** (not implemented upstream) and **doc-size ⚠️ unverified**. The live
+co-edit/reconcile passes were human-verified *locally on a dev deployment*, never
+merged or load-tested. If you hit a wall that looks foundational, that is the
+known risk — see SPIKE.md for the Yjs/DO fallback, don't paper over it.
+
+### What to pick up next (this overrides the "first `[ ]`" rule below)
+
+The protocol below says "pick the first `[ ]` task in the lowest-numbered
+unfinished stage." **Taken literally that misfires**, because nearly every task
+is `[~]` (built-but-unmerged), not `[ ]`. The only two true `[ ]` tasks are the
+two *hardest, most architectural* ones in the whole plan — do **not** start there
+cold:
+
+- ⚠️ Stage 6 "Desktop always-on app" `[ ]` and "Offline edit + merge" `[ ]` are
+  **Opus/design-shaped, not a cold Sonnet pickup.** They need an architecture
+  decision (Electron lifecycle; whether prosemirror-sync offline is sufficient or
+  the Yjs/`y-indexeddb` fallback is required — the unresolved Stage 1 gate). Get a
+  design agreed before writing code here.
+
+**Good Sonnet-shaped next tasks** (well-scoped, build on committed + typechecked
+backends, verifiable by `pnpm typecheck`/`build` without interactive infra):
+
+1. **Stage 5 — Version history UI** (browse + restore). Backend
+   `documents.listRevisions` / `restoreRevision` already exist; only the UI is
+   pending. Lowest-numbered stage with pending UI → recommended first pickup.
+2. **Stage 5 — Comments UI** (threads/@mentions/resolve). Backend done.
+3. **Stage 6 — Search UI**. `documents.search` backend done.
+
+Tasks needing interactive infra (live two-browser, doc-size load test, `convex
+dev` login) are **poor Sonnet pickups** — they can't be verified headlessly. Leave
+those for a human/interactive session.
+
+---
+
 ## 🔴🟡🟢 How agents read & update this file
 
-**Before starting work**, read this whole file top to bottom. Pick up the
-first task that is `[ ]` (not started) within the lowest-numbered stage that
-isn't `🟢 Done` — stages are ordered and later stages assume earlier ones.
+**Before starting work**, read this whole file top to bottom. **Start with the
+🧭 START HERE block above** — it names the next task and corrects two things this
+rule gets wrong in the current state: (1) almost every task is `[~]`
+(built-but-unmerged), not `[ ]`, so "first `[ ]`" points at the two hardest tasks;
+(2) "Unmerged" means *not on `main`*, not *not written* — the code is committed and
+on this branch. Absent guidance in START HERE, pick up the first `[ ]` task within
+the lowest-numbered stage that isn't `🟢 Done` — stages are ordered and later
+stages assume earlier ones.
 
 **Status legend** (used on stages and tasks):
 
@@ -114,6 +197,69 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
       visible, agent edit shows live. Locally human-verified on
       `realtime-poc.md`; demoable from local Convex + web dev servers. Keep `[~]`
       until merged. — *Owner: Adrian/Codex · Started: 2026-06-24*
+- [~] **File-reconcile thesis POC (Decision 6) — gates Stage 4/6 reconcile work.**
+      Prove that an external edit to a Live Document's markdown file reconciles into
+      the live CRDT and **merges with a concurrent in-app edit** — conflict-free,
+      automatic, near-real-time — on the real Convex + prosemirror-sync + Tiptap
+      stack. The Stage 1 co-edit thesis is already proven; this proves the *new*
+      edit-anywhere half.
+      **Unknowns to stress:** (A) conflict-free merge — submit the reconciled change
+      as **rebasable steps** via `prosemirror.transform`, not `applyPatch`'s
+      reject-on-stale path; (B) markdown→ProseMirror diff fidelity; (C) latency
+      (save → visible ≈1–2s).
+      **Vehicle:** throwaway `scripts/reconcile-poc.mjs` (chokidar on ONE hardcoded
+      file, in-memory base text, minimal changed-range diff, submit via transform).
+      Needs a small server-side rebasable-transform entry in `convex/prosemirror.ts`.
+      **Fidelity approach:** prove merge with plain paragraphs/headings/lists first
+      (isolates unknown A), then ONE table probe to measure unknown B — don't build a
+      full converter.
+      **Deliberately cut (plumbing, not thesis):** Electron tray/background app,
+      permissions/`checkWrite`, conflict-copy backstop, scoped-intent API design,
+      on-disk-path decision, multi-doc, persisted base-cache format, CLI ergonomics.
+      **Exit criteria:** (1) vim save → browser shows it in ≈2s; (2) typing in the
+      browser while saving an external edit to a *different* paragraph → both
+      survive, no conflict file, no crash *(the real proof)*; (3) same-paragraph
+      concurrent edit → a sane CRDT merge, not a clobber; (4) no-op external save of
+      a doc with a table/frontmatter → doc unchanged (fidelity ceiling).
+      **Fail signal:** if (2) can't be done (no rebasable-steps path), that's a
+      fork-the-architecture moment — same signal that points toward the Yjs/DO
+      fallback. Cheaper to learn here than after building the tray app + permissions.
+      Implemented locally with `prosemirror.reconcileMarkdownRangePoc` plus
+      `scripts/reconcile-poc.mjs`; automated Convex smoke proved different-paragraph
+      merge, same-position insertion merge, and no-op table/frontmatter stability.
+      Live two-browser pass on document
+      `jn7784v3ndrpzjdyd685bwqrhd89b1tx` with watched file
+      `/tmp/hubble-reconcile-browser-poc.md` verified a browser edit and external
+      file save both appeared in Ada/Ben browser sessions with no crash, conflict
+      banner, or lost text; browser polling observed the reconciled file edit in
+      95ms after the save, and the watcher logged `reconciled 14 base chars -> 30
+      new chars in 42ms`. This pass also found and fixed a watcher-side
+      `fast-diff` overreach that could fail range mapping after browser edits; the
+      watcher now emits a minimal prefix/suffix changed range. Same-paragraph live
+      browser typing remains limited by browser automation focus issues; rely on the
+      existing automated same-position insertion smoke until a human repeats it.
+      Human-assisted follow-up on document `jn70mta09x5cfzxqbrdmb2743n89bp3b`
+      showed a separate editor/collab cursor-placement issue: typing intended for
+      `Shared paragraph starts here.` jumped into content above the title and a
+      trailing paragraph (`orworb` / `fb`). A file-side edit to that target
+      paragraph still reconciled into both Ada/Ben browser tabs and preserved the
+      misplaced browser text (`Shared paragraph file-human starts here.`), with the
+      watcher logging `reconciled 0 base chars -> 11 new chars in 63ms`. Treat the
+      same-paragraph manual proof as blocked on the cursor-placement issue, not on a
+      data-loss reconcile failure. Follow-up fix: Live Documents now disable
+      projection-driven `setContent` resets in the shared editor so the Convex
+      markdown projection cannot overwrite the active prosemirror-sync document
+      under the user's cursor; local file-backed editing still syncs external
+      `initialMarkdown` changes as before. Verified `pnpm check`, focused UI/www
+      typechecks after rebuilding UI declarations, and `pnpm build:desktop`.
+      Same-paragraph human retry after the fix passed on document
+      `jn729fmj5ew46ygvykmst9vneh89b0a2`: human typed `browser-human` into
+      `Target paragraph starts here.`, the text stayed in place, a watched-file edit
+      changed the same paragraph to `Target paragraph file-human starts here.
+      browser-human`, Convex and the browser both showed both markers, and the
+      watcher logged `reconciled 0 base chars -> 11 new chars in 35ms`.
+      — *Owner: Codex ·
+      Started: 2026-06-25*
 
 ## Stage 2 — Documents as cloud entities 🟡
 
@@ -246,6 +392,34 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
       rejecting records resolution metadata. UI review flow remains for Stage 5.
       Verified `convex codegen`, `pnpm check`, and `pnpm build:desktop`.
       Unmerged. — *Owner: Codex · Started: 2026-06-25*
+- [~] **Revise projection → bidirectional reconcile** (Decision 6; supersedes the
+      read-only-projection assumption). Add a scoped diff intent to `applyPatch`
+      (`replace-range`/`markdown-diff`); generalize the staging-file shim into a
+      watcher that diffs the projection vs. a per-doc base cache and emits a scoped
+      patch; write the base cache (text + revision) from
+      `writeLiveDocumentProjections`. Keep whole-file `replace-document` for explicit
+      import only, and the CLI shim for headless agents. Implemented locally with
+      `replace-range` / `markdown-diff` patch intents that submit rebasable
+      ProseMirror transforms, projection base-cache files under
+      `.hubble/state/live-documents`, and `hubble cloud document reconcile --id
+      <documentId> --file <projection.md> [--watch]` for projection-file saves.
+      The legacy staging-file shim now diffs against current live markdown and
+      submits `replace-range` instead of whole-document replacement.
+      Verified `pnpm convex codegen` from `packages/sync-backend`, focused
+      `@hubble.md/sync` and `@hubble.md/cli` builds, `pnpm check`, and
+      `pnpm build:desktop`. Unmerged. — *Owner: Codex · Started: 2026-06-25*
+- [~] Enforce `checkWrite` on the reconcile/inbound path; materialize **read-only**
+      projections for viewers so external file edits can't be attempted.
+      Implemented locally by returning each caller's document `role`/`canWrite`
+      from Live Document projection queries, carrying that through the Convex
+      sync backend, chmodding non-writable projection files read-only when the
+      filesystem supports it, recording `canWrite` in the projection base-cache
+      metadata, and making `hubble cloud document shim` / `reconcile` refuse to
+      submit local file edits for read-only documents before the server-side
+      `requireDocumentWrite` check. Verified `pnpm convex codegen` from
+      `packages/sync-backend`, focused `@hubble.md/sync`,
+      `@hubble.md/convex-client`, and `@hubble.md/cli` builds, `pnpm check`, and
+      `pnpm build:desktop`. Unmerged. — *Owner: Codex · Started: 2026-06-25*
 
 ## Stage 5 — Version history & review 🟡
 
@@ -307,7 +481,16 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
       remain pending. Verified `@hubble.md/cli` typecheck/build, `pnpm check`,
       and `pnpm build:desktop`. Unmerged. — *Owner: Codex · Started:
       2026-06-25*
-- [ ] Offline edit + merge on reconnect. — *_*
+- [ ] **Desktop always-on app** (Decision 6): keep the Electron main process
+      running on window close (`window-all-closed`/`Tray`), host the live-doc
+      watcher + sync engine in main (currently CLI-only), route live-doc external
+      changes to the reconcile path instead of conflict classification
+      (`apps/desktop/src/externalFileChange.ts`, `apps/www/src/store/actions.ts`),
+      with a `*.local-edit-<ts>` conflict-copy backstop. — *_*
+- [ ] Offline edit + merge on reconnect — two flavors (Decision 6): in-editor (CRDT
+      local buffer/replay; Yjs/`y-indexeddb` fallback if prosemirror-sync offline is
+      insufficient) and external-file (watcher queues edits, flushes on reconnect via
+      the reconcile path). — *_*
 - [~] Audit log, trash + restore, admin/role management. Trash/restore backend
       started locally with `documents.listTrash`, `documents.restoreRemoved`,
       `folders.listTrash`, and `folders.restoreRemoved`. Activity events
@@ -321,6 +504,87 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 
 Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
 
+- 2026-06-25 — Adrian/Claude — Added the **🧭 START HERE handoff block** after
+  verifying the tree against the task notes: confirmed the branch is ~25 commits
+  ahead of `main` (so "Unmerged" = not-on-`main`, code IS committed), confirmed the
+  claimed Convex/CLI APIs exist, ran `pnpm typecheck` clean across all 6 TS
+  packages, and documented that `pnpm check` is Biome-only (not a real check).
+  Flagged the one uncommitted reconcile chunk as commit-first, the two `[ ]` Stage 6
+  tasks (desktop always-on, offline) as Opus/design-shaped not cold pickups, and
+  recommended Stage 5 version-history UI as the Sonnet-shaped next task. Corrected
+  the "first `[ ]`" pickup rule so it can't misfire. Spec-doc only; no code changed.
+- 2026-06-25 — Codex — Continued Stage 4 reconcile permissions: Live Document
+  projection queries now include the caller's `role` and `canWrite`, the Convex
+  sync backend carries that metadata into projected documents, projection writes
+  chmod viewer/commenter files read-only where supported and persist `canWrite` in
+  the base cache, and the CLI shim/reconcile commands refuse read-only local-file
+  edits before submitting to the server-side `requireDocumentWrite` guard.
+  Verified Convex codegen, focused sync/convex-client/CLI builds, `pnpm check`,
+  and `pnpm build:desktop`.
+- 2026-06-25 — Codex — Continued Stage 4 bidirectional reconcile: added scoped
+  `replace-range` / `markdown-diff` intents to `documents.applyPatch` that write
+  through rebasable ProseMirror transforms, made `writeLiveDocumentProjections`
+  persist per-document base markdown + revision metadata in
+  `.hubble/state/live-documents`, and added `hubble cloud document reconcile --id
+  <documentId> --file <projection.md> [--watch]` to diff projection saves against
+  that base cache and update the cache from the merged live result. The staging
+  shim now submits scoped `replace-range` patches instead of whole-document
+  replacement. Verified
+  Convex codegen, focused sync/CLI builds, `pnpm check`, and `pnpm build:desktop`.
+- 2026-06-25 — Adrian/Codex — Completed the same-paragraph human retry after the
+  cursor fix on document `jn729fmj5ew46ygvykmst9vneh89b0a2`: human typed
+  `browser-human` into the target paragraph, a watched-file edit changed that same
+  paragraph to `Target paragraph file-human starts here. browser-human`, and both
+  Convex plus the browser showed both markers. Watcher logged `reconciled 0 base
+  chars -> 11 new chars in 35ms`.
+- 2026-06-25 — Codex — Fixed the Live Document cursor-placement/reset issue by
+  preventing the shared editor from applying projection-driven `initialMarkdown`
+  `setContent` updates when mounted with prosemirror-sync content. Live Documents
+  now keep the sync document authoritative under the user's cursor; file-backed
+  editor views keep the old external-markdown sync behavior. Verified `pnpm check`,
+  focused UI/www typechecks after rebuilding UI declarations, and
+  `pnpm build:desktop`.
+- 2026-06-25 — Adrian/Codex — Ran a human-assisted same-paragraph check on document
+  `jn70mta09x5cfzxqbrdmb2743n89bp3b`. Human typing intended for the shared paragraph
+  jumped above the title and to a trailing paragraph, exposing a cursor-placement
+  issue in the live editor; a watched-file edit to the intended paragraph still
+  reconciled into both Ada/Ben browser tabs and preserved the browser text. Watcher
+  logged `reconciled 0 base chars -> 11 new chars in 63ms`.
+- 2026-06-25 — Codex — Continued the Stage 1 file-reconcile thesis POC live pass:
+  fixed the watcher to emit a minimal changed range after a real browser edit exposed
+  `fast-diff` overreach, removed the unused `fast-diff` dependency, and verified two
+  browser sessions (`Ada`/`Ben`) on document `jn7784v3ndrpzjdyd685bwqrhd89b1tx`
+  observed a watched-file edit from `/tmp/hubble-reconcile-browser-poc.md` while a
+  browser edit survived. Browser polling saw the file edit in 95ms after save; the
+  watcher logged `reconciled 14 base chars -> 30 new chars in 42ms`. Same-paragraph
+  live automation was blocked by editor focus, so the automated same-position smoke
+  remains the current evidence there.
+- 2026-06-25 — Codex — Built the Stage 1 file-reconcile thesis POC: added
+  `prosemirror.reconcileMarkdownRangePoc` to submit external markdown range edits
+  through `prosemirrorSync.transform`, added `scripts/reconcile-poc.mjs` using
+  `chokidar` against one watched markdown file, and added root POC deps. Automated
+  local Convex smoke proved a different-paragraph external edit preserves a
+  concurrent live append, same-position insertions merge as `Beta browser file`,
+  no-op frontmatter/table content stays unchanged, and the watcher reconciled a real
+  file save in 22ms. Browser-visible latency + real in-browser typing while saving
+  still need the final two-session pass.
+- 2026-06-25 — Adrian — Scoped a **file-reconcile thesis POC** (Decision 6) as a
+  gated Stage 1 task: throwaway `scripts/reconcile-poc.mjs` (chokidar + `fast-diff`
+  + diff→steps via `prosemirror.transform`), prove conflict-free merge with
+  plain text first then one table probe, with explicit cut-list and exit criteria.
+  Gates the Stage 4/6 reconcile work; fail-on-merge signals the Yjs/DO fallback.
+  Not built yet.
+- 2026-06-25 — Adrian — Decided Live Document files are **editable inputs**
+  (bidirectional projection, Decision 6): external saves in any app are reconciled
+  into the CRDT via base-cache diff → scoped patch, watched by the always-on desktop
+  app (tray/background). Revises Model C's read-only projection. Updated PRODUCT.md
+  ("Local files as editable inputs"), TECH.md (reconciliation flow + Electron
+  lifecycle + "Code changes required"), and DECISIONS.md (Decision 6). Added tasks
+  to revise already-written Stage 4/6 + desktop code: scoped diff intent on
+  `applyPatch`, generalize the shim into a base-cache reconcile watcher, write a base
+  cache from the projection writer, desktop tray/background + main-process watcher,
+  and route live-doc external changes to reconcile instead of conflict
+  classification. On-disk projection path deferred. No code changed yet.
 - 2026-06-25 — Codex — Continued Stage 5 notifications: added backend
   `notifications`, comment-body @mention extraction, mention notification
   creation for matching users, and list/mark-read APIs. Notification delivery UI
