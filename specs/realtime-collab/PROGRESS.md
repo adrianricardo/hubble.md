@@ -218,7 +218,13 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
       as `Agent` or the supplied actor. Verified `convex codegen`,
       `pnpm check`, and `pnpm build:desktop`. Unmerged. — *Owner: Codex ·
       Started: 2026-06-25*
-- [ ] MCP server + `hubble` CLI surface for the patch API. — *_*
+- [~] MCP server + `hubble` CLI surface for the patch API. CLI surface
+      implemented locally as `hubble cloud document get --id <documentId>` and
+      `hubble cloud document patch --id <documentId> --base-revision <n>` with
+      `--replace`, `--append`, or `--after-heading ... --markdown ...` intents.
+      MCP server remains pending. Verified `pnpm check`, `@hubble.md/cli`
+      build, and `pnpm build:desktop`. Unmerged. — *Owner: Codex · Started:
+      2026-06-25*
 - [ ] Read-only markdown projection writer on disk. — *_*
 - [ ] Legacy file-only **shim**: staging file → `applyPatch(markdown-patch)`. — *_*
 - [ ] Suggestion mode (agent proposes, human accepts). — *_*
@@ -246,6 +252,12 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 
 Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
 
+- 2026-06-25 — Codex — Continued Stage 4 agent collaboration: added a `hubble`
+  CLI surface for the agent document API with `cloud document get` and
+  `cloud document patch` commands supporting replace, append, and
+  insert-after-heading intents against a base revision. MCP server remains
+  pending. Verified `pnpm check`, `@hubble.md/cli` build, and
+  `pnpm build:desktop`.
 - 2026-06-25 — Codex — Continued Stage 4 agent collaboration: added
   `documents.applyPatch` with stale base-revision rejection and initial
   markdown intents (`replace-document`, `append-markdown`,

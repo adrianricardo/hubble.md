@@ -17,7 +17,10 @@ import {
 	writeSyncState,
 } from "@hubble.md/sync";
 import { createNodeFileSystem } from "@hubble.md/sync/node";
+import { api } from "@hubble.md/sync-backend";
+import type { Id } from "@hubble.md/sync-backend/types";
 import chokidar from "chokidar";
+import { ConvexHttpClient } from "convex/browser";
 
 const fs = createNodeFileSystem();
 
@@ -30,6 +33,12 @@ type CliArgs = {
 	help: boolean;
 	workspaceName?: string;
 	workspaceId?: string;
+	baseRevision?: string;
+	appendMarkdown?: string;
+	replaceMarkdown?: string;
+	afterHeading?: string;
+	patchMarkdown?: string;
+	actor?: string;
 	deploymentUrl?: string;
 	extraArgs: string[];
 	workspacePath: string;
@@ -62,7 +71,7 @@ async function runCloudCommand(parsed: CliArgs) {
 	const [action, ...extraArgs] = parsed.extraArgs;
 	const { workspacePath } = parsed;
 
-	if (extraArgs.length > 0) {
+	if (extraArgs.length > 0 && action !== "document") {
 		printUsage();
 		process.exitCode = 1;
 		return;
@@ -87,6 +96,9 @@ async function runCloudCommand(parsed: CliArgs) {
 			return;
 		case "export":
 			await runExport(workspacePath);
+			return;
+		case "document":
+			await runDocumentCommand(workspacePath, parsed);
 			return;
 		case "watch":
 			await runWatch(workspacePath);
@@ -135,6 +147,101 @@ async function runExport(workspacePath: string) {
 				? ` (${result.skipped.length} without paths skipped)`
 				: ""),
 	);
+}
+
+async function runDocumentCommand(workspacePath: string, parsed: CliArgs) {
+	const [, subcommand] = parsed.extraArgs;
+	if (parsed.extraArgs.length !== 2) {
+		printDocumentHelp();
+		process.exitCode = 1;
+		return;
+	}
+	const cloudSync = await readCloudSyncConfig(workspacePath);
+	if (!cloudSync) return;
+	if (!parsed.workspaceId) {
+		console.error("Missing required --id documentId.");
+		process.exitCode = 1;
+		return;
+	}
+
+	switch (subcommand) {
+		case "get":
+			await runDocumentGet(cloudSync.deploymentUrl, parsed.workspaceId);
+			return;
+		case "patch":
+			await runDocumentPatch(cloudSync.deploymentUrl, parsed);
+			return;
+		default:
+			printDocumentHelp();
+			process.exitCode = 1;
+	}
+}
+
+async function runDocumentGet(deploymentUrl: string, documentId: string) {
+	const client = new ConvexHttpClient(deploymentUrl);
+	const document = await client.query(api.documents.getForAgent, {
+		documentId: documentId as Id<"documents">,
+	});
+	console.log(JSON.stringify(document, null, 2));
+}
+
+async function runDocumentPatch(deploymentUrl: string, parsed: CliArgs) {
+	if (!parsed.workspaceId) {
+		console.error("Missing required --id documentId.");
+		process.exitCode = 1;
+		return;
+	}
+	if (!parsed.baseRevision) {
+		console.error("Missing required --base-revision revision.");
+		process.exitCode = 1;
+		return;
+	}
+	const baseRevision = Number.parseInt(parsed.baseRevision, 10);
+	if (!Number.isFinite(baseRevision)) {
+		console.error(`Invalid --base-revision: ${parsed.baseRevision}`);
+		process.exitCode = 1;
+		return;
+	}
+	const intent = documentPatchIntent(parsed);
+	if (!intent) {
+		console.error(
+			"Provide one of --replace markdown, --append markdown, or --after-heading heading --markdown markdown.",
+		);
+		process.exitCode = 1;
+		return;
+	}
+
+	const client = new ConvexHttpClient(deploymentUrl);
+	const result = await client.mutation(api.documents.applyPatch, {
+		documentId: parsed.workspaceId as Id<"documents">,
+		baseRevision,
+		intent,
+		actor: parsed.actor,
+	});
+	console.log(JSON.stringify(result, null, 2));
+}
+
+function documentPatchIntent(parsed: CliArgs) {
+	if (parsed.replaceMarkdown !== undefined) {
+		return {
+			kind: "replace-document" as const,
+			markdown: parsed.replaceMarkdown,
+		};
+	}
+	if (parsed.appendMarkdown !== undefined) {
+		return {
+			kind: "append-markdown" as const,
+			markdown: parsed.appendMarkdown,
+		};
+	}
+	if (parsed.afterHeading !== undefined && parsed.patchMarkdown !== undefined) {
+		return {
+			kind: "insert-after-heading" as const,
+			heading: parsed.afterHeading,
+			markdown: parsed.patchMarkdown,
+		};
+	}
+	return null;
 }
 
 async function runWatch(workspacePath: string) {
@@ -383,6 +490,12 @@ function parseCliArgs(argv: string[]) {
 				name: { type: "string" },
 				id: { type: "string" },
 				url: { type: "string" },
+				"base-revision": { type: "string" },
+				append: { type: "string" },
+				replace: { type: "string" },
+				"after-heading": { type: "string" },
+				markdown: { type: "string" },
+				actor: { type: "string" },
 			},
 		});
 		const [command, ...extraArgs] = positionals;
@@ -391,6 +504,12 @@ function parseCliArgs(argv: string[]) {
 			help,
 			workspaceName: values.name,
 			workspaceId: values.id,
+			baseRevision: values["base-revision"],
+			appendMarkdown: values.append,
+			replaceMarkdown: values.replace,
+			afterHeading: values["after-heading"],
+			patchMarkdown: values.markdown,
+			actor: values.actor,
 			deploymentUrl: values.url,
 			extraArgs,
 			workspacePath: values.cwd ? resolve(values.cwd) : process.cwd(),
@@ -428,6 +547,9 @@ function printHelp(args: CliArgs) {
 		case "export":
 			printExportHelp();
 			return;
+		case "document":
+			printDocumentHelp();
+			return;
 		case "watch":
 			printWatchHelp();
 			return;
@@ -457,6 +579,7 @@ function printCloudHelp() {
 	console.log("  sync        Run one sync");
 	console.log("  import      Import local markdown as Live Documents");
 	console.log("  export      Export Live Documents as markdown projections");
+	console.log("  document    Read or patch a Live Document for agents");
 	console.log("  watch       Sync continuously");
 	console.log("  disconnect  Remove Cloud Sync config");
 }
@@ -505,6 +628,18 @@ function printExportHelp() {
 	);
 }
 
+function printDocumentHelp() {
+	console.log("Usage:");
+	console.log("  hubble [--cwd path] cloud document get --id documentId");
+	console.log(
+		"  hubble [--cwd path] cloud document patch --id documentId --base-revision n (--replace markdown|--append markdown|--after-heading heading --markdown markdown) [--actor name]",
+	);
+	console.log("");
+	console.log(
+		"Reads or patches Live Documents through the agent document API.",
+	);
+}
+
 function printWatchHelp() {
 	console.log("Usage:");
 	console.log("  hubble [--cwd path] cloud watch");
@@ -528,6 +663,10 @@ function printUsage() {
 	console.error("  hubble [--cwd path] cloud sync");
 	console.error("  hubble [--cwd path] cloud import");
 	console.error("  hubble [--cwd path] cloud export");
+	console.error("  hubble [--cwd path] cloud document get --id documentId");
+	console.error(
+		"  hubble [--cwd path] cloud document patch --id documentId --base-revision n (--replace markdown|--append markdown|--after-heading heading --markdown markdown)",
+	);
 	console.error("  hubble [--cwd path] cloud watch");
 	console.error("  hubble [--cwd path] cloud disconnect");
 }
