@@ -7,6 +7,8 @@ import {
 } from "@hubble.md/convex-client";
 import {
 	type CloudSyncConfig,
+	exportLiveDocuments,
+	importLiveDocuments,
 	readConfigOrDefault,
 	removeCloudSyncConfig,
 	sync as runSync,
@@ -80,6 +82,12 @@ async function runCloudCommand(parsed: CliArgs) {
 		case "sync":
 			await runManualSync(workspacePath);
 			return;
+		case "import":
+			await runImport(workspacePath);
+			return;
+		case "export":
+			await runExport(workspacePath);
+			return;
 		case "watch":
 			await runWatch(workspacePath);
 			return;
@@ -94,6 +102,39 @@ async function runManualSync(workspacePath: string) {
 	if (!cloudSync) return;
 
 	await syncOnce(workspacePath, cloudSync, "manual");
+}
+
+async function runImport(workspacePath: string) {
+	const cloudSync = await readCloudSyncConfig(workspacePath);
+	if (!cloudSync) return;
+
+	const backend = createConvexBackend(cloudSync.deploymentUrl);
+	const result = await importLiveDocuments(backend, fs, {
+		workspaceId: cloudSync.workspaceId,
+		workspacePath,
+		actor: `device:${cloudSync.deviceId}`,
+	});
+	console.log(
+		`live import: ${result.imported.length} file${result.imported.length === 1 ? "" : "s"} ` +
+			`(${result.created.length} created, ${result.updated.length} updated)`,
+	);
+}
+
+async function runExport(workspacePath: string) {
+	const cloudSync = await readCloudSyncConfig(workspacePath);
+	if (!cloudSync) return;
+
+	const backend = createConvexBackend(cloudSync.deploymentUrl);
+	const result = await exportLiveDocuments(backend, fs, {
+		workspaceId: cloudSync.workspaceId,
+		workspacePath,
+	});
+	console.log(
+		`live export: ${result.exported.length} file${result.exported.length === 1 ? "" : "s"}` +
+			(result.skipped.length > 0
+				? ` (${result.skipped.length} without paths skipped)`
+				: ""),
+	);
 }
 
 async function runWatch(workspacePath: string) {
@@ -381,6 +422,12 @@ function printHelp(args: CliArgs) {
 		case "sync":
 			printSyncHelp();
 			return;
+		case "import":
+			printImportHelp();
+			return;
+		case "export":
+			printExportHelp();
+			return;
 		case "watch":
 			printWatchHelp();
 			return;
@@ -408,6 +455,8 @@ function printCloudHelp() {
 	console.log("  create      Create and link a remote workspace");
 	console.log("  connect     Link an existing remote workspace");
 	console.log("  sync        Run one sync");
+	console.log("  import      Import local markdown as Live Documents");
+	console.log("  export      Export Live Documents as markdown projections");
 	console.log("  watch       Sync continuously");
 	console.log("  disconnect  Remove Cloud Sync config");
 }
@@ -437,14 +486,30 @@ function printSyncHelp() {
 	console.log("Usage:");
 	console.log("  hubble [--cwd path] cloud sync");
 	console.log("");
-	console.log("Runs one manual sync for a linked workspace.");
+	console.log("Runs one legacy whole-file sync for a linked workspace.");
+}
+
+function printImportHelp() {
+	console.log("Usage:");
+	console.log("  hubble [--cwd path] cloud import");
+	console.log("");
+	console.log("Imports local markdown files into cloud Live Documents.");
+}
+
+function printExportHelp() {
+	console.log("Usage:");
+	console.log("  hubble [--cwd path] cloud export");
+	console.log("");
+	console.log(
+		"Exports cloud Live Documents to local markdown projection files.",
+	);
 }
 
 function printWatchHelp() {
 	console.log("Usage:");
 	console.log("  hubble [--cwd path] cloud watch");
 	console.log("");
-	console.log("Watches local and remote changes for a linked workspace.");
+	console.log("Watches legacy whole-file local and remote changes.");
 }
 
 function printDisconnectHelp() {
@@ -461,6 +526,8 @@ function printUsage() {
 		"  hubble [--cwd path] cloud connect (--name name|--id id) [--url url]",
 	);
 	console.error("  hubble [--cwd path] cloud sync");
+	console.error("  hubble [--cwd path] cloud import");
+	console.error("  hubble [--cwd path] cloud export");
 	console.error("  hubble [--cwd path] cloud watch");
 	console.error("  hubble [--cwd path] cloud disconnect");
 }

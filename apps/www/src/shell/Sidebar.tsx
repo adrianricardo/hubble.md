@@ -178,11 +178,16 @@ function LiveDocumentRow({
 		>
 			<button
 				type="button"
-				className="min-w-0 flex-1 truncate bg-transparent text-start text-[length:var(--font-size-sidebar)] [padding-block:0.375rem] [padding-inline:0.5rem]"
+				className="min-w-0 flex-1 bg-transparent text-start [padding-block:0.375rem] [padding-inline:0.5rem]"
 				onClick={onSelect}
-				title={document.title}
+				title={`${document.title}\n${formatEditedMeta(document.updatedAt, document.updatedBy)}`}
 			>
-				{document.title}
+				<span className="block truncate text-[length:var(--font-size-sidebar)]">
+					{document.title}
+				</span>
+				<span className="block truncate text-[10px] font-normal text-muted-foreground">
+					{formatEditedMeta(document.updatedAt, document.updatedBy)}
+				</span>
 			</button>
 			<div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [padding-inline-end:0.25rem]">
 				<button
@@ -206,4 +211,14 @@ function LiveDocumentRow({
 			</div>
 		</div>
 	);
+}
+
+function formatEditedMeta(updatedAt: number, updatedBy?: string) {
+	const editedAt = new Intl.DateTimeFormat(undefined, {
+		dateStyle: "medium",
+		timeStyle: "short",
+	}).format(new Date(updatedAt));
+	return updatedBy
+		? `Edited by ${updatedBy} at ${editedAt}`
+		: `Edited ${editedAt}`;
 }

@@ -16,10 +16,20 @@ export type {
 	LocalFile,
 } from "./fs.js";
 export { contentHash } from "./fs.js";
-export { init, status, sync } from "./sync.js";
+export {
+	exportLiveDocuments,
+	importLiveDocuments,
+	init,
+	status,
+	sync,
+} from "./sync.js";
 export type {
 	CloudSyncConfig,
 	FileState,
+	LiveDocumentExportResult,
+	LiveDocumentImport,
+	LiveDocumentImportResult,
+	LiveDocumentProjection,
 	RemoteAsset,
 	RemoteFile,
 	SyncResult,

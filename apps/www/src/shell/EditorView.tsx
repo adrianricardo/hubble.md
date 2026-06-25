@@ -30,6 +30,7 @@ type Props = {
 	initialMarkdown: string;
 	syncDocumentId?: string;
 	testIdentity: TestIdentity | null;
+	onLiveDocumentEdit?: () => void;
 };
 
 const CURSOR_HEARTBEAT_MIN_MS = 250;
@@ -50,6 +51,7 @@ export function EditorView({
 	initialMarkdown,
 	syncDocumentId,
 	testIdentity,
+	onLiveDocumentEdit,
 }: Props) {
 	const files = useStoreValue(filesStore);
 	const docId = useMemo(
@@ -115,6 +117,12 @@ export function EditorView({
 		},
 		[convexWorkspaceId, docId, heartbeat, testIdentity],
 	);
+	const handleLiveDocumentChange = useCallback(
+		(_path: string, _markdown: string) => {
+			onLiveDocumentEdit?.();
+		},
+		[onLiveDocumentEdit],
+	);
 
 	useEffect(() => {
 		if (
@@ -154,7 +162,9 @@ export function EditorView({
 			onDrop={(editor, event) => handleImageDrop({ editor, event })}
 			onSelectionChange={publishSelection}
 			persistChanges={false}
-			onLocalChange={syncDocumentId ? noopChange : updateEditorContent}
+			onLocalChange={
+				syncDocumentId ? handleLiveDocumentChange : updateEditorContent
+			}
 			onSave={syncDocumentId ? noopChange : savePathContent}
 			onOpenExternalLink={(href) => {
 				window.open(href, "_blank", "noopener");

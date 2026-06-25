@@ -49,6 +49,26 @@ export function createConvexBackend(url: string): SyncBackend {
 				workspaceId: args.workspaceId as Id<"workspaces">,
 			});
 		},
+		async getLiveDocuments(workspaceId) {
+			const documents = await client.query(api.documents.listWithMarkdown, {
+				workspaceId: workspaceId as Id<"workspaces">,
+			});
+			return documents.map((document) => ({
+				_id: document._id,
+				path: document.path ?? null,
+				title: document.title,
+				markdown: document.markdown,
+				version: document.version,
+				updatedAt: document.updatedAt,
+				deletedAt: document.deletedAt,
+			}));
+		},
+		async importLiveDocument(args) {
+			return client.mutation(api.documents.importMarkdown, {
+				...args,
+				workspaceId: args.workspaceId as Id<"workspaces">,
+			});
+		},
 		async getAssets(workspaceId, since) {
 			return client.query(api.sync.getAssetsByWorkspace, {
 				workspaceId: workspaceId as Id<"workspaces">,

@@ -11,6 +11,8 @@ import type { FileSystem, InitFileSystem } from "./fs.js";
 import type {
 	CloudSyncConfig,
 	FileState,
+	LiveDocumentExportResult,
+	LiveDocumentImportResult,
 	RemoteAsset,
 	SyncResult,
 	WorkspaceConfig,
@@ -304,6 +306,63 @@ export async function sync(
 	return result;
 }
 
+/** Export cloud-authoritative Live Documents to local markdown projections. */
+export async function exportLiveDocuments(
+	backend: SyncBackend,
+	fs: Pick<FileSystem, "ensureDir" | "writeFile">,
+	opts: { workspaceId: string; workspacePath: string },
+): Promise<LiveDocumentExportResult> {
+	const documents = await backend.getLiveDocuments(opts.workspaceId);
+	const result: LiveDocumentExportResult = { exported: [], skipped: [] };
+
+	for (const document of documents) {
+		if (!document.path) {
+			result.skipped.push(document.title);
+			continue;
+		}
+		await ensureParentDir(fs, opts.workspacePath, document.path);
+		await fs.writeFile(
+			`${opts.workspacePath}/${document.path}`,
+			document.markdown,
+		);
+		result.exported.push(document.path);
+	}
+
+	return result;
+}
+
+/** Import local markdown files into cloud-authoritative Live Documents. */
+export async function importLiveDocuments(
+	backend: SyncBackend,
+	fs: Pick<FileSystem, "listMarkdownFiles">,
+	opts: { workspaceId: string; workspacePath: string; actor?: string },
+): Promise<LiveDocumentImportResult> {
+	const localFiles = await fs.listMarkdownFiles(opts.workspacePath);
+	const result: LiveDocumentImportResult = {
+		imported: [],
+		created: [],
+		updated: [],
+	};
+
+	for (const local of localFiles) {
+		const imported = await backend.importLiveDocument({
+			workspaceId: opts.workspaceId,
+			path: normalizeRelativePath(local.relativePath),
+			title: titleFromPath(local.relativePath),
+			markdown: local.content,
+			actor: opts.actor,
+		});
+		result.imported.push(imported.path);
+		if (imported.created) {
+			result.created.push(imported.path);
+		} else {
+			result.updated.push(imported.path);
+		}
+	}
+
+	return result;
+}
+
 /** Get current sync status without performing a sync. */
 export async function status(fs: FileSystem, workspacePath: string) {
 	if (!(await isInitialized(fs, workspacePath))) {
@@ -334,4 +393,23 @@ function toConflictName(filePath: string): string {
 	const dot = filePath.lastIndexOf(".");
 	if (dot === -1) return `${filePath}.conflict-${ts}`;
 	return `${filePath.slice(0, dot)}.conflict-${ts}${filePath.slice(dot)}`;
+}
+
+async function ensureParentDir(
+	fs: Pick<FileSystem, "ensureDir">,
+	workspacePath: string,
+	path: string,
+) {
+	const slash = path.lastIndexOf("/");
+	if (slash > 0) await fs.ensureDir(`${workspacePath}/${path.slice(0, slash)}`);
+}
+
+function titleFromPath(path: string): string {
+	const normalized = normalizeRelativePath(path);
+	const fileName = normalized.split("/").pop() ?? normalized;
+	return fileName.replace(/\.(md|markdown|mdown)$/i, "") || "Untitled";
+}
+
+function normalizeRelativePath(path: string): string {
+	return path.split("\\").join("/");
 }

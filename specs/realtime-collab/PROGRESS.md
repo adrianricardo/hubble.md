@@ -49,7 +49,7 @@ tests fail or a step was skipped, say so in the task note.
 |---|---|---|
 | 1. Realtime editing POC | 🟡 In progress | Spike scaffolded; gate provisionally passed (see SPIKE.md). POC identity gate added locally; live two-browser test pending. |
 | 2. Documents as cloud entities | 🟡 In progress | Stable doc table, web CRUD, and read projection implemented locally; sync import/export pending |
-| 3. Team permissions | 🔴 Not started | Users, members, per-doc roles, sharing |
+| 3. Team permissions | 🟡 In progress | Convex Auth password provider wired locally; memberships, shares, and enforcement pending |
 | 4. Agent collaboration (Model C) | 🔴 Not started | Doc patch API + MCP/CLI, projection, legacy shim |
 | 5. Version history & review | 🔴 Not started | Revisions + restore, comments, suggestions |
 | 6. Docs-parity polish | 🔴 Not started | Folders, search, export/import, offline, admin |
@@ -135,12 +135,41 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
       query. Verified `convex codegen`, a local Convex HTTP smoke returning
       projected markdown, `@hubble.md/www` build, `pnpm check`, and
       `pnpm build:desktop`. Unmerged. — *Owner: Codex · Started: 2026-06-24*
-- [ ] Migrate the whole-file sync path (`packages/sync`) to an import/export role. — *_*
-- [ ] "Last edited by / at" on documents. — *_*
+- [~] Migrate the whole-file sync path (`packages/sync`) to an import/export role.
+      Implemented locally as explicit Live Document import/export APIs:
+      `packages/sync` now exposes `importLiveDocuments` and
+      `exportLiveDocuments`, Convex imports write markdown into the live
+      ProseMirror document (`document:<id>`) instead of the legacy `files` table,
+      and the CLI exposes `hubble cloud import` / `hubble cloud export`. Legacy
+      `cloud sync` / `cloud watch` remain available for non-live whole-file
+      workspaces. Verified `convex codegen`, focused package typechecks/builds,
+      `pnpm check`, and `pnpm build:desktop`. Unmerged. — *Owner: Codex ·
+      Started: 2026-06-25*
+- [~] "Last edited by / at" on documents. Implemented locally with document
+      metadata display in the Live Documents sidebar and live document editor
+      header, a POC edit marker that records the current test identity (or local
+      collaborator) during live edits, import/rename/delete actor propagation, and
+      agent edit attribution as `Agent`. Verified `convex codegen`,
+      `@hubble.md/www` typecheck/build, Convex backend typecheck, `pnpm check`,
+      `pnpm build:desktop`, and Vite serving `?test=1`; interactive browser smoke
+      was blocked by in-app browser startup failure and no local Playwright
+      package. Unmerged. — *Owner: Codex · Started: 2026-06-25*
 
-## Stage 3 — Team permissions 🔴
+## Stage 3 — Team permissions 🟡
 
-- [ ] Auth provider chosen + wired (Convex Auth / Clerk / WorkOS). — *_*
+- [~] Auth provider chosen + wired (Convex Auth / Clerk / WorkOS). Chosen:
+      Convex Auth with the password provider for the Vite/React + Convex stack,
+      keeping WorkOS/SSO as a later enterprise option. Implemented locally with
+      Convex Auth tables/config/http routes, `ConvexAuthProvider`, a web
+      sign-in/sign-up gate plus toolbar sign-out for non-`?test=1` sessions,
+      and server-side Live Document actor resolution from the authenticated
+      Convex user. The Stage 1 `?test=1` identity gate remains as an explicit
+      POC bypass. Verified
+      `convex codegen`, `@hubble.md/www` typecheck/build, `pnpm check`,
+      `pnpm build:desktop`, and Vite serving `/?test=1` on port 5174; direct
+      `convex dev --once --typecheck enable` was blocked by an existing local
+      backend on port 3210, but `convex codegen` ran TypeScript successfully.
+      Unmerged. — *Owner: Codex · Started: 2026-06-25*
 - [ ] `users`, `members` (workspace membership) tables. — *_*
 - [ ] `docShares`: per-document roles (owner/editor/commenter/viewer) + link sharing. — *_*
 - [ ] **Server-side enforcement on every query/mutation** — a viewer never receives
@@ -181,6 +210,30 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 
 Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
 
+- 2026-06-25 — Codex — Started Stage 3 team permissions: chose Convex Auth for
+  the current Vite/React + Convex stack, added Convex Auth backend setup and
+  tables, wired the web app through `ConvexAuthProvider` with an email/password
+  sign-in/sign-up gate and toolbar sign-out, resolved Live Document edit actors
+  from the authenticated Convex user, and added the missing direct
+  `@base-ui/react` app dependency needed when building against rebuilt shared UI
+  output. Preserved the `?test=1` POC identity bypass. Verified
+  `convex codegen`, `@hubble.md/www` typecheck/build, `pnpm check`,
+  `pnpm build:desktop`, and Vite serving `/?test=1`; direct Convex one-shot
+  typecheck was blocked by an existing local backend on port 3210.
+- 2026-06-25 — Codex — Continued Stage 2 cloud document entities: added
+  "Last edited by / at" metadata for Live Documents in the sidebar and live
+  editor header, updated metadata from live POC edits/imports/metadata mutations,
+  and attributed server-side agent edits as `Agent`. Verified `convex codegen`,
+  `@hubble.md/www` typecheck/build, Convex backend typecheck, `pnpm check`,
+  `pnpm build:desktop`, and Vite serving `?test=1`; interactive browser smoke was
+  blocked by in-app browser startup failure and no local Playwright package.
+- 2026-06-25 — Codex — Continued Stage 2 cloud document entities: added explicit
+  Live Document import/export APIs in `packages/sync`, wired Convex document
+  imports to update the authoritative ProseMirror document rather than the
+  legacy `files` table, exposed projected exports, and added `hubble cloud
+  import` / `hubble cloud export` CLI commands while leaving legacy whole-file
+  sync/watch for non-live workspaces. Verified `convex codegen`, focused package
+  typechecks/builds, `pnpm check`, and `pnpm build:desktop`.
 - 2026-06-24 — Codex — Continued Stage 2 cloud document entities: added
   one-way markdown projection on read via `documents.getWithMarkdown`, using the
   stable live ProseMirror document ID (`document:<id>`) and the existing Hubble

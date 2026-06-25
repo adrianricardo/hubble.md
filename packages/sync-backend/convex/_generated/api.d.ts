@@ -8,12 +8,16 @@
  * @module
  */
 
+import type * as auth from "../auth.js";
+import type * as authIdentity from "../authIdentity.js";
 import type * as crons from "../crons.js";
 import type * as documents from "../documents.js";
+import type * as http from "../http.js";
 import type * as orphanAssets from "../orphanAssets.js";
 import type * as pocIdentity from "../pocIdentity.js";
 import type * as prosemirror from "../prosemirror.js";
 import type * as sync from "../sync.js";
+import type * as viewer from "../viewer.js";
 
 import type {
   ApiFromModules,
@@ -22,12 +26,16 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  auth: typeof auth;
+  authIdentity: typeof authIdentity;
   crons: typeof crons;
   documents: typeof documents;
+  http: typeof http;
   orphanAssets: typeof orphanAssets;
   pocIdentity: typeof pocIdentity;
   prosemirror: typeof prosemirror;
   sync: typeof sync;
+  viewer: typeof viewer;
 }>;
 
 /**

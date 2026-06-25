@@ -8,6 +8,7 @@ import { getHubbleEditorSchema } from "@hubble.md/editor";
 import { Transform } from "@tiptap/pm/transform";
 import { v } from "convex/values";
 import { components } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import { mutation } from "./_generated/server";
 
 const prosemirrorSync = new ProsemirrorSync(components.prosemirrorSync);
@@ -51,5 +52,13 @@ export const agentAppendParagraph = mutation({
 			tr.insert(doc.content.size, paragraphNode);
 			return tr;
 		});
+
+		if (docId.startsWith("document:")) {
+			const documentId = docId.slice("document:".length);
+			await ctx.db.patch(documentId as Id<"documents">, {
+				updatedBy: "Agent",
+				updatedAt: Date.now(),
+			});
+		}
 	},
 });

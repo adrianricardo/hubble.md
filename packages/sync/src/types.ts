@@ -38,6 +38,34 @@ export type SyncResult = {
 	assetsDeleted: number;
 };
 
+export type LiveDocumentProjection = {
+	_id: string;
+	path: string | null;
+	title: string;
+	markdown: string;
+	version: number | null;
+	updatedAt: number;
+	deletedAt?: number;
+};
+
+export type LiveDocumentImport = {
+	documentId: string;
+	path: string;
+	title: string;
+	created: boolean;
+};
+
+export type LiveDocumentExportResult = {
+	exported: string[];
+	skipped: string[];
+};
+
+export type LiveDocumentImportResult = {
+	imported: string[];
+	created: string[];
+	updated: string[];
+};
+
 export type RemoteFile = {
 	_id: string;
 	path: string;
