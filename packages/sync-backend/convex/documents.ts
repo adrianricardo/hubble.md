@@ -412,10 +412,11 @@ export const listRevisions = query({
 	args: { documentId: v.id("documents") },
 	handler: async (ctx, { documentId }) => {
 		await requireDocumentRead(ctx, documentId);
-		return ctx.db
+		const revisions = await ctx.db
 			.query("revisions")
 			.withIndex("by_document", (q) => q.eq("documentId", documentId))
 			.collect();
+		return revisions.sort((a, b) => b.createdAt - a.createdAt);
 	},
 });
 
@@ -432,6 +433,42 @@ export const materializeRevision = mutation({
 			label: label?.trim() || undefined,
 			actor: actor?.trim() || "Manual snapshot",
 		});
+	},
+});
+
+export const restoreRevision = mutation({
+	args: {
+		revisionId: v.id("revisions"),
+		actor: v.optional(v.string()),
+	},
+	handler: async (ctx, { revisionId, actor }) => {
+		const revision = await ctx.db.get(revisionId);
+		if (!revision) throw new Error("Revision not found");
+		await requireDocumentWrite(ctx, revision.documentId);
+		await materializeRevisionForDocument(ctx, {
+			documentId: revision.documentId,
+			label: "Before restore",
+			actor: actor?.trim() || "Restore",
+		});
+		await transformLiveDocumentMarkdown(
+			ctx,
+			revision.documentId,
+			revision.markdown,
+			"restore",
+		);
+		const now = Date.now();
+		await ctx.db.patch(revision.documentId, {
+			updatedBy: actor?.trim() || "Restore",
+			updatedAt: now,
+		});
+		const projection = await projectMarkdown(ctx, revision.documentId);
+		return {
+			documentId: revision.documentId,
+			revision: projection.version ?? 0,
+			markdown: projection.markdown,
+			outline: markdownOutline(projection.markdown),
+			updatedAt: now,
+		};
 	},
 });
 

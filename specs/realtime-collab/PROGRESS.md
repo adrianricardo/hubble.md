@@ -257,7 +257,13 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
       ProseMirror JSON, revision number, and CRDT metadata. Verified
       `convex codegen`, `pnpm check`, and `pnpm build:desktop`. Unmerged. —
       *Owner: Codex · Started: 2026-06-25*
-- [ ] Version history UI: browse + **restore as a new change** (never mutate history). — *_*
+- [~] Version history UI: browse + **restore as a new change** (never mutate history).
+      Backend restore path implemented locally with `documents.restoreRevision`:
+      it materializes the current document as "Before restore", applies the
+      selected revision markdown through the live ProseMirror document, and
+      updates document attribution. Browse/restore UI remains pending. Verified
+      `convex codegen`, `pnpm check`, and `pnpm build:desktop`. Unmerged. —
+      *Owner: Codex · Started: 2026-06-25*
 - [ ] Comments + threads anchored to text, @mentions, resolve. — *_*
 - [ ] Track-changes / suggestion review UI. — *_*
 - [ ] Activity feed + notifications. — *_*
@@ -276,6 +282,11 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 
 Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
 
+- 2026-06-25 — Codex — Continued Stage 5 version history: added backend
+  `documents.restoreRevision`, restoring a selected revision as a new live
+  change after first materializing the current document as "Before restore".
+  Browse/restore UI remains pending. Verified `convex codegen`, `pnpm check`,
+  and `pnpm build:desktop`.
 - 2026-06-25 — Codex — Started Stage 5 version history: added the `revisions`
   table plus manual/list revision APIs and automatic pre-agent-patch snapshots
   storing markdown projection, ProseMirror JSON, revision number, and CRDT
