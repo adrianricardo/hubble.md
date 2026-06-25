@@ -44,6 +44,8 @@ export type LiveDocumentProjection = {
 	title: string;
 	markdown: string;
 	version: number | null;
+	role?: "owner" | "editor" | "commenter" | "viewer" | null;
+	canWrite?: boolean;
 	updatedAt: number;
 	deletedAt?: number;
 };
@@ -62,6 +64,7 @@ export type LiveDocumentExportResult = {
 
 export type LiveDocumentProjectionWriteResult = {
 	root: string;
+	baseCacheRoot: string;
 	written: string[];
 	skipped: string[];
 };

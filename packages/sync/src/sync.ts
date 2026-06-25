@@ -335,7 +335,7 @@ export async function exportLiveDocuments(
 /** Write cloud Live Documents to a separate read-only projection tree for agents. */
 export async function writeLiveDocumentProjections(
 	backend: SyncBackend,
-	fs: Pick<FileSystem, "ensureDir" | "writeFile">,
+	fs: Pick<FileSystem, "ensureDir" | "writeFile" | "setReadOnly">,
 	opts: {
 		workspaceId: string;
 		workspacePath: string;
@@ -346,8 +346,10 @@ export async function writeLiveDocumentProjections(
 	const root =
 		opts.projectionRoot ??
 		`${opts.workspacePath}/.hubble/projections/live-documents`;
+	const baseCacheRoot = `${opts.workspacePath}/.hubble/state/live-documents`;
 	const result: LiveDocumentProjectionWriteResult = {
 		root,
+		baseCacheRoot,
 		written: [],
 		skipped: [],
 	};
@@ -360,7 +362,30 @@ export async function writeLiveDocumentProjections(
 			continue;
 		}
 		await ensureParentDir(fs, root, normalizedPath);
-		await fs.writeFile(`${root}/${normalizedPath}`, document.markdown);
+		const path = `${root}/${normalizedPath}`;
+		if (fs.setReadOnly) await fs.setReadOnly(path, false).catch(() => {});
+		await fs.writeFile(path, document.markdown);
+		if (fs.setReadOnly) await fs.setReadOnly(path, document.canWrite === false);
+		await fs.ensureDir(baseCacheRoot);
+		await fs.writeFile(
+			`${baseCacheRoot}/${document._id}.base.md`,
+			document.markdown,
+		);
+		await fs.writeFile(
+			`${baseCacheRoot}/${document._id}.json`,
+			JSON.stringify(
+				{
+					documentId: document._id,
+					revision: document.version ?? 0,
+					path: normalizedPath,
+					role: document.role ?? null,
+					canWrite: document.canWrite ?? true,
+					projectedAt: Date.now(),
+				},
+				null,
+				2,
+			),
+		);
 		result.written.push(normalizedPath);
 	}
 

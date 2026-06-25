@@ -90,15 +90,92 @@ Key shifts:
     blind-overwrites.
   - Edits can **stream** (token-by-token → steps → broadcast) so humans see "agent
     editing…" live.
-- **Read-only file projection**: the markdown file on disk is continuously
-  re-materialized from the authoritative doc. Agents/tools read/grep/back it up;
-  they do **not** write it on the collaboration path.
-- **Legacy file-only shim**: a local watcher on a *staging* file converts a
-  file-only agent's write into a single `applyPatch(markdown-patch)` against the
-  current revision. The lossy markdown→steps conversion runs **once, server-side,
-  against a known base** — not continuously against live-mutating file state.
+- **Bidirectional file projection** *(revised — was read-only)*: the markdown file
+  on disk is continuously re-materialized from the authoritative doc **and** is an
+  editable input. The always-on desktop app watches Live Document files; on an
+  external save it reconciles the change back into the CRDT (see "Bidirectional file
+  reconciliation"). Agents/tools still read/grep/back it up.
+- **Legacy file-only shim → generalized reconcile path**: the staging-file shim was
+  the special case; the watcher now handles *any* external editor (human or agent),
+  always against a known base. The CLI shim command remains for headless/CI agents.
 - **Suggestion mode**: untrusted agents propose changes (track-changes) that a
   human accepts; trusted agents may auto-apply.
+
+## Bidirectional file reconciliation (Live Documents)
+
+Restores "edit the file in any app" for Live Documents without giving up CRDT
+authority. Direction decided; on-disk projection path TBD.
+
+**Flow (external save → collaborators):**
+
+1. The desktop app's **main process** watches Live Document files (chokidar).
+2. On save, read the file and load the per-file **last-synced base** from a local
+   cache (e.g. `.hubble/state/<documentId>.base.md` + revision).
+3. Text-diff disk vs. base (`fast-diff`/`jsdiff`).
+4. Convert the diff to a **scoped patch** and call `applyPatch(id, baseRevision,
+   { kind: "replace-range" | "markdown-diff", ... })`. The server converts only the
+   changed range markdown→steps against `baseRevision`, writes via
+   `prosemirrorSync.transform`, and broadcasts.
+5. On success, update the base cache to the new revision + re-materialized text.
+
+**Why it's safe:** the diff yields *operations*, which the CRDT merges with
+concurrent remote edits (idempotent/commutative) — no whole-file overwrite. The
+lossy markdown→steps conversion is bounded to the changed range against a known
+base. Prior art: Yjs + File System Access API (Motif).
+
+**Backstop:** if the base cache is missing/stale or the patch can't be safely
+scoped, write the disk version to `*.local-edit-<ts>` and re-materialize from the
+authoritative doc — never silently clobber (mirrors today's `*.conflict-<ts>`).
+
+**Permissions:** reconciliation runs through the same `checkWrite` checks as in-app
+edits — a viewer's external file edit is rejected, and a viewer's projection is
+materialized read-only.
+
+**Desktop lifecycle (single always-on app):** the Electron main process hosts the
+watcher + sync engine and survives window close (`window-all-closed` → keep running;
+system-tray indicator; quit only via tray/menu). The user opens one app; closing
+the window leaves it syncing in the background. The renderer is just UI.
+
+**Offline:** in-editor offline relies on CRDT local buffering/replay (spike-gated;
+Yjs/`y-indexeddb` fallback). External-file offline edits queue in the watcher and
+flush on reconnect via the same reconcile flow.
+
+### Code changes required (revising already-written code)
+
+The earlier stages implemented the *read-only* Model-C projection. This decision
+revises that. Concrete deltas against current source:
+
+1. **`applyPatch` intents** (`convex/documents.ts`): add a diff/range intent
+   (`replace-range` / `markdown-diff`) so external edits apply as a **scoped patch**.
+   Today only `replace-document` (whole-file), `append-markdown`, and
+   `insert-after-heading` exist; the shim uses whole-file `replace-document`, which
+   clobbers concurrent edits.
+2. **Shim → continuous reconcile** (`packages/cli/src/index.ts` shim cmd +
+   `packages/sync`): the shim watches a *separate staging file* and does whole-file
+   replace. Generalize to: watch the **projection file itself**, diff vs. a
+   **last-synced base cache**, emit a scoped patch. Keep the CLI shim for headless
+   agents.
+3. **Projection writer** (`packages/sync/src/sync.ts`
+   `writeLiveDocumentProjections`): today writes read-only to
+   `.hubble/projections/live-documents` with no base cache. Add a **base-cache
+   write** (text + revision per doc) so the watcher can diff; revisit the on-disk
+   path (editable location TBD).
+4. **Desktop app lifecycle** (`apps/desktop/src`): no `Tray` / `window-all-closed` /
+   background-run handling exists today, and the live-doc watcher/sync engine does
+   **not** run in the desktop main process (sync is CLI-only). Add background-process
+   + tray and host the watcher in main.
+5. **External-change classification** (`apps/desktop/src/externalFileChange.ts`,
+   `apps/www/src/store/actions.ts`): currently classifies external changes as
+   reload/conflict/match for file-authoritative docs. For Live Documents, route
+   external changes to the **reconcile path** (no conflict files) and keep the
+   conflict copy only as the base-cache backstop.
+6. **Permissions on the inbound path** (`convex/permissions.ts` + watcher): ensure
+   reconciliation patches pass `checkWrite`; materialize read-only projections for
+   viewers so their file edits can't even be attempted.
+
+Stages 1–3 (realtime POC, doc entities, permissions) are largely unaffected; the
+revisions land in Stage 4 (projection/shim) and Stage 6 (watch/offline), plus the
+desktop-app lifecycle work.
 
 ## Version history (not git)
 
@@ -116,11 +193,12 @@ Key shifts:
 
 ## Risks & mitigations
 
-- **Markdown projection correctness.** The custom converter is currently a
-  best-effort save path; as a projection it becomes correctness-critical. Mitigate:
-  projection is **one-way** (doc→markdown) on the normal path; markdown→doc only on
-  explicit import/shim-patch against a known revision. Add round-trip property tests
-  for tables, frontmatter, embeds, custom nodes.
+- **Markdown projection correctness.** The custom converter is correctness-critical
+  in **both** directions now: doc→markdown on read, and markdown→steps on the
+  reconcile path. Mitigate: scope inbound conversion to the **changed range against a
+  known base** (never whole-file on the normal path), keep a base cache + a
+  conflict-copy backstop, and add round-trip property tests for tables, frontmatter,
+  embeds, custom nodes. Whole-file markdown→doc remains only for explicit import.
 - **Path identity.** Move to stable document IDs early (Stage 2) before sharing and
   history anchor to anything.
 - **Permissions retrofit.** Design roles into queries from Stage 3's first mutation,
@@ -140,11 +218,13 @@ Key shifts:
    Documents.
 3. **Permissions**: `users`/`members`/`docShares`, auth provider, server-side
    enforcement, share dialog + link sharing.
-4. **Agent layer**: patch API + MCP/CLI, projection writer, legacy shim, suggestion
-   mode.
+4. **Agent layer**: patch API (+ scoped `replace-range`/`markdown-diff` intent),
+   MCP/CLI, bidirectional projection writer + base cache, file-reconcile watcher
+   (generalized shim), suggestion mode.
 5. **History & review**: `revisions` + restore UI, comments/threads, track-changes,
    activity feed.
-6. **Polish**: folders/search/export/import, offline merge, audit log, trash,
+6. **Polish**: desktop always-on/tray + main-process watcher, folders/search/
+   export/import, offline merge (in-editor + file-reconcile), audit log, trash,
    admin.
 
 ## Notes

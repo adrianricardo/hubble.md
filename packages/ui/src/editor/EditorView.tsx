@@ -50,6 +50,7 @@ export type EditorViewProps = {
 	onDrop?: (editor: Editor, event: DragEvent) => boolean;
 	onSelectionChange?: (selection: { anchor: number; head: number }) => void;
 	persistChanges?: boolean;
+	syncInitialMarkdownChanges?: boolean;
 	saveDebounceMs?: number;
 	onLocalChange: (path: string, markdown: string) => void;
 	onSave: (path: string, markdown: string) => void | Promise<void>;
@@ -71,6 +72,7 @@ export function EditorView({
 	onDrop,
 	onSelectionChange,
 	persistChanges = true,
+	syncInitialMarkdownChanges = true,
 	saveDebounceMs = DEFAULT_SAVE_DEBOUNCE_MS,
 	onLocalChange,
 	onSave,
@@ -204,6 +206,7 @@ export function EditorView({
 
 	useEffect(() => {
 		if (!editor) return;
+		if (!syncInitialMarkdownChanges) return;
 		if (initialMarkdown === latestMarkdownRef.current) {
 			return;
 		}
@@ -221,7 +224,7 @@ export function EditorView({
 				emitUpdate: false,
 			});
 		}
-	}, [editor, initialMarkdown]);
+	}, [editor, initialMarkdown, syncInitialMarkdownChanges]);
 
 	useEffect(() => {
 		return () => {

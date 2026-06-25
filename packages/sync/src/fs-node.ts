@@ -1,4 +1,5 @@
 import {
+	chmodSync,
 	existsSync,
 	mkdirSync,
 	readdirSync,
@@ -43,6 +44,9 @@ export function createNodeFileSystem(): FileSystem {
 		},
 		async ensureDir(path) {
 			mkdirSync(path, { recursive: true });
+		},
+		async setReadOnly(path, readOnly) {
+			chmodSync(path, readOnly ? 0o444 : 0o644);
 		},
 		async listMarkdownFiles(dir) {
 			const results: LocalFile[] = [];

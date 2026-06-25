@@ -168,6 +168,7 @@ async function runProject(workspacePath: string) {
 	});
 	console.log(
 		`live projection: ${result.written.length} file${result.written.length === 1 ? "" : "s"} written to ${result.root}` +
+			`, base cache in ${result.baseCacheRoot}` +
 			(result.skipped.length > 0 ? ` (${result.skipped.length} skipped)` : ""),
 	);
 }
@@ -196,6 +197,13 @@ async function runDocumentCommand(workspacePath: string, parsed: CliArgs) {
 			return;
 		case "shim":
 			await runDocumentShim(workspacePath, cloudSync.deploymentUrl, parsed);
+			return;
+		case "reconcile":
+			await runDocumentReconcile(
+				workspacePath,
+				cloudSync.deploymentUrl,
+				parsed,
+			);
 			return;
 		case "export":
 			await runDocumentExport(workspacePath, cloudSync.deploymentUrl, parsed);
@@ -330,17 +338,30 @@ async function runDocumentShim(
 			documentId: parsed.workspaceId as Id<"documents">,
 		});
 		if (!document) throw new Error(`Document not found: ${parsed.workspaceId}`);
+		if (!document.canWrite) {
+			throw new Error(
+				`Document ${parsed.workspaceId} is read-only for this user; refusing to apply staging-file edits.`,
+			);
+		}
+		const range = changedRange(document.markdown, markdown);
+		if (!range) {
+			console.log(`shim skipped ${stagingPath}: no changes`);
+			return;
+		}
 		await client.mutation(api.documents.applyPatch, {
 			documentId: parsed.workspaceId as Id<"documents">,
 			baseRevision: document.revision,
 			intent: {
-				kind: "replace-document",
-				markdown,
+				kind: "replace-range",
+				baseMarkdown: document.markdown,
+				from: range.from,
+				to: range.to,
+				markdown: range.markdown,
 			},
 			actor: parsed.actor ?? "file-shim",
 		});
 		console.log(
-			`shim applied ${stagingPath} to ${parsed.workspaceId} at revision ${document.revision}`,
+			`shim reconciled ${range.to - range.from} base chars -> ${range.markdown.length} new chars for ${parsed.workspaceId} at revision ${document.revision}`,
 		);
 	};
 
@@ -360,6 +381,177 @@ async function runDocumentShim(
 	});
 	const shutdown = async (signal: string) => {
 		console.log(`Stopping Hubble document shim (${signal})`);
+		if (timer) clearTimeout(timer);
+		await watcher.close();
+		process.exit(0);
+	};
+	process.on("SIGINT", () => {
+		void shutdown("SIGINT");
+	});
+	process.on("SIGTERM", () => {
+		void shutdown("SIGTERM");
+	});
+}
+
+type ReconcileBaseMetadata = {
+	documentId: string;
+	revision: number;
+	path?: string;
+	role?: "owner" | "editor" | "commenter" | "viewer" | null;
+	canWrite?: boolean;
+	projectedAt?: number;
+};
+
+function liveDocumentBaseCacheRoot(workspacePath: string) {
+	return `${workspacePath}/.hubble/state/live-documents`;
+}
+
+function changedRange(baseText: string, nextText: string) {
+	let prefix = 0;
+	while (
+		prefix < baseText.length &&
+		prefix < nextText.length &&
+		baseText[prefix] === nextText[prefix]
+	) {
+		prefix += 1;
+	}
+
+	let baseSuffix = baseText.length;
+	let nextSuffix = nextText.length;
+	while (
+		baseSuffix > prefix &&
+		nextSuffix > prefix &&
+		baseText[baseSuffix - 1] === nextText[nextSuffix - 1]
+	) {
+		baseSuffix -= 1;
+		nextSuffix -= 1;
+	}
+
+	if (prefix === baseText.length && prefix === nextText.length) return null;
+	return {
+		from: prefix,
+		to: baseSuffix,
+		markdown: nextText.slice(prefix, nextSuffix),
+	};
+}
+
+async function readReconcileBase(workspacePath: string, documentId: string) {
+	const root = liveDocumentBaseCacheRoot(workspacePath);
+	const baseMarkdown = await fs.readFileOrNull(`${root}/${documentId}.base.md`);
+	const rawMetadata = await fs.readFileOrNull(`${root}/${documentId}.json`);
+	if (baseMarkdown === null || rawMetadata === null) return null;
+	const metadata = JSON.parse(rawMetadata) as ReconcileBaseMetadata;
+	return { baseMarkdown, metadata };
+}
+
+async function writeReconcileBase(
+	workspacePath: string,
+	documentId: string,
+	args: { markdown: string; revision: number; path?: string },
+) {
+	const root = liveDocumentBaseCacheRoot(workspacePath);
+	await fs.ensureDir(root);
+	await fs.writeFile(`${root}/${documentId}.base.md`, args.markdown);
+	await fs.writeFile(
+		`${root}/${documentId}.json`,
+		JSON.stringify(
+			{
+				documentId,
+				revision: args.revision,
+				path: args.path,
+				canWrite: true,
+				projectedAt: Date.now(),
+			},
+			null,
+			2,
+		),
+	);
+}
+
+async function runDocumentReconcile(
+	workspacePath: string,
+	deploymentUrl: string,
+	parsed: CliArgs,
+) {
+	if (!parsed.workspaceId) {
+		console.error("Missing required --id documentId.");
+		process.exitCode = 1;
+		return;
+	}
+	if (!parsed.file) {
+		console.error("Missing required --file projection.md.");
+		process.exitCode = 1;
+		return;
+	}
+	const documentId = parsed.workspaceId;
+	const projectionPath = resolve(workspacePath, parsed.file);
+	const applyProjectionFile = async () => {
+		const base = await readReconcileBase(workspacePath, documentId);
+		if (!base) {
+			throw new Error(
+				`Missing reconcile base cache for ${documentId}. Run \`hubble cloud project\` before reconciling projection edits.`,
+			);
+		}
+		if (base.metadata.canWrite === false) {
+			throw new Error(
+				`Document ${documentId} is read-only for this user; refusing to reconcile projection edits.`,
+			);
+		}
+		const nextMarkdown = await fs.readFile(projectionPath);
+		const range = changedRange(base.baseMarkdown, nextMarkdown);
+		if (!range) {
+			console.log(`reconcile skipped ${projectionPath}: no changes`);
+			return;
+		}
+
+		const client = new ConvexHttpClient(deploymentUrl);
+		const document = await client.query(api.documents.getForAgent, {
+			documentId: documentId as Id<"documents">,
+		});
+		if (!document?.canWrite) {
+			throw new Error(
+				`Document ${documentId} is read-only for this user; refusing to reconcile projection edits.`,
+			);
+		}
+		const result = await client.mutation(api.documents.applyPatch, {
+			documentId: documentId as Id<"documents">,
+			baseRevision: base.metadata.revision,
+			intent: {
+				kind: "replace-range",
+				baseMarkdown: base.baseMarkdown,
+				from: range.from,
+				to: range.to,
+				markdown: range.markdown,
+			},
+			actor: parsed.actor ?? "file-reconcile",
+		});
+		await fs.writeFile(projectionPath, result.markdown);
+		await writeReconcileBase(workspacePath, documentId, {
+			markdown: result.markdown,
+			revision: result.revision,
+			path: base.metadata.path ?? parsed.file,
+		});
+		console.log(
+			`reconciled ${range.to - range.from} base chars -> ${range.markdown.length} new chars at revision ${result.revision}`,
+		);
+	};
+
+	await applyProjectionFile();
+	if (!parsed.watch) return;
+
+	console.log(`Watching Live Document projection: ${projectionPath}`);
+	let timer: ReturnType<typeof setTimeout> | null = null;
+	const watcher = chokidar.watch(projectionPath, { ignoreInitial: true });
+	watcher.on("change", () => {
+		if (timer) clearTimeout(timer);
+		timer = setTimeout(() => {
+			void applyProjectionFile().catch((err) => {
+				console.error("reconcile failed:", err);
+			});
+		}, 250);
+	});
+	const shutdown = async (signal: string) => {
+		console.log(`Stopping Hubble document reconcile (${signal})`);
 		if (timer) clearTimeout(timer);
 		await watcher.close();
 		process.exit(0);
@@ -789,6 +981,9 @@ function printDocumentHelp() {
 		"  hubble [--cwd path] cloud document shim --id documentId --file staging.md [--watch] [--actor name]",
 	);
 	console.log(
+		"  hubble [--cwd path] cloud document reconcile --id documentId --file projection.md [--watch] [--actor name]",
+	);
+	console.log(
 		"  hubble [--cwd path] cloud document export --id documentId [--format md] [--out file]",
 	);
 	console.log("");
@@ -827,6 +1022,9 @@ function printUsage() {
 	);
 	console.error(
 		"  hubble [--cwd path] cloud document shim --id documentId --file staging.md [--watch]",
+	);
+	console.error(
+		"  hubble [--cwd path] cloud document reconcile --id documentId --file projection.md [--watch]",
 	);
 	console.error(
 		"  hubble [--cwd path] cloud document export --id documentId [--format md] [--out file]",

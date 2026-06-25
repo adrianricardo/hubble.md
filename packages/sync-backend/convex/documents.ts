@@ -17,6 +17,7 @@ import {
 } from "./_generated/server";
 import { currentActorName } from "./authIdentity";
 import {
+	canWriteRole,
 	documentRole,
 	requireDocumentOwner,
 	requireDocumentRead,
@@ -31,7 +32,21 @@ type LinkScope = "workspace" | "public";
 type PatchIntent =
 	| { kind: "replace-document"; markdown: string }
 	| { kind: "append-markdown"; markdown: string }
-	| { kind: "insert-after-heading"; heading: string; markdown: string };
+	| { kind: "insert-after-heading"; heading: string; markdown: string }
+	| {
+			kind: "replace-range";
+			baseMarkdown: string;
+			from: number;
+			to: number;
+			markdown: string;
+	  }
+	| {
+			kind: "markdown-diff";
+			baseMarkdown: string;
+			from: number;
+			to: number;
+			markdown: string;
+	  };
 
 const patchIntentValidator = v.union(
 	v.object({
@@ -45,6 +60,20 @@ const patchIntentValidator = v.union(
 	v.object({
 		kind: v.literal("insert-after-heading"),
 		heading: v.string(),
+		markdown: v.string(),
+	}),
+	v.object({
+		kind: v.literal("replace-range"),
+		baseMarkdown: v.string(),
+		from: v.number(),
+		to: v.number(),
+		markdown: v.string(),
+	}),
+	v.object({
+		kind: v.literal("markdown-diff"),
+		baseMarkdown: v.string(),
+		from: v.number(),
+		to: v.number(),
 		markdown: v.string(),
 	}),
 );
@@ -263,6 +292,190 @@ async function transformLiveDocumentMarkdown(
 	);
 }
 
+function clampMarkdownOffset(value: number, max: number) {
+	if (!Number.isInteger(value) || value < 0 || value > max) {
+		throw new Error(`Invalid markdown offset: ${value}`);
+	}
+	return value;
+}
+
+function findSingleMarkdownOccurrence(haystack: string, needle: string) {
+	const index = haystack.indexOf(needle);
+	if (index === -1) return null;
+	if (haystack.indexOf(needle, index + 1) !== -1) return null;
+	return index;
+}
+
+function findReconcileRange(
+	currentMarkdown: string,
+	args: { baseMarkdown: string; from: number; to: number },
+) {
+	const from = clampMarkdownOffset(args.from, args.baseMarkdown.length);
+	const to = clampMarkdownOffset(args.to, args.baseMarkdown.length);
+	if (from > to) throw new Error("Invalid replace range: from is after to");
+
+	const oldText = args.baseMarkdown.slice(from, to);
+	const exactIndex =
+		oldText.length > 0
+			? findSingleMarkdownOccurrence(currentMarkdown, oldText)
+			: null;
+	if (exactIndex !== null) {
+		return { from: exactIndex, to: exactIndex + oldText.length };
+	}
+
+	const beforeContext = args.baseMarkdown.slice(Math.max(0, from - 400), from);
+	const afterContext = args.baseMarkdown.slice(
+		to,
+		Math.min(args.baseMarkdown.length, to + 400),
+	);
+	const beforeIndex =
+		beforeContext.length > 0
+			? currentMarkdown.lastIndexOf(beforeContext)
+			: from === 0
+				? 0
+				: -1;
+	const afterSearchStart =
+		beforeIndex >= 0 ? beforeIndex + beforeContext.length : 0;
+	const afterIndex =
+		afterContext.length > 0
+			? currentMarkdown.indexOf(afterContext, afterSearchStart)
+			: to === args.baseMarkdown.length
+				? currentMarkdown.length
+				: -1;
+
+	if (beforeIndex >= 0 && afterIndex >= 0) {
+		return {
+			from: beforeIndex + beforeContext.length,
+			to: afterIndex,
+		};
+	}
+
+	throw new Error(
+		"Could not map the external markdown range onto the current document",
+	);
+}
+
+function changedMarkdownRange(baseText: string, nextText: string) {
+	let prefix = 0;
+	while (
+		prefix < baseText.length &&
+		prefix < nextText.length &&
+		baseText[prefix] === nextText[prefix]
+	) {
+		prefix += 1;
+	}
+
+	let baseSuffix = baseText.length;
+	let nextSuffix = nextText.length;
+	while (
+		baseSuffix > prefix &&
+		nextSuffix > prefix &&
+		baseText[baseSuffix - 1] === nextText[nextSuffix - 1]
+	) {
+		baseSuffix -= 1;
+		nextSuffix -= 1;
+	}
+
+	if (prefix === baseText.length && prefix === nextText.length) return null;
+	return {
+		from: prefix,
+		to: baseSuffix,
+		markdown: nextText.slice(prefix, nextSuffix),
+	};
+}
+
+function applyMarkdownRange(
+	text: string,
+	range: { from: number; to: number; markdown: string },
+) {
+	return text.slice(0, range.from) + range.markdown + text.slice(range.to);
+}
+
+function mergeMarkdownRange(
+	baseText: string,
+	currentText: string,
+	externalText: string,
+) {
+	if (currentText === baseText) return externalText;
+	if (externalText === baseText) return currentText;
+
+	const currentChange = changedMarkdownRange(baseText, currentText);
+	const externalChange = changedMarkdownRange(baseText, externalText);
+	if (!currentChange) return externalText;
+	if (!externalChange) return currentText;
+
+	if (currentChange.to <= externalChange.from) {
+		return applyMarkdownRange(
+			applyMarkdownRange(baseText, externalChange),
+			currentChange,
+		);
+	}
+	if (externalChange.to <= currentChange.from) {
+		return applyMarkdownRange(
+			applyMarkdownRange(baseText, currentChange),
+			externalChange,
+		);
+	}
+	if (
+		currentChange.from === currentChange.to &&
+		externalChange.from === externalChange.to &&
+		currentChange.from === externalChange.from
+	) {
+		return applyMarkdownRange(baseText, {
+			from: currentChange.from,
+			to: currentChange.to,
+			markdown: currentChange.markdown + externalChange.markdown,
+		});
+	}
+
+	return externalText;
+}
+
+async function transformLiveDocumentMarkdownRange(
+	ctx: MutationCtx,
+	documentId: Id<"documents">,
+	intent: Extract<
+		PatchIntent,
+		{ kind: "replace-range" } | { kind: "markdown-diff" }
+	>,
+	clientId: string,
+) {
+	const schema = getHubbleEditorSchema();
+	const id = syncDocumentId(documentId);
+	let nextMarkdown = "";
+	await prosemirrorSync.transform(
+		ctx,
+		id,
+		schema,
+		(doc) => {
+			const currentMarkdown = tiptapDocToMarkdown(doc.toJSON());
+			const range = findReconcileRange(currentMarkdown, intent);
+			const mergedMarkdown = mergeMarkdownRange(
+				intent.baseMarkdown.slice(intent.from, intent.to),
+				currentMarkdown.slice(range.from, range.to),
+				intent.markdown,
+			);
+			nextMarkdown =
+				currentMarkdown.slice(0, range.from) +
+				mergedMarkdown +
+				currentMarkdown.slice(range.to);
+			const nextDoc = schema.nodeFromJSON(markdownToTiptapDoc(nextMarkdown));
+			if (doc.eq(nextDoc)) return null;
+
+			const diffStart = doc.content.findDiffStart(nextDoc.content);
+			if (diffStart === null) return null;
+			const diffEnd = doc.content.findDiffEnd(nextDoc.content);
+			if (diffEnd === null) return null;
+
+			const tr = new Transform(doc);
+			tr.replace(diffStart, diffEnd.a, nextDoc.slice(diffStart, diffEnd.b));
+			return tr;
+		},
+		{ clientId },
+	);
+	return nextMarkdown;
+}
+
 async function applyPatchToDocument(
 	ctx: MutationCtx,
 	args: {
@@ -280,7 +493,10 @@ async function applyPatchToDocument(
 
 	const current = await projectMarkdown(ctx, args.documentId);
 	const currentRevision = current.version ?? 0;
-	if (currentRevision !== args.baseRevision) {
+	const isRebasableRangePatch =
+		args.intent.kind === "replace-range" ||
+		args.intent.kind === "markdown-diff";
+	if (!isRebasableRangePatch && currentRevision !== args.baseRevision) {
 		throw new Error(
 			`Stale base revision: expected ${currentRevision}, got ${args.baseRevision}`,
 		);
@@ -292,23 +508,45 @@ async function applyPatchToDocument(
 		label: "Before agent patch",
 	});
 
-	const nextMarkdown =
-		args.intent.kind === "replace-document"
-			? args.intent.markdown
-			: args.intent.kind === "append-markdown"
-				? appendMarkdown(current.markdown, args.intent.markdown)
-				: insertMarkdownAfterHeading(
-						current.markdown,
-						args.intent.heading,
-						args.intent.markdown,
-					);
-
-	await transformLiveDocumentMarkdown(
-		ctx,
-		args.documentId,
-		nextMarkdown,
-		"agent",
-	);
+	switch (args.intent.kind) {
+		case "replace-range":
+		case "markdown-diff":
+			await transformLiveDocumentMarkdownRange(
+				ctx,
+				args.documentId,
+				args.intent,
+				"file-reconcile",
+			);
+			break;
+		case "replace-document":
+			await transformLiveDocumentMarkdown(
+				ctx,
+				args.documentId,
+				args.intent.markdown,
+				"agent",
+			);
+			break;
+		case "append-markdown":
+			await transformLiveDocumentMarkdown(
+				ctx,
+				args.documentId,
+				appendMarkdown(current.markdown, args.intent.markdown),
+				"agent",
+			);
+			break;
+		case "insert-after-heading":
+			await transformLiveDocumentMarkdown(
+				ctx,
+				args.documentId,
+				insertMarkdownAfterHeading(
+					current.markdown,
+					args.intent.heading,
+					args.intent.markdown,
+				),
+				"agent",
+			);
+			break;
+	}
 	const now = Date.now();
 	await ctx.db.patch(args.documentId, {
 		updatedBy: args.actor?.trim() || "Agent",
@@ -493,6 +731,7 @@ export const getForAgent = query({
 		const document = await ctx.db.get(documentId);
 		if (!document || document.deletedAt !== undefined) return null;
 		const projection = await projectMarkdown(ctx, documentId);
+		const role = await documentRole(ctx, documentId);
 		return {
 			documentId,
 			revision: projection.version ?? 0,
@@ -500,6 +739,8 @@ export const getForAgent = query({
 			outline: markdownOutline(projection.markdown),
 			title: document.title,
 			path: document.path,
+			role,
+			canWrite: canWriteRole(role),
 			updatedAt: document.updatedAt,
 			updatedBy: document.updatedBy,
 		};
@@ -758,10 +999,13 @@ export const listWithMarkdown = query({
 		return Promise.all(
 			readableDocuments.map(async (document) => {
 				const projection = await projectMarkdown(ctx, document._id);
+				const role = await documentRole(ctx, document._id);
 				return {
 					...document,
 					markdown: projection.markdown,
 					version: projection.version,
+					role,
+					canWrite: canWriteRole(role),
 				};
 			}),
 		);

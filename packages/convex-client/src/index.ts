@@ -59,6 +59,8 @@ export function createConvexBackend(url: string): SyncBackend {
 				title: document.title,
 				markdown: document.markdown,
 				version: document.version,
+				role: document.role,
+				canWrite: document.canWrite,
 				updatedAt: document.updatedAt,
 				deletedAt: document.deletedAt,
 			}));

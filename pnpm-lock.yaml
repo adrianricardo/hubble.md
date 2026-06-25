@@ -11,6 +11,12 @@ importers:
       '@biomejs/biome':
         specifier: ^2.4.4
         version: 2.4.4
+      chokidar:
+        specifier: ^4.0.3
+        version: 4.0.3
+      convex:
+        specifier: ^1.39.1
+        version: 1.39.1(react@19.2.4)
 
   apps/desktop:
     dependencies:

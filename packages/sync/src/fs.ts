@@ -16,6 +16,7 @@ export interface FileSystem {
 	deleteFile(path: string): Promise<void>;
 	readFileOrNull(path: string): Promise<string | null>;
 	ensureDir(path: string): Promise<void>;
+	setReadOnly?(path: string, readOnly: boolean): Promise<void>;
 	listMarkdownFiles(dir: string): Promise<LocalFile[]>;
 	readBinaryFile(path: string): Promise<Uint8Array>;
 	writeBinaryFile(path: string, data: Uint8Array): Promise<void>;

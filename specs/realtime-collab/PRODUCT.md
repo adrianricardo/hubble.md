@@ -54,17 +54,20 @@ file-writers racing humans through a serializer.
 - Not git-style branching/merging. Version history is linear restore points.
 - Not a real-time *binary* asset co-editing model (assets stay last-write-wins).
 - Not building our own CRDT or realtime transport — we adopt an existing one.
-- Not supporting arbitrary, un-integrated, file-only agents writing *concurrently*
-  into live documents as the primary path (handled via a compatibility shim only).
+- Not *perfect* intent/keystroke reconstruction for edits made outside the app.
+  External file edits are reconciled via base-cache diff → scoped patch (see "Local
+  files as editable inputs"); attribution and cursor fidelity are coarser than
+  in-app edits, but the edit is never lost or clobbered.
 
 ## The agent model (decided: Model C)
 
 The document API/CRDT is authoritative. Agents edit through the **same document
 API humans use** (apply a patch against a known revision → server converts intent
 to editor steps → streamed live to all collaborators). The markdown file persists
-on disk as a **read-only projection** so agents and tools can read/grep/back it up.
-A thin local **shim** lets legacy file-only agents write to a staging file, which
-it converts into an API patch against the current revision.
+on disk as a projection for read/grep/backup — and is **also an editable input**:
+external saves (human or agent) are reconciled back into the CRDT via base-cache
+diff → scoped patch (see "Local files as editable inputs"). The legacy file-only
+shim is the headless special case of that general reconcile path.
 
 Why C over the alternatives:
 
@@ -78,6 +81,45 @@ Model A's two weaknesses compound: a long agent generation is invisible until it
 finishes *and* costs full-document tokens to produce. Model C gives native agents
 streaming visibility and patch-sized token cost, while keeping "read it as a file"
 for free.
+
+## Local files as editable inputs (decided)
+
+Live Documents are cloud-authoritative, but their markdown files on disk remain
+**editable inputs**, not read-only output. Any human or agent may edit a Live
+Document's file in any external app; the always-on Hubble desktop app watches the
+file, diffs the saved version against a per-file **last-synced base cache**,
+converts the diff into a **scoped patch** against the current revision, and applies
+it to the CRDT — which merges it conflict-free and broadcasts it to all
+collaborators, attributed, with no manual sync step. This restores Hubble's "edit
+your markdown anywhere" identity for Live Documents while keeping the cloud CRDT
+authoritative, and generalizes the Model-C legacy shim from "file-only agents
+only" to "any external editor, human or agent."
+
+What makes it safe (vs. the old last-write-wins file sync):
+
+- The diff is computed against a known base and converted to **operations**, so the
+  CRDT merges it with concurrent remote edits instead of clobbering them. This is
+  the prior-art pattern (Yjs + File System Access API / Motif).
+- The markdown→ProseMirror conversion runs **only on the changed range against a
+  known revision**, not whole-file — containing the projection-fidelity risk.
+- If the base cache is missing/stale, the app writes a conflict copy
+  (`*.local-edit-<ts>`) rather than silently overwriting.
+
+Boundaries:
+
+- **Real time = on-save**, not keystroke-by-keystroke. In-app editing still streams
+  live; external-file edits land when the file is saved and detected.
+- **Requires the Hubble app running** on that device (window open *or* in the
+  background/tray). The editor can be any app; the watcher is Hubble's. Same
+  precondition as today's sync engine — not a regression.
+- External edits get **best-effort attribution** (diffed, not keystroke-level), so
+  cursor stability and "edited by" are coarser than in-app edits.
+
+**Offline is the same machinery, two flavors.** (a) Offline edit *in the Hubble
+editor* is solved by the CRDT's local buffering + replay on reconnect (the
+Google-Docs model). (b) External file edit while disconnected is the reconcile path
+above, queued by the watcher and flushed on reconnect. They look like one feature
+to the user but differ in where edit intent is captured.
 
 ## Staged delivery
 
@@ -100,8 +142,9 @@ enforcement on every query/mutation (a viewer never receives editable steps).
 
 ### Stage 4 — Agent collaboration layer (Model C)
 Document patch API + MCP/CLI tooling so agents edit as collaborators with live,
-attributed, streamed edits. Read-only file projection on disk. Legacy file-only
-agent shim (staging file → API patch). Suggestion mode (agent proposes, human
+attributed, streamed edits. Bidirectional file projection on disk (read + reconcile
+external saves via base-cache diff → scoped patch). Legacy file-only agent shim
+(headless case of the reconcile path). Suggestion mode (agent proposes, human
 accepts).
 
 ### Stage 5 — Version history & review workflow
@@ -124,12 +167,18 @@ edit + merge on reconnect, audit log, trash + restore, admin/role management.
 | Notifications | Comment/mention emails, "shared with you", activity feed |
 | Editing | Offline edit + merge on reconnect, export (md/PDF/docx), import |
 | Admin/safety | Audit log, soft-delete/trash + restore, role admin, basic DLP |
-| Agent layer (our edge) | Agent-as-collaborator API, attributed live agent edits, read-only file projection, legacy file shim |
+| Agent layer (our edge) | Agent-as-collaborator API, attributed live agent edits, bidirectional file projection (edit-anywhere, CRDT-reconciled), legacy file shim |
 
 ## Open questions
 
 - Auth provider: Convex Auth vs Clerk vs WorkOS (team/SSO needs may decide).
 - Does `@convex-dev/prosemirror-sync` meet our needs on doc size, offline, version
-  snapshots, and server-side agent edits? (Stage 1 spike answers this.)
+  snapshots, and server-side agent edits? (Stage 1 spike answers this.) Offline
+  durability specifically gates the "offline-in-editor" half of file-edit
+  reconciliation; Yjs/`y-indexeddb` is the documented fallback.
 - Suggestion-mode UX for agent edits: auto-apply for trusted agents vs always
   propose-and-accept.
+- On-disk path for the editable projection: normal workspace tree (grep/backup
+  ergonomics; footgun mitigated by base cache + conflict copy) vs. a dedicated
+  location. **Deferred** — the direction (files are editable inputs) is decided;
+  the path is not.

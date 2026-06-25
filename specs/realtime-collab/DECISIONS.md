@@ -83,6 +83,32 @@ with restore-as-new-change.
 commits, or raw CRDT internals. Restoring a previous version should create a new
 change replacing the current document content, never mutate history.
 
+## 6. Local Files Are Editable Inputs For Live Documents
+
+**Decision:** A Live Document's markdown file on disk is a **bidirectional**
+projection — editable in any app by any human or agent, not read-only. The
+always-on Hubble desktop app watches the file and reconciles external saves into the
+CRDT via **base-cache diff → scoped patch**: conflict-free, attributed, no manual
+sync.
+
+**Why:** It preserves Hubble's "edit your markdown anywhere" identity for Live
+Documents while keeping the cloud CRDT authoritative. Diffing against a known base
+produces *operations* the CRDT merges safely — the prior-art Yjs/Motif pattern — so
+we get edit-anywhere without the old last-write-wins clobber.
+
+**This revises Decision 4 (Model C):** the legacy file-only shim was the special
+case; the watcher now handles any external editor, and the earlier read-only
+projection becomes bidirectional. See TECH "Bidirectional file reconciliation" and
+"Code changes required (revising already-written code)".
+
+**Boundaries / risks:** real-time = on-save (not keystroke); requires the app
+running (window or tray); external edits get best-effort (diffed) attribution;
+markdown↔ProseMirror fidelity is contained by scoping conversion to the changed
+range + base cache + `*.local-edit-<ts>` backstop.
+
+**Open:** on-disk path for the editable projection (normal tree vs. dedicated
+location) — deferred; direction decided, path TBD.
+
 ## Current Open Decisions
 
 - **Presence/cursors:** Use a custom Convex presence layer, find an API in
@@ -91,5 +117,7 @@ change replacing the current document content, never mutate history.
   users before full Stage 3 auth.
 - **Stable document IDs timing:** The POC currently uses path-derived ids. Before
   anything durable ships, Live Documents need stable `documents` rows.
-- **Offline:** `prosemirror-sync` does not currently provide the required offline
-  merge story. Treat offline as a later explicit feature.
+- **Offline:** two flavors of the same machinery — (a) in-editor offline via CRDT
+  local buffer/replay (`prosemirror-sync` offline is spike-gated; Yjs/`y-indexeddb`
+  is the proven fallback), and (b) external-file offline edits queued by the watcher
+  and flushed on reconnect via the reconcile path (Decision 6).

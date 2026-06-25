@@ -162,6 +162,7 @@ export function EditorView({
 			onDrop={(editor, event) => handleImageDrop({ editor, event })}
 			onSelectionChange={publishSelection}
 			persistChanges={false}
+			syncInitialMarkdownChanges={!syncDocumentId}
 			onLocalChange={
 				syncDocumentId ? handleLiveDocumentChange : updateEditorContent
 			}
