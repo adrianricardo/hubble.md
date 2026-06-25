@@ -384,6 +384,47 @@ function searchSnippet(markdown: string, query: string): string {
 	return markdown.slice(start, end).trim();
 }
 
+function mentionTokens(body: string): string[] {
+	const matches = body.matchAll(/@([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+|\w+)/g);
+	return [
+		...new Set([...matches].map((match) => match[1]?.toLowerCase())),
+	].filter((token): token is string => !!token);
+}
+
+async function notifyMentions(
+	ctx: MutationCtx,
+	args: {
+		documentId: Id<"documents">;
+		body: string;
+		actor?: string;
+		threadId: Id<"commentThreads">;
+	},
+) {
+	const tokens = mentionTokens(args.body);
+	if (tokens.length === 0) return;
+	const users = await ctx.db.query("users").collect();
+	const matchedUsers = users.filter((user) => {
+		const email = user.email?.toLowerCase();
+		const localPart = email?.split("@")[0];
+		const name = user.name?.toLowerCase().replace(/\s+/g, "");
+		return tokens.some(
+			(token) => token === email || token === localPart || token === name,
+		);
+	});
+	const document = await ctx.db.get(args.documentId);
+	const title = document?.title ?? "a document";
+	for (const user of matchedUsers) {
+		await ctx.db.insert("notifications", {
+			userId: user._id,
+			documentId: args.documentId,
+			type: "comment.mention",
+			message: `${args.actor ?? "Someone"} mentioned you in ${title}`,
+			createdAt: Date.now(),
+			metadata: { threadId: args.threadId },
+		});
+	}
+}
+
 export const list = query({
 	args: { workspaceId: v.id("workspaces") },
 	handler: async (ctx, { workspaceId }) => {
@@ -486,6 +527,30 @@ export const listActivity = query({
 			.withIndex("by_document", (q) => q.eq("documentId", documentId))
 			.collect();
 		return events.sort((a, b) => b.createdAt - a.createdAt);
+	},
+});
+
+export const listNotifications = query({
+	args: {},
+	handler: async (ctx) => {
+		const userId = await getAuthUserId(ctx);
+		if (!userId) return [];
+		const notifications = await ctx.db
+			.query("notifications")
+			.withIndex("by_user", (q) => q.eq("userId", userId))
+			.collect();
+		return notifications.sort((a, b) => b.createdAt - a.createdAt);
+	},
+});
+
+export const markNotificationRead = mutation({
+	args: { notificationId: v.id("notifications") },
+	handler: async (ctx, { notificationId }) => {
+		const userId = await getAuthUserId(ctx);
+		if (!userId) throw new Error("Unauthorized");
+		const notification = await ctx.db.get(notificationId);
+		if (!notification || notification.userId !== userId) return;
+		await ctx.db.patch(notificationId, { readAt: Date.now() });
 	},
 });
 
@@ -603,6 +668,12 @@ export const createCommentThread = mutation({
 			message: "Started a comment thread",
 			metadata: { threadId },
 		});
+		await notifyMentions(ctx, {
+			documentId,
+			body: trimmed,
+			actor: author,
+			threadId,
+		});
 		return threadId;
 	},
 });
@@ -626,12 +697,19 @@ export const replyToCommentThread = mutation({
 			body: trimmed,
 			createdAt: Date.now(),
 		});
+		const author = await currentActorName(ctx, actor);
 		await logActivity(ctx, {
 			documentId: thread.documentId,
 			type: "comment.reply",
-			actor: await currentActorName(ctx, actor),
+			actor: author,
 			message: "Replied to a comment thread",
 			metadata: { threadId, commentId },
+		});
+		await notifyMentions(ctx, {
+			documentId: thread.documentId,
+			body: trimmed,
+			actor: author,
+			threadId,
 		});
 		return commentId;
 	},

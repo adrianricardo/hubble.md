@@ -136,6 +136,18 @@ export default defineSchema({
 		.index("by_workspace", ["workspaceId", "createdAt"])
 		.index("by_document", ["documentId", "createdAt"]),
 
+	notifications: defineTable({
+		userId: v.id("users"),
+		documentId: v.optional(v.id("documents")),
+		type: v.string(),
+		message: v.string(),
+		createdAt: v.number(),
+		readAt: v.optional(v.number()),
+		metadata: v.optional(v.any()),
+	})
+		.index("by_user", ["userId", "createdAt"])
+		.index("by_user_read", ["userId", "readAt", "createdAt"]),
+
 	assets: defineTable({
 		workspaceId: v.id("workspaces"),
 		path: v.string(),

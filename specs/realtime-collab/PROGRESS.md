@@ -267,8 +267,9 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 - [~] Comments + threads anchored to text, @mentions, resolve. Backend
       substrate implemented locally with `commentThreads` and `comments` tables,
       anchored thread creation, replies, listing, and resolve mutation with
-      actor attribution. @mention parsing/notifications and UI remain pending.
-      Verified `convex codegen`, `pnpm check`, and `pnpm build:desktop`.
+      actor attribution. @mention parsing now creates backend notifications for
+      matching users; comment UI remains pending. Verified `convex codegen`,
+      `pnpm check`, and `pnpm build:desktop`.
       Unmerged. — *Owner: Codex · Started: 2026-06-25*
 - [~] Track-changes / suggestion review UI. Implemented locally as a Live
       Document header Suggestions control that opens a review modal for pending
@@ -280,8 +281,10 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 - [~] Activity feed + notifications. Backend activity feed implemented locally
       with `activityEvents`, `documents.listActivity`, and event logging for
       document patches, restores, comment threads/replies/resolution, and
-      suggestion propose/accept/reject. Notification delivery remains pending.
-      Verified `convex codegen`, `pnpm check`, and `pnpm build:desktop`.
+      suggestion propose/accept/reject. Backend mention notifications are now
+      created from comment bodies, with list/mark-read APIs; delivery UI remains
+      pending. Verified `convex codegen`, `pnpm check`, and
+      `pnpm build:desktop`.
       Unmerged. — *Owner: Codex · Started: 2026-06-25*
 
 ## Stage 6 — Docs-parity polish 🟡
@@ -318,6 +321,11 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 
 Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
 
+- 2026-06-25 — Codex — Continued Stage 5 notifications: added backend
+  `notifications`, comment-body @mention extraction, mention notification
+  creation for matching users, and list/mark-read APIs. Notification delivery UI
+  remains pending. Verified `convex codegen`, `pnpm check`, and
+  `pnpm build:desktop`.
 - 2026-06-25 — Codex — Continued Stage 6 docs-parity polish: added trash
   list/restore backend APIs for Live Documents and folders, building on existing
   soft-delete fields. Activity events provide the audit-log substrate;
