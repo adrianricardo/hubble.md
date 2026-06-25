@@ -297,7 +297,13 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
       metadata. Search indexing and UI remain pending. Verified
       `convex codegen`, `pnpm check`, and `pnpm build:desktop`. Unmerged. —
       *Owner: Codex · Started: 2026-06-25*
-- [ ] Export (md/PDF/docx) + import. — *_*
+- [~] Export (md/PDF/docx) + import. Markdown import/export is available via
+      workspace-level `hubble cloud import` / `export`, and targeted markdown
+      document export is implemented locally as `hubble cloud document export
+      --id <documentId> [--format md] [--out file]`. PDF/DOCX export and UI
+      remain pending. Verified `@hubble.md/cli` typecheck/build, `pnpm check`,
+      and `pnpm build:desktop`. Unmerged. — *Owner: Codex · Started:
+      2026-06-25*
 - [ ] Offline edit + merge on reconnect. — *_*
 - [ ] Audit log, trash + restore, admin/role management. — *_*
 
@@ -307,6 +313,12 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 
 Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
 
+- 2026-06-25 — Codex — Continued Stage 6 docs-parity polish: added targeted
+  markdown Live Document export via `hubble cloud document export --id
+  <documentId> [--format md] [--out file]`, building on the existing
+  workspace-level markdown import/export. PDF/DOCX export and UI remain
+  pending. Verified `@hubble.md/cli` typecheck/build, `pnpm check`, and
+  `pnpm build:desktop`.
 - 2026-06-25 — Codex — Continued Stage 6 docs-parity polish: added
   permission-filtered backend cross-document search over Live Document
   title/path/projected markdown with snippets and metadata. Search indexing and

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { parseArgs as parseNodeArgs } from "node:util";
 import {
 	createConvexBackend,
@@ -40,6 +40,8 @@ type CliArgs = {
 	afterHeading?: string;
 	patchMarkdown?: string;
 	file?: string;
+	format?: string;
+	out?: string;
 	watch: boolean;
 	actor?: string;
 	deploymentUrl?: string;
@@ -195,6 +197,9 @@ async function runDocumentCommand(workspacePath: string, parsed: CliArgs) {
 		case "shim":
 			await runDocumentShim(workspacePath, cloudSync.deploymentUrl, parsed);
 			return;
+		case "export":
+			await runDocumentExport(workspacePath, cloudSync.deploymentUrl, parsed);
+			return;
 		default:
 			printDocumentHelp();
 			process.exitCode = 1;
@@ -266,6 +271,40 @@ function documentPatchIntent(parsed: CliArgs) {
 		};
 	}
 	return null;
+}
+
+async function runDocumentExport(
+	workspacePath: string,
+	deploymentUrl: string,
+	parsed: CliArgs,
+) {
+	if (!parsed.workspaceId) {
+		console.error("Missing required --id documentId.");
+		process.exitCode = 1;
+		return;
+	}
+	const format = parsed.format ?? "md";
+	if (format !== "md") {
+		console.error(`Unsupported document export format: ${format}`);
+		process.exitCode = 1;
+		return;
+	}
+	const client = new ConvexHttpClient(deploymentUrl);
+	const document = await client.query(api.documents.getForAgent, {
+		documentId: parsed.workspaceId as Id<"documents">,
+	});
+	if (!document) {
+		console.error(`Document not found: ${parsed.workspaceId}`);
+		process.exitCode = 1;
+		return;
+	}
+	const outPath = resolve(
+		workspacePath,
+		parsed.out ?? document.path ?? `${document.documentId}.md`,
+	);
+	await fs.ensureDir(dirname(outPath));
+	await fs.writeFile(outPath, document.markdown);
+	console.log(`exported ${document.title} to ${outPath}`);
 }
 
 async function runDocumentShim(
@@ -585,6 +624,8 @@ function parseCliArgs(argv: string[]) {
 				"after-heading": { type: "string" },
 				markdown: { type: "string" },
 				file: { type: "string" },
+				format: { type: "string" },
+				out: { type: "string" },
 				watch: { type: "boolean" },
 				actor: { type: "string" },
 			},
@@ -601,6 +642,8 @@ function parseCliArgs(argv: string[]) {
 			afterHeading: values["after-heading"],
 			patchMarkdown: values.markdown,
 			file: values.file,
+			format: values.format,
+			out: values.out,
 			watch: values.watch ?? false,
 			actor: values.actor,
 			deploymentUrl: values.url,
@@ -745,6 +788,9 @@ function printDocumentHelp() {
 	console.log(
 		"  hubble [--cwd path] cloud document shim --id documentId --file staging.md [--watch] [--actor name]",
 	);
+	console.log(
+		"  hubble [--cwd path] cloud document export --id documentId [--format md] [--out file]",
+	);
 	console.log("");
 	console.log(
 		"Reads or patches Live Documents through the agent document API.",
@@ -781,6 +827,9 @@ function printUsage() {
 	);
 	console.error(
 		"  hubble [--cwd path] cloud document shim --id documentId --file staging.md [--watch]",
+	);
+	console.error(
+		"  hubble [--cwd path] cloud document export --id documentId [--format md] [--out file]",
 	);
 	console.error("  hubble [--cwd path] cloud watch");
 	console.error("  hubble [--cwd path] cloud disconnect");
