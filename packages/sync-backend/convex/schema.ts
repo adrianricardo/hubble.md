@@ -7,8 +7,19 @@ export default defineSchema({
 
 	workspaces: defineTable({
 		name: v.string(),
+		ownerId: v.optional(v.id("users")),
 		createdAt: v.number(),
 	}).index("by_name", ["name"]),
+
+	members: defineTable({
+		workspaceId: v.id("workspaces"),
+		userId: v.id("users"),
+		role: v.union(v.literal("owner"), v.literal("admin"), v.literal("member")),
+		createdAt: v.number(),
+	})
+		.index("by_workspace", ["workspaceId"])
+		.index("by_user", ["userId"])
+		.index("by_workspace_user", ["workspaceId", "userId"]),
 
 	files: defineTable({
 		workspaceId: v.id("workspaces"),

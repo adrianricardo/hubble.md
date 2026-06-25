@@ -170,7 +170,13 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
       `convex dev --once --typecheck enable` was blocked by an existing local
       backend on port 3210, but `convex codegen` ran TypeScript successfully.
       Unmerged. — *Owner: Codex · Started: 2026-06-25*
-- [ ] `users`, `members` (workspace membership) tables. — *_*
+- [~] `users`, `members` (workspace membership) tables. Convex Auth's `users`
+      table is now part of the schema, `workspaces` have optional `ownerId`,
+      and a new `members` table records workspace roles. Authenticated workspace
+      creation inserts the creator as owner while legacy unauthenticated
+      workspace creation remains available for CLI/test flows. Verified
+      `convex codegen`, `pnpm check`, and `pnpm build:desktop`. Unmerged. — *Owner: Codex ·
+      Started: 2026-06-25*
 - [ ] `docShares`: per-document roles (owner/editor/commenter/viewer) + link sharing. — *_*
 - [ ] **Server-side enforcement on every query/mutation** — a viewer never receives
       editable steps. — *_*
@@ -210,6 +216,12 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 
 Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
 
+- 2026-06-25 — Codex — Continued Stage 3 team permissions: added workspace
+  membership data modeling with Convex Auth `users`, workspace `ownerId`, and a
+  `members` table keyed by workspace/user. Authenticated workspace creation now
+  records the creator as owner while preserving anonymous legacy CLI/test
+  workspace creation. Verified `convex codegen`, `pnpm check`, and
+  `pnpm build:desktop`.
 - 2026-06-25 — Codex — Started Stage 3 team permissions: chose Convex Auth for
   the current Vite/React + Convex stack, added Convex Auth backend setup and
   tables, wired the web app through `ConvexAuthProvider` with an email/password

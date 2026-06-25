@@ -1,3 +1,4 @@
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import {
@@ -59,6 +60,32 @@ async function upsertFile(
 	});
 }
 
+async function ensureWorkspaceMember(
+	ctx: MutationCtx,
+	args: {
+		workspaceId: Id<"workspaces">;
+		userId: Id<"users">;
+		role: "owner" | "admin" | "member";
+	},
+) {
+	const existing = await ctx.db
+		.query("members")
+		.withIndex("by_workspace_user", (q) =>
+			q.eq("workspaceId", args.workspaceId).eq("userId", args.userId),
+		)
+		.unique();
+	if (existing) {
+		if (existing.role !== args.role) {
+			await ctx.db.patch(existing._id, { role: args.role });
+		}
+		return existing._id;
+	}
+	return ctx.db.insert("members", {
+		...args,
+		createdAt: Date.now(),
+	});
+}
+
 export const getWorkspace = query({
 	args: { name: v.string() },
 	handler: async (ctx, { name }) => {
@@ -77,14 +104,59 @@ export const createWorkspace = mutation({
 			.withIndex("by_name", (q) => q.eq("name", name))
 			.unique();
 		if (existing) throw new Error(`Workspace "${name}" already exists`);
-		return ctx.db.insert("workspaces", { name, createdAt: Date.now() });
+		const ownerId = await getAuthUserId(ctx);
+		const workspaceId = await ctx.db.insert("workspaces", {
+			name,
+			ownerId: ownerId ?? undefined,
+			createdAt: Date.now(),
+		});
+		if (ownerId) {
+			await ensureWorkspaceMember(ctx, {
+				workspaceId,
+				userId: ownerId,
+				role: "owner",
+			});
+		}
+		return workspaceId;
 	},
 });
 
 export const listWorkspaces = query({
 	args: {},
 	handler: async (ctx) => {
-		return ctx.db.query("workspaces").collect();
+		const userId = await getAuthUserId(ctx);
+		const workspaces = await ctx.db.query("workspaces").collect();
+		if (!userId) return workspaces;
+
+		const memberships = await ctx.db
+			.query("members")
+			.withIndex("by_user", (q) => q.eq("userId", userId))
+			.collect();
+		const memberWorkspaceIds = new Set(
+			memberships.map((member) => member.workspaceId),
+		);
+		return workspaces.filter(
+			(workspace) =>
+				workspace.ownerId === undefined ||
+				workspace.ownerId === userId ||
+				memberWorkspaceIds.has(workspace._id),
+		);
+	},
+});
+
+export const listWorkspaceMembers = query({
+	args: { workspaceId: v.id("workspaces") },
+	handler: async (ctx, { workspaceId }) => {
+		const members = await ctx.db
+			.query("members")
+			.withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
+			.collect();
+		return Promise.all(
+			members.map(async (member) => ({
+				...member,
+				user: await ctx.db.get(member.userId),
+			})),
+		);
 	},
 });
 
