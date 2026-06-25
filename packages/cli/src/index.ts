@@ -7,9 +7,11 @@ import {
 } from "@hubble.md/convex-client";
 import {
 	type CloudSyncConfig,
+	changedRange,
 	exportLiveDocuments,
 	importLiveDocuments,
 	readConfigOrDefault,
+	reconcileProjectionFile,
 	removeCloudSyncConfig,
 	sync as runSync,
 	type SyncResult,
@@ -393,81 +395,6 @@ async function runDocumentShim(
 	});
 }
 
-type ReconcileBaseMetadata = {
-	documentId: string;
-	revision: number;
-	path?: string;
-	role?: "owner" | "editor" | "commenter" | "viewer" | null;
-	canWrite?: boolean;
-	projectedAt?: number;
-};
-
-function liveDocumentBaseCacheRoot(workspacePath: string) {
-	return `${workspacePath}/.hubble/state/live-documents`;
-}
-
-function changedRange(baseText: string, nextText: string) {
-	let prefix = 0;
-	while (
-		prefix < baseText.length &&
-		prefix < nextText.length &&
-		baseText[prefix] === nextText[prefix]
-	) {
-		prefix += 1;
-	}
-
-	let baseSuffix = baseText.length;
-	let nextSuffix = nextText.length;
-	while (
-		baseSuffix > prefix &&
-		nextSuffix > prefix &&
-		baseText[baseSuffix - 1] === nextText[nextSuffix - 1]
-	) {
-		baseSuffix -= 1;
-		nextSuffix -= 1;
-	}
-
-	if (prefix === baseText.length && prefix === nextText.length) return null;
-	return {
-		from: prefix,
-		to: baseSuffix,
-		markdown: nextText.slice(prefix, nextSuffix),
-	};
-}
-
-async function readReconcileBase(workspacePath: string, documentId: string) {
-	const root = liveDocumentBaseCacheRoot(workspacePath);
-	const baseMarkdown = await fs.readFileOrNull(`${root}/${documentId}.base.md`);
-	const rawMetadata = await fs.readFileOrNull(`${root}/${documentId}.json`);
-	if (baseMarkdown === null || rawMetadata === null) return null;
-	const metadata = JSON.parse(rawMetadata) as ReconcileBaseMetadata;
-	return { baseMarkdown, metadata };
-}
-
-async function writeReconcileBase(
-	workspacePath: string,
-	documentId: string,
-	args: { markdown: string; revision: number; path?: string },
-) {
-	const root = liveDocumentBaseCacheRoot(workspacePath);
-	await fs.ensureDir(root);
-	await fs.writeFile(`${root}/${documentId}.base.md`, args.markdown);
-	await fs.writeFile(
-		`${root}/${documentId}.json`,
-		JSON.stringify(
-			{
-				documentId,
-				revision: args.revision,
-				path: args.path,
-				canWrite: true,
-				projectedAt: Date.now(),
-			},
-			null,
-			2,
-		),
-	);
-}
-
 async function runDocumentReconcile(
 	workspacePath: string,
 	deploymentUrl: string,
@@ -485,55 +412,34 @@ async function runDocumentReconcile(
 	}
 	const documentId = parsed.workspaceId;
 	const projectionPath = resolve(workspacePath, parsed.file);
+	const backend = createConvexBackend(deploymentUrl);
 	const applyProjectionFile = async () => {
-		const base = await readReconcileBase(workspacePath, documentId);
-		if (!base) {
-			throw new Error(
-				`Missing reconcile base cache for ${documentId}. Run \`hubble cloud project\` before reconciling projection edits.`,
-			);
-		}
-		if (base.metadata.canWrite === false) {
-			throw new Error(
-				`Document ${documentId} is read-only for this user; refusing to reconcile projection edits.`,
-			);
-		}
-		const nextMarkdown = await fs.readFile(projectionPath);
-		const range = changedRange(base.baseMarkdown, nextMarkdown);
-		if (!range) {
-			console.log(`reconcile skipped ${projectionPath}: no changes`);
-			return;
-		}
-
-		const client = new ConvexHttpClient(deploymentUrl);
-		const document = await client.query(api.documents.getForAgent, {
-			documentId: documentId as Id<"documents">,
+		const outcome = await reconcileProjectionFile(backend, fs, {
+			documentId,
+			projectionPath,
+			workspacePath,
+			actor: parsed.actor,
+			path: parsed.file,
 		});
-		if (!document?.canWrite) {
-			throw new Error(
-				`Document ${documentId} is read-only for this user; refusing to reconcile projection edits.`,
-			);
+		switch (outcome.status) {
+			case "backstop":
+				if (outcome.reason === "missing-base") {
+					throw new Error(
+						`Missing reconcile base cache for ${documentId}. Run \`hubble cloud project\` before reconciling projection edits.`,
+					);
+				}
+				throw new Error(
+					`Document ${documentId} is read-only for this user; refusing to reconcile projection edits.`,
+				);
+			case "no-op":
+				console.log(`reconcile skipped ${projectionPath}: no changes`);
+				return;
+			case "reconciled":
+				console.log(
+					`reconciled ${outcome.baseChars} base chars -> ${outcome.newChars} new chars at revision ${outcome.revision}`,
+				);
+				return;
 		}
-		const result = await client.mutation(api.documents.applyPatch, {
-			documentId: documentId as Id<"documents">,
-			baseRevision: base.metadata.revision,
-			intent: {
-				kind: "replace-range",
-				baseMarkdown: base.baseMarkdown,
-				from: range.from,
-				to: range.to,
-				markdown: range.markdown,
-			},
-			actor: parsed.actor ?? "file-reconcile",
-		});
-		await fs.writeFile(projectionPath, result.markdown);
-		await writeReconcileBase(workspacePath, documentId, {
-			markdown: result.markdown,
-			revision: result.revision,
-			path: base.metadata.path ?? parsed.file,
-		});
-		console.log(
-			`reconciled ${range.to - range.from} base chars -> ${range.markdown.length} new chars at revision ${result.revision}`,
-		);
 	};
 
 	await applyProjectionFile();

@@ -71,6 +71,33 @@ export function createConvexBackend(url: string): SyncBackend {
 				workspaceId: args.workspaceId as Id<"workspaces">,
 			});
 		},
+		async getDocumentForAgent(documentId) {
+			const document = await client.query(api.documents.getForAgent, {
+				documentId: documentId as Id<"documents">,
+			});
+			if (!document) return null;
+			return {
+				documentId: document.documentId,
+				revision: document.revision,
+				markdown: document.markdown,
+				path: document.path,
+				role: document.role,
+				canWrite: document.canWrite,
+			};
+		},
+		async applyDocumentPatch(args) {
+			const result = await client.mutation(api.documents.applyPatch, {
+				documentId: args.documentId as Id<"documents">,
+				baseRevision: args.baseRevision,
+				intent: args.intent,
+				actor: args.actor,
+			});
+			return {
+				documentId: result.documentId,
+				revision: result.revision,
+				markdown: result.markdown,
+			};
+		},
 		async getAssets(workspaceId, since) {
 			return client.query(api.sync.getAssetsByWorkspace, {
 				workspaceId: workspaceId as Id<"workspaces">,

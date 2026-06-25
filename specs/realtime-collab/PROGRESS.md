@@ -508,6 +508,15 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
       changes to the reconcile path instead of conflict classification
       (`apps/desktop/src/externalFileChange.ts`, `apps/www/src/store/actions.ts`),
       with a `*.local-edit-<ts>` conflict-copy backstop. — *_*
+  - [x] **Phase 0** (no behavior change): extracted the CLI reconcile core into
+        a reusable `@hubble.md/sync` export (`reconcileProjectionFile`,
+        `changedRange`, `readReconcileBase`/`writeReconcileBase`,
+        `toLocalEditName`) + new `getDocumentForAgent`/`applyDocumentPatch` on
+        `SyncBackend` (impl in `@hubble.md/convex-client`). The CLI
+        `hubble cloud document reconcile` now delegates to the shared module;
+        same I/O, base-cache, read-only, and `--watch` semantics. Unit tests in
+        `packages/sync/src/reconcile.test.ts`. Phases 1–6 (tray, watcher-in-main,
+        routing, backstop wiring) remain gated on pending human decisions.
 - [ ] Offline edit + merge on reconnect — two flavors (Decision 6): in-editor (CRDT
       local buffer/replay; Yjs/`y-indexeddb` fallback if prosemirror-sync offline is
       insufficient) and external-file (watcher queues edits, flushes on reconnect via
@@ -525,6 +534,13 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 
 Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
 
+- 2026-06-25 — Opus — Desktop always-on Phase 0: extracted the CLI reconcile
+  loop into a reusable `@hubble.md/sync` reconciler (`reconcileProjectionFile`
+  + helpers, `toLocalEditName`) and added `getDocumentForAgent`/
+  `applyDocumentPatch` to `SyncBackend` (Convex impl). CLI `cloud document
+  reconcile` now delegates with no behavior change. New
+  `packages/sync/src/reconcile.test.ts` (14 tests). Verified sync+cli builds,
+  `pnpm typecheck` clean across all 6 TS packages, tests pass, `pnpm check` clean.
 - 2026-06-25 — Sonnet — Stage 6 cross-document search UI (Task A): added a
   debounced search input to the Live Documents sidebar section in `Sidebar.tsx`.
   Uses `useQuery(api.documents.search, ..., "skip")` — no query on empty input.

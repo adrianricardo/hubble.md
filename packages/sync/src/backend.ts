@@ -5,6 +5,32 @@ import type {
 	RemoteFile,
 } from "./types.js";
 
+/** A Live Document as seen by an agent/reconcile client. */
+export type AgentDocument = {
+	documentId: string;
+	revision: number;
+	markdown: string;
+	path?: string | null;
+	role?: "owner" | "editor" | "commenter" | "viewer" | null;
+	canWrite: boolean;
+};
+
+/** Scoped, rebasable replace-range patch used by the file reconciler. */
+export type ReplaceRangeIntent = {
+	kind: "replace-range";
+	baseMarkdown: string;
+	from: number;
+	to: number;
+	markdown: string;
+};
+
+/** Result of applying a document patch. */
+export type DocumentPatchResult = {
+	documentId: string;
+	revision: number;
+	markdown: string;
+};
+
 /** Backend-agnostic interface for sync operations. */
 export interface SyncBackend {
 	getWorkspace(name: string): Promise<string | null>;
@@ -35,6 +61,14 @@ export interface SyncBackend {
 		markdown: string;
 		actor?: string;
 	}): Promise<LiveDocumentImport>;
+
+	getDocumentForAgent(documentId: string): Promise<AgentDocument | null>;
+	applyDocumentPatch(args: {
+		documentId: string;
+		baseRevision: number;
+		intent: ReplaceRangeIntent;
+		actor?: string;
+	}): Promise<DocumentPatchResult>;
 
 	getAssets(workspaceId: string, since?: number): Promise<RemoteAsset[]>;
 	pushAsset(args: {

@@ -1,4 +1,9 @@
-export type { SyncBackend } from "./backend.js";
+export type {
+	AgentDocument,
+	DocumentPatchResult,
+	ReplaceRangeIntent,
+	SyncBackend,
+} from "./backend.js";
 export {
 	isInitialized,
 	readConfig,
@@ -16,6 +21,21 @@ export type {
 	LocalFile,
 } from "./fs.js";
 export { contentHash } from "./fs.js";
+export type {
+	BackstopReason,
+	ChangedRange,
+	ReconcileBaseMetadata,
+	ReconcileOutcome,
+	ReconcileProjectionFileArgs,
+} from "./reconcile.js";
+export {
+	changedRange,
+	liveDocumentBaseCacheRoot,
+	readReconcileBase,
+	reconcileProjectionFile,
+	toLocalEditName,
+	writeReconcileBase,
+} from "./reconcile.js";
 export {
 	exportLiveDocuments,
 	importLiveDocuments,
