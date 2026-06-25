@@ -1,10 +1,48 @@
+import { getHubbleEditorSchema, tiptapDocToMarkdown } from "@hubble.md/editor";
+import { Step, Transform } from "@tiptap/pm/transform";
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { components } from "./_generated/api";
+import { mutation, type QueryCtx, query } from "./_generated/server";
 
 function normalizeTitle(title: string): string {
 	const trimmed = title.trim();
 	if (!trimmed) throw new Error("Document title is required");
 	return trimmed;
+}
+
+function syncDocumentId(documentId: string): string {
+	return `document:${documentId}`;
+}
+
+async function projectMarkdown(
+	ctx: QueryCtx,
+	documentId: string,
+): Promise<{ markdown: string; version: number | null }> {
+	const schema = getHubbleEditorSchema();
+	const id = syncDocumentId(documentId);
+	const snapshot = (await ctx.runQuery(
+		components.prosemirrorSync.lib.getSnapshot,
+		{ id },
+	)) as { content: string | null; version?: number };
+	if (!snapshot.content || snapshot.version === undefined) {
+		// A document row can exist before the editor creates its first live
+		// ProseMirror snapshot; read projection should stay empty, not fail.
+		return { markdown: "", version: null };
+	}
+	const transform = new Transform(
+		schema.nodeFromJSON(JSON.parse(snapshot.content)),
+	);
+	const latest = (await ctx.runQuery(components.prosemirrorSync.lib.getSteps, {
+		id,
+		version: snapshot.version,
+	})) as { steps: string[]; version: number };
+	for (const step of latest.steps) {
+		transform.step(Step.fromJSON(schema, JSON.parse(step)));
+	}
+	return {
+		markdown: tiptapDocToMarkdown(transform.doc.toJSON()),
+		version: latest.version,
+	};
 }
 
 export const list = query({
@@ -26,6 +64,20 @@ export const get = query({
 		const document = await ctx.db.get(documentId);
 		if (!document || document.deletedAt !== undefined) return null;
 		return document;
+	},
+});
+
+export const getWithMarkdown = query({
+	args: { documentId: v.id("documents") },
+	handler: async (ctx, { documentId }) => {
+		const document = await ctx.db.get(documentId);
+		if (!document || document.deletedAt !== undefined) return null;
+		const projection = await projectMarkdown(ctx, documentId);
+		return {
+			...document,
+			markdown: projection.markdown,
+			version: projection.version,
+		};
 	},
 });
 

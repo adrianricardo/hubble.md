@@ -328,7 +328,7 @@ function LiveDocumentView({
 	documentId: string;
 	testIdentity: TestIdentity | null;
 }) {
-	const document = useQuery(api.documents.get, {
+	const document = useQuery(api.documents.getWithMarkdown, {
 		documentId: documentId as Id<"documents">,
 	});
 	// Live Documents must not follow mutable path/title metadata; the Convex
@@ -365,7 +365,7 @@ function LiveDocumentView({
 			<EditorView
 				workspaceId={workspaceId}
 				path={path}
-				initialMarkdown=""
+				initialMarkdown={document.markdown}
 				syncDocumentId={syncDocId}
 				testIdentity={testIdentity}
 			/>

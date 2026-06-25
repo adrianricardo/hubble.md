@@ -48,7 +48,7 @@ tests fail or a step was skipped, say so in the task note.
 | Stage | Status | Summary |
 |---|---|---|
 | 1. Realtime editing POC | 🟡 In progress | Spike scaffolded; gate provisionally passed (see SPIKE.md). POC identity gate added locally; live two-browser test pending. |
-| 2. Documents as cloud entities | 🟡 In progress | Stable doc table + web CRUD implemented locally; markdown projection pending |
+| 2. Documents as cloud entities | 🟡 In progress | Stable doc table, web CRUD, and read projection implemented locally; sync import/export pending |
 | 3. Team permissions | 🔴 Not started | Users, members, per-doc roles, sharing |
 | 4. Agent collaboration (Model C) | 🔴 Not started | Doc patch API + MCP/CLI, projection, legacy shim |
 | 5. Version history & review | 🔴 Not started | Revisions + restore, comments, suggestions |
@@ -128,7 +128,13 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
       `pnpm build:desktop`, and Vite served `?test=1`; interactive browser smoke
       was skipped because no Browser tool/Playwright dependency was available.
       Unmerged. — *Owner: Codex · Started: 2026-06-24*
-- [ ] One-way markdown **projection on read** (doc → markdown). — *_*
+- [~] One-way markdown **projection on read** (doc → markdown). Implemented
+      locally as `documents.getWithMarkdown`, which reads the stable live
+      ProseMirror doc (`document:<id>`) and serializes it with the existing
+      Hubble markdown converter. Web document routes now use the projected read
+      query. Verified `convex codegen`, a local Convex HTTP smoke returning
+      projected markdown, `@hubble.md/www` build, `pnpm check`, and
+      `pnpm build:desktop`. Unmerged. — *Owner: Codex · Started: 2026-06-24*
 - [ ] Migrate the whole-file sync path (`packages/sync`) to an import/export role. — *_*
 - [ ] "Last edited by / at" on documents. — *_*
 
@@ -175,6 +181,12 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 
 Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
 
+- 2026-06-24 — Codex — Continued Stage 2 cloud document entities: added
+  one-way markdown projection on read via `documents.getWithMarkdown`, using the
+  stable live ProseMirror document ID (`document:<id>`) and the existing Hubble
+  markdown serializer. Web document routes now consume the projected read query.
+  Verified `convex codegen`, a local Convex HTTP smoke returning projected
+  markdown, `@hubble.md/www` build, `pnpm check`, and `pnpm build:desktop`.
 - 2026-06-24 — Codex — Continued Stage 2 cloud document entities: added Convex
   document CRUD functions, stable web document routes, a Live Documents sidebar
   section for list/create/rename/delete, and document-mode editor loading using a
