@@ -51,7 +51,7 @@ tests fail or a step was skipped, say so in the task note.
 | 2. Documents as cloud entities | 🟡 In progress | Stable doc table, web CRUD, and read projection implemented locally; sync import/export pending |
 | 3. Team permissions | 🟡 In progress | Convex Auth password provider wired locally; memberships, shares, and enforcement pending |
 | 4. Agent collaboration (Model C) | 🟡 In progress | Agent read API started; patch API + MCP/CLI, projection, legacy shim pending |
-| 5. Version history & review | 🔴 Not started | Revisions + restore, comments, suggestions |
+| 5. Version history & review | 🟡 In progress | Revisions table and materialization started; restore/comments/review UI pending |
 | 6. Docs-parity polish | 🔴 Not started | Folders, search, export/import, offline, admin |
 
 ---
@@ -247,10 +247,16 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
       Verified `convex codegen`, `pnpm check`, and `pnpm build:desktop`.
       Unmerged. — *Owner: Codex · Started: 2026-06-25*
 
-## Stage 5 — Version history & review 🔴
+## Stage 5 — Version history & review 🟡
 
-- [ ] `revisions` table: `{ documentId, createdAt, actor, label?, pmDoc, markdown,
-      crdtMeta }`, materialized on boundaries + before restore. — *_*
+- [~] `revisions` table: `{ documentId, createdAt, actor, label?, pmDoc, markdown,
+      crdtMeta }`, materialized on boundaries + before restore. Implemented
+      locally with a `revisions` table, `documents.materializeRevision`,
+      `documents.listRevisions`, and automatic pre-patch snapshots before agent
+      `applyPatch` changes. Revision rows store projected markdown,
+      ProseMirror JSON, revision number, and CRDT metadata. Verified
+      `convex codegen`, `pnpm check`, and `pnpm build:desktop`. Unmerged. —
+      *Owner: Codex · Started: 2026-06-25*
 - [ ] Version history UI: browse + **restore as a new change** (never mutate history). — *_*
 - [ ] Comments + threads anchored to text, @mentions, resolve. — *_*
 - [ ] Track-changes / suggestion review UI. — *_*
@@ -270,6 +276,10 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 
 Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
 
+- 2026-06-25 — Codex — Started Stage 5 version history: added the `revisions`
+  table plus manual/list revision APIs and automatic pre-agent-patch snapshots
+  storing markdown projection, ProseMirror JSON, revision number, and CRDT
+  metadata. Verified `convex codegen`, `pnpm check`, and `pnpm build:desktop`.
 - 2026-06-25 — Codex — Continued Stage 4 agent collaboration: added backend
   suggestion mode with `documentSuggestions` plus propose/list/accept/reject
   mutations. Accepting suggestions reuses the stale-revision checked

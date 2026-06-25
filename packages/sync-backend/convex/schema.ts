@@ -79,6 +79,17 @@ export default defineSchema({
 		.index("by_document", ["documentId", "createdAt"])
 		.index("by_document_status", ["documentId", "status", "createdAt"]),
 
+	revisions: defineTable({
+		documentId: v.id("documents"),
+		createdAt: v.number(),
+		actor: v.optional(v.string()),
+		label: v.optional(v.string()),
+		pmDoc: v.any(),
+		markdown: v.string(),
+		revision: v.number(),
+		crdtMeta: v.optional(v.any()),
+	}).index("by_document", ["documentId", "createdAt"]),
+
 	assets: defineTable({
 		workspaceId: v.id("workspaces"),
 		path: v.string(),

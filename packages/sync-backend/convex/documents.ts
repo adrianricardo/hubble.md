@@ -152,7 +152,11 @@ async function replaceLiveDocumentMarkdown(
 async function projectMarkdown(
 	ctx: MutationCtx | QueryCtx,
 	documentId: string,
-): Promise<{ markdown: string; version: number | null }> {
+): Promise<{
+	markdown: string;
+	version: number | null;
+	pmDoc: unknown | null;
+}> {
 	const schema = getHubbleEditorSchema();
 	const id = syncDocumentId(documentId);
 	const snapshot = (await ctx.runQuery(
@@ -162,7 +166,7 @@ async function projectMarkdown(
 	if (!snapshot.content || snapshot.version === undefined) {
 		// A document row can exist before the editor creates its first live
 		// ProseMirror snapshot; read projection should stay empty, not fail.
-		return { markdown: "", version: null };
+		return { markdown: "", version: null, pmDoc: null };
 	}
 	const transform = new Transform(
 		schema.nodeFromJSON(JSON.parse(snapshot.content)),
@@ -177,6 +181,7 @@ async function projectMarkdown(
 	return {
 		markdown: tiptapDocToMarkdown(transform.doc.toJSON()),
 		version: latest.version,
+		pmDoc: transform.doc.toJSON(),
 	};
 }
 
@@ -258,6 +263,12 @@ async function applyPatchToDocument(
 		);
 	}
 
+	await materializeRevisionForDocument(ctx, {
+		documentId: args.documentId,
+		actor: args.actor?.trim() || "Agent",
+		label: "Before agent patch",
+	});
+
 	const nextMarkdown =
 		args.intent.kind === "replace-document"
 			? args.intent.markdown
@@ -288,6 +299,28 @@ async function applyPatchToDocument(
 		outline: markdownOutline(projection.markdown),
 		updatedAt: now,
 	};
+}
+
+async function materializeRevisionForDocument(
+	ctx: MutationCtx,
+	args: {
+		documentId: Id<"documents">;
+		actor?: string;
+		label?: string;
+	},
+) {
+	await requireDocumentRead(ctx, args.documentId);
+	const projection = await projectMarkdown(ctx, args.documentId);
+	return ctx.db.insert("revisions", {
+		documentId: args.documentId,
+		createdAt: Date.now(),
+		actor: args.actor,
+		label: args.label,
+		pmDoc: projection.pmDoc,
+		markdown: projection.markdown,
+		revision: projection.version ?? 0,
+		crdtMeta: { prosemirrorVersion: projection.version ?? 0 },
+	});
 }
 
 function markdownOutline(markdown: string) {
@@ -372,6 +405,33 @@ export const getForAgent = query({
 			updatedAt: document.updatedAt,
 			updatedBy: document.updatedBy,
 		};
+	},
+});
+
+export const listRevisions = query({
+	args: { documentId: v.id("documents") },
+	handler: async (ctx, { documentId }) => {
+		await requireDocumentRead(ctx, documentId);
+		return ctx.db
+			.query("revisions")
+			.withIndex("by_document", (q) => q.eq("documentId", documentId))
+			.collect();
+	},
+});
+
+export const materializeRevision = mutation({
+	args: {
+		documentId: v.id("documents"),
+		label: v.optional(v.string()),
+		actor: v.optional(v.string()),
+	},
+	handler: async (ctx, { documentId, label, actor }) => {
+		await requireDocumentWrite(ctx, documentId);
+		return materializeRevisionForDocument(ctx, {
+			documentId,
+			label: label?.trim() || undefined,
+			actor: actor?.trim() || "Manual snapshot",
+		});
 	},
 });
 
