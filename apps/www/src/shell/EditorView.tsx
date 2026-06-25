@@ -31,6 +31,7 @@ type Props = {
 	syncDocumentId?: string;
 	testIdentity: TestIdentity | null;
 	onLiveDocumentEdit?: () => void;
+	onSelectionChange?: (selection: { anchor: number; head: number }) => void;
 };
 
 const CURSOR_HEARTBEAT_MIN_MS = 250;
@@ -52,6 +53,7 @@ export function EditorView({
 	syncDocumentId,
 	testIdentity,
 	onLiveDocumentEdit,
+	onSelectionChange: onExternalSelectionChange,
 }: Props) {
 	const files = useStoreValue(filesStore);
 	const docId = useMemo(
@@ -100,6 +102,7 @@ export function EditorView({
 
 	const publishSelection = useCallback(
 		(selection: { anchor: number; head: number }) => {
+			onExternalSelectionChange?.(selection);
 			if (!testIdentity) return;
 			const now = Date.now();
 			if (now - lastCursorHeartbeatRef.current < CURSOR_HEARTBEAT_MIN_MS) {
@@ -115,7 +118,13 @@ export function EditorView({
 				head: selection.head,
 			});
 		},
-		[convexWorkspaceId, docId, heartbeat, testIdentity],
+		[
+			convexWorkspaceId,
+			docId,
+			heartbeat,
+			onExternalSelectionChange,
+			testIdentity,
+		],
 	);
 	const handleLiveDocumentChange = useCallback(
 		(_path: string, _markdown: string) => {

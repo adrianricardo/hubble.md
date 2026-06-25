@@ -4,7 +4,7 @@ import type { Doc, Id } from "@hubble.md/sync-backend/types";
 import { Modal, Sidebar as SharedSidebar } from "@hubble.md/ui";
 import { useStoreValue } from "@simplestack/store/react";
 import { useMutation, useQuery } from "convex/react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import MingcuteAddLine from "~icons/mingcute/add-line";
 import MingcuteCheckLine from "~icons/mingcute/check-line";
 import MingcuteDeleteLine from "~icons/mingcute/delete-line";
@@ -102,6 +102,27 @@ function LiveDocumentsSection({
 	const renameDocument = useMutation(api.documents.rename);
 	const removeDocument = useMutation(api.documents.remove);
 
+	const [searchInput, setSearchInput] = useState("");
+	const [debouncedQuery, setDebouncedQuery] = useState("");
+	const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+	const searchResults = useQuery(
+		api.documents.search,
+		debouncedQuery.trim()
+			? { workspaceId: convexWorkspaceId, query: debouncedQuery }
+			: "skip",
+	);
+
+	useEffect(() => {
+		if (debounceRef.current) clearTimeout(debounceRef.current);
+		debounceRef.current = setTimeout(() => {
+			setDebouncedQuery(searchInput);
+		}, 200);
+		return () => {
+			if (debounceRef.current) clearTimeout(debounceRef.current);
+		};
+	}, [searchInput]);
+
 	const handleCreateDocument = async () => {
 		const documentId = await createDocument({
 			workspaceId: convexWorkspaceId,
@@ -121,6 +142,8 @@ function LiveDocumentsSection({
 		await removeDocument({ documentId: document._id });
 	};
 
+	const isSearching = debouncedQuery.trim().length > 0;
+
 	return (
 		<section className="border-t border-sidebar-border [padding-block:0.5rem] [padding-inline:0.5rem]">
 			<div className="flex items-center justify-between gap-2 [padding-block-end:0.25rem] [padding-inline:0.25rem]">
@@ -137,28 +160,75 @@ function LiveDocumentsSection({
 					<MingcuteAddLine className="size-3.5" />
 				</button>
 			</div>
-			<div className="flex max-h-36 flex-col overflow-auto">
-				{documents === undefined && (
-					<p className="m-0 text-xs text-muted-foreground [padding-block:0.375rem] [padding-inline:0.25rem]">
-						Loading…
-					</p>
-				)}
-				{documents?.length === 0 && (
-					<p className="m-0 text-xs text-muted-foreground [padding-block:0.375rem] [padding-inline:0.25rem]">
-						No live documents yet.
-					</p>
-				)}
-				{documents?.map((document) => (
-					<LiveDocumentRow
-						key={document._id}
-						document={document}
-						selected={document._id === selectedDocumentId}
-						onSelect={() => onSelectDocument(document._id)}
-						onRename={() => void handleRenameDocument(document)}
-						onRemove={() => void handleRemoveDocument(document)}
-					/>
-				))}
-			</div>
+			<input
+				type="search"
+				value={searchInput}
+				onChange={(e) => setSearchInput(e.target.value)}
+				placeholder="Search documents…"
+				className="mb-1 w-full rounded-sm border border-border bg-background text-[11px] text-foreground outline-none placeholder:text-muted-foreground focus:border-ring [padding-block:0.25rem] [padding-inline:0.5rem]"
+			/>
+			{isSearching ? (
+				<div className="flex max-h-48 flex-col overflow-auto">
+					{searchResults === undefined && (
+						<p className="m-0 text-xs text-muted-foreground [padding-block:0.375rem] [padding-inline:0.25rem]">
+							Searching…
+						</p>
+					)}
+					{searchResults?.length === 0 && (
+						<p className="m-0 text-xs text-muted-foreground [padding-block:0.375rem] [padding-inline:0.25rem]">
+							No results for "{debouncedQuery}".
+						</p>
+					)}
+					{searchResults?.map((result) => (
+						<button
+							key={result.documentId}
+							type="button"
+							className="group flex flex-col rounded-sm text-start hover:bg-sidebar-accent [padding-block:0.375rem] [padding-inline:0.5rem]"
+							onClick={() => {
+								onSelectDocument(result.documentId);
+								setSearchInput("");
+							}}
+						>
+							<span className="block truncate text-[length:var(--font-size-sidebar)] font-medium text-sidebar-foreground">
+								{result.title}
+							</span>
+							{result.path && (
+								<span className="block truncate text-[10px] text-muted-foreground">
+									{result.path}
+								</span>
+							)}
+							{result.snippet && (
+								<span className="mt-0.5 block truncate text-[10px] text-muted-foreground">
+									{result.snippet}
+								</span>
+							)}
+						</button>
+					))}
+				</div>
+			) : (
+				<div className="flex max-h-36 flex-col overflow-auto">
+					{documents === undefined && (
+						<p className="m-0 text-xs text-muted-foreground [padding-block:0.375rem] [padding-inline:0.25rem]">
+							Loading…
+						</p>
+					)}
+					{documents?.length === 0 && (
+						<p className="m-0 text-xs text-muted-foreground [padding-block:0.375rem] [padding-inline:0.25rem]">
+							No live documents yet.
+						</p>
+					)}
+					{documents?.map((document) => (
+						<LiveDocumentRow
+							key={document._id}
+							document={document}
+							selected={document._id === selectedDocumentId}
+							onSelect={() => onSelectDocument(document._id)}
+							onRename={() => void handleRenameDocument(document)}
+							onRemove={() => void handleRemoveDocument(document)}
+						/>
+					))}
+				</div>
+			)}
 		</section>
 	);
 }

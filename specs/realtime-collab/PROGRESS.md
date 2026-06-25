@@ -447,9 +447,16 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
       substrate implemented locally with `commentThreads` and `comments` tables,
       anchored thread creation, replies, listing, and resolve mutation with
       actor attribution. @mention parsing now creates backend notifications for
-      matching users; comment UI remains pending. Verified `convex codegen`,
-      `pnpm check`, and `pnpm build:desktop`.
-      Unmerged. — *Owner: Codex · Started: 2026-06-25*
+      matching users. Web UI implemented: a "Comments" button in the Live
+      Document header opens a modal with a new-comment composer (captures the
+      current editor selection as the anchor via a ref lifted into
+      `LiveDocumentView`), a thread list (newest-first) with per-comment
+      author/body/time, inline reply input (Enter to submit), and a Resolve
+      button that hides the thread; resolved threads show a collapsed count.
+      Editor-decoration and @mention autocomplete are deferred as stretch items.
+      Verified `pnpm typecheck` clean across all 6 TS packages and
+      `pnpm --filter @hubble.md/www build` clean. Visual browser pass pending
+      human. Unmerged. — *Owner: Sonnet · Started: 2026-06-25 · Landed: 2026-06-25*
 - [~] Track-changes / suggestion review UI. Implemented locally as a Live
       Document header Suggestions control that opens a review modal for pending
       agent suggestions and lets users accept or reject them through the
@@ -461,10 +468,14 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
       with `activityEvents`, `documents.listActivity`, and event logging for
       document patches, restores, comment threads/replies/resolution, and
       suggestion propose/accept/reject. Backend mention notifications are now
-      created from comment bodies, with list/mark-read APIs; delivery UI remains
-      pending. Verified `convex codegen`, `pnpm check`, and
-      `pnpm build:desktop`.
-      Unmerged. — *Owner: Codex · Started: 2026-06-25*
+      created from comment bodies, with list/mark-read APIs. Web UI implemented:
+      an "Activity" button in the Live Document header opens a modal listing
+      events newest-first (message, actor, formatted time). Notification bell
+      requires an authenticated Convex user and returns [] in ?test=1 mode —
+      noted in the UI and deferred per the brief's honest caveat. Verified
+      `pnpm typecheck` clean across all 6 TS packages and
+      `pnpm --filter @hubble.md/www build` clean. Visual browser pass pending
+      human. Unmerged. — *Owner: Sonnet · Started: 2026-06-25 · Landed: 2026-06-25*
 
 ## Stage 6 — Docs-parity polish 🟡
 
@@ -476,9 +487,14 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 - [~] Cross-document search. Backend search query implemented locally as
       `documents.search`, scanning readable Live Documents in a workspace across
       title/path/projected markdown and returning snippets with document
-      metadata. Search indexing and UI remain pending. Verified
-      `convex codegen`, `pnpm check`, and `pnpm build:desktop`. Unmerged. —
-      *Owner: Codex · Started: 2026-06-25*
+      metadata. Web UI implemented: a search input at the top of the Live
+      Documents sidebar section; debounces input 200ms then queries
+      `documents.search` via `useQuery(..., "skip")` for empty input; results
+      show title, optional path, and snippet; clicking a result calls
+      `onSelectDocument` and clears the input. Verified `pnpm typecheck` clean
+      across all 6 TS packages and `pnpm --filter @hubble.md/www build` clean.
+      Visual browser pass pending human. Unmerged. —
+      *Owner: Sonnet · Started: 2026-06-25 · Landed: 2026-06-25*
 - [~] Export (md/PDF/docx) + import. Markdown import/export is available via
       workspace-level `hubble cloud import` / `export`, and targeted markdown
       document export is implemented locally as `hubble cloud document export
@@ -509,6 +525,31 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 
 Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
 
+- 2026-06-25 — Sonnet — Stage 6 cross-document search UI (Task A): added a
+  debounced search input to the Live Documents sidebar section in `Sidebar.tsx`.
+  Uses `useQuery(api.documents.search, ..., "skip")` — no query on empty input.
+  Results show title, path, and snippet; clicking navigates to the document and
+  clears the input. Verified `pnpm typecheck` clean across all 6 TS packages,
+  `pnpm --filter @hubble.md/www build` clean, and `pnpm check` clean. Visual
+  browser pass pending human.
+- 2026-06-25 — Sonnet — Stage 5 comments UI (Task B): added `CommentsButton` to
+  the Live Document header in `AppShell.tsx`. Opens a modal with a new-comment
+  composer (captures ProseMirror selection via a ref in `LiveDocumentView`,
+  anchored as `{ from, to }`), a thread list with per-comment author/body/time,
+  inline reply input (Enter to submit), and a Resolve button. Resolved threads
+  show a collapsed count. Also added optional `onSelectionChange` prop to
+  `EditorView.tsx` (called before the existing cursor heartbeat throttle, so
+  auth-less calls still work). Editor-decoration and @mention autocomplete are
+  deferred stretch items. Verified `pnpm typecheck` + www build + `pnpm check`
+  clean. Visual browser pass pending human.
+- 2026-06-25 — Sonnet — Stage 5 activity feed UI (Task C): added `ActivityButton`
+  to the Live Document header in `AppShell.tsx`. Opens a modal listing
+  `documents.listActivity` events newest-first (message, actor, time). Activity
+  is lazy-loaded only when the modal is open. Notification bell (`listNotifications`)
+  requires an authenticated Convex user and returns [] in ?test=1 — noted in the
+  UI footer and recorded here per the brief's honest caveat; the bell is deferred
+  to an authenticated session. Verified `pnpm typecheck` + www build + `pnpm check`
+  clean. Visual browser pass pending human.
 - 2026-06-25 — Sonnet — Stage 5 version history UI: added `VersionHistoryButton`
   to the Live Document header in `apps/www`; opens a modal listing all revisions
   (newest first) with date, actor/label, revision number, and markdown preview.
