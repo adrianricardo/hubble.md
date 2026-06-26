@@ -383,7 +383,9 @@ function SignedInCloudSync({ deploymentUrl }: { deploymentUrl: string }) {
 					</p>
 				</div>
 				{status?.lastError ? (
-					<p className="text-xs text-destructive">{status.lastError}</p>
+					<p className="text-xs text-destructive">
+						{status.lastError} Try refreshing status or reconnecting the folder.
+					</p>
 				) : null}
 			</div>
 
@@ -554,40 +556,45 @@ function getSyncedFolderStatusView(status: SyncedFolderStatus | null): {
 function showSyncedFolderToast(event: SyncedFolderEvent) {
 	switch (event.kind) {
 		case "reconciled":
-			toast.success("Synced folder edit uploaded");
+			// This can fire often while editing; the status line already updates.
 			return;
 		case "renamed":
-			toast.success("Synced folder rename uploaded");
+			toast.success("Rename synced");
 			return;
 		case "moved":
-			toast.success("Synced folder move uploaded");
+			toast.success("Move synced");
 			return;
 		case "created":
-			toast.success("Synced folder document created");
+			toast.success("Document added to the cloud");
 			return;
 		case "removed-local":
-			toast("Synced folder document removed");
+			toast("Removed from the cloud", {
+				description: "You can restore it from Trash.",
+			});
 			return;
 		case "removed-access":
-			toast("Access changed for a synced document", {
-				description: "The local copy was moved to the synced-folder trash.",
+			toast("You no longer have access", {
+				description: "Your local copy was moved to Trash.",
 			});
 			return;
 		case "read-only-rejected":
-			toast.error("Read-only document was not changed", {
-				description: "Your local edit was saved beside the document.",
+			toast.error("This document is read-only for you", {
+				description:
+					"Your edit was kept as a .local-edit copy beside the document.",
 			});
 			return;
 		case "backstop":
-			toast.error("Synced folder edit needs review", {
+			toast("Your local edit was preserved", {
 				description:
 					event.reason === "missing-base"
-						? "The local edit was preserved because the base cache was missing."
-						: "The local edit was preserved because the document is read-only.",
+						? "Hubble saved it as a .local-edit file and reloaded the latest cloud version."
+						: "This document is read-only, so Hubble kept your edit as a .local-edit copy.",
 			});
 			return;
 		case "error":
-			toast.error("Synced folder error");
+			toast.error("Synced folder needs attention", {
+				description: "Refresh status or reconnect the folder.",
+			});
 			return;
 	}
 }

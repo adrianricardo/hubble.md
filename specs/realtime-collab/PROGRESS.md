@@ -41,8 +41,15 @@ next work is decomposed into model-tiered, dispatch-ready slices:
   Convex revision update, and no conflict/backstop file. **UX follow-up fixed
   locally 2026-06-26:** Hubble now skips identical projection rewrites after
   reconcile/materialize, and an already-open synced-folder editor refreshes clean
-  documents from disk while preserving dirty in-editor edits. Next pickup: **RT4**
-  copy polish or **RT5** runbook/smoke support.
+  documents from disk while preserving dirty in-editor edits. **RT4 landed locally
+  2026-06-26**: synced-folder event copy now uses quiet status-line updates for
+  high-frequency reconciles, clear success toasts for rename/move/create/remove,
+  and non-alarming `.local-edit`/read-only/backstop messages. **RT5 landed locally
+  2026-06-26**: `TEST-RUNBOOK.md` now walks the human deployed-backend smoke, and
+  `scripts/synced-folder-reconcile-smoke.mjs` provides an authenticated package
+  smoke for the base-cache diff → `reconcileProjectionFile` → Convex patch path.
+  The script syntax/help path is verified; a real deployed run still needs
+  `CONVEX_URL` + `AUTH_TOKEN`.
 - **`READY-TO-DEPLOY.plan.md`** — RD1–RD12 roadmap to full production (reactive
   cloud→disk sync, schema migration, the doc-size + offline **gates**, auth audit,
   security review, flag-gated merge-to-main, release, monitoring). Briefs expand at
@@ -730,6 +737,20 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 
 Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
 
+- 2026-06-26 — Codex — RT5 ready-to-test runbook/smoke support landed:
+  documented the manual deployed-backend synced-folder test path in
+  `TEST-RUNBOOK.md` and added `scripts/synced-folder-reconcile-smoke.mjs`, an
+  authenticated package-level smoke that seeds a Live Document, writes the base
+  cache, edits the projection, runs `reconcileProjectionFile`, and asserts the
+  cloud markdown advanced. Verified targeted Biome, `node --check`, and script
+  `--help`; full deployed execution still requires a real `CONVEX_URL` +
+  `AUTH_TOKEN`.
+- 2026-06-26 — Codex — RT4 ready-to-test copy pass landed: synced-folder
+  reconciles now update the status line without toast spam, rename/move/create and
+  removal events use final human-facing messages, read-only/backstop events explain
+  the `.local-edit` safety copy, and status errors include a refresh/reconnect
+  hint. Verified `pnpm typecheck`, `pnpm --filter @hubble.md/desktop test -- --run`,
+  and `pnpm build:desktop`.
 - 2026-06-26 — Codex (orchestrated, reviewed) — Fixed the two ready-to-test
   synced-folder UX gaps found during human smoke: `reconcileProjectionFile` and
   `materializeSyncedFolder` now avoid rewriting projection files when the
