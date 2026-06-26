@@ -17,6 +17,33 @@ This block is the authoritative pickup pointer. It was written after verifying
 the working tree against the task notes below, because the per-task notes are
 honest but easy to misread. **Read this before the protocol section.**
 
+### 📋 Next-phase plans (start here for new work, added 2026-06-26)
+
+Desktop synced-folder **Phases 0–5 are landed (unmerged) and unit-verified**. The
+next work is decomposed into model-tiered, dispatch-ready slices:
+
+- **`READY-TO-TEST.plan.md`** — slices to make the synced folder **human-testable**
+  end-to-end (deployed fork Convex + real sign-in). **RT1** (auth + main-process
+  token plumbing) is the gate; **RT1 + RT2 is enough to smoke-test an empty
+  `~/Hubble`**; RT3 (first-run guard) is needed before a non-empty folder. Full
+  briefs in `tasks/RT1…RT5`. Peer-reviewed by Codex.
+- **`READY-TO-DEPLOY.plan.md`** — RD1–RD12 roadmap to full production (reactive
+  cloud→disk sync, schema migration, the doc-size + offline **gates**, auth audit,
+  security review, flag-gated merge-to-main, release, monitoring). Briefs expand at
+  phase start.
+- **`ORCHESTRATION-NOTES.md`** — how to run these as an orchestrator + tiered
+  sub-agents (review-before-commit, `typecheck` ≠ `check`, disjoint-file
+  parallelism, seam-scoping, session-limit recovery).
+
+**Harness-agnostic dispatch.** The briefs reference files + verify commands, not a
+specific harness, so they run from **Claude Code or Codex**. Tier mapping:
+premier = Opus 4.8 / `gpt-5.5` high effort · standard = Sonnet 4.6 / `gpt-5.5`
+medium · economy = Haiku 4.5 / `gpt-5.5` minimal. The orchestrator stays premier and
+dispatches one sub-agent per slice. Keep the same discipline either way: sub-agents
+**don't commit and don't edit this file** — the orchestrator reviews each diff,
+re-runs `pnpm typecheck` + `pnpm build:desktop` + the relevant vitest, then commits
+the code + the PROGRESS/changelog edit together.
+
 ### What "Unmerged" actually means
 
 Every task below says "Unmerged." That does **not** mean the code is missing.
