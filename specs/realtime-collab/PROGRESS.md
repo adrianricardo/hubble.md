@@ -53,7 +53,12 @@ next work is decomposed into model-tiered, dispatch-ready slices:
 - **`READY-TO-DEPLOY.plan.md`** — RD1–RD12 roadmap to full production (reactive
   cloud→disk sync, schema migration, the doc-size + offline **gates**, auth audit,
   security review, flag-gated merge-to-main, release, monitoring). Briefs expand at
-  phase start.
+  phase start. **RD3 expanded and verified on hosted dev 2026-06-27**:
+  `tasks/RD3-convex-schema-migration-deployment.md` now captures the deploy slice,
+  `strong-setter-709` accepts the widened realtime schema/component, `convex
+  codegen` had no generated diffs, and `convex dev --once --typecheck enable`
+  passed. No production data backfill was run; production mutation is still gated
+  on an operator-confirmed target and legacy-file import policy.
 - **`ORCHESTRATION-NOTES.md`** — how to run these as an orchestrator + tiered
   sub-agents (review-before-commit, `typecheck` ≠ `check`, disjoint-file
   parallelism, seam-scoping, session-limit recovery).
@@ -737,6 +742,13 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 
 Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
 
+- 2026-06-27 — Codex — Started RD3 ready-to-deploy validation: expanded the
+  Convex schema migration/deployment brief, verified `strong-setter-709`
+  accepts the widened realtime-collab schema and prosemirror-sync component,
+  confirmed `convex codegen` produced no generated diffs, and confirmed
+  `convex dev --once --typecheck enable` plus `pnpm build:desktop` pass. Recorded
+  the zero-downtime rollout plan in `READY-TO-DEPLOY.plan.md`; no production data
+  backfill was run pending an operator-confirmed target and legacy import policy.
 - 2026-06-27 — Codex — Verified the RT5 package-level synced-folder reconcile
   smoke against deployed Convex `strong-setter-709` using the signed-in desktop
   Convex Auth JWT. The smoke imported a Live Document, wrote the local projection

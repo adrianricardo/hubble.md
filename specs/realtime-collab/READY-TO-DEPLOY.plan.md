@@ -68,9 +68,43 @@ Do not start RD9/RD10 until both gates pass.
 - Branch merged to fork `main` behind a flag, CI green, legacy paths intact (RD10).
 - Signed desktop build installs and smoke-passes; monitoring + alerts live (RD9, RD11).
 
+## RD3 deployment notes
+
+Verified 2026-06-27 against `dev:strong-setter-709` (`adrian-tavares10/dubble-md`):
+
+- `pnpm --filter @hubble.md/sync-backend exec convex codegen` completed without
+  generated-file diffs.
+- `pnpm --filter @hubble.md/sync-backend exec convex dev --once --typecheck enable`
+  completed successfully.
+- The hosted schema now accepts the widened realtime-collab shape: Convex Auth
+  tables, optional `workspaces.ownerId`, `members`, `documents`, `folders`,
+  `docShares` including `by_user`, `documentSuggestions`, `revisions`,
+  `commentThreads`, `comments`, `activityEvents`, `notifications`, and the
+  `@convex-dev/prosemirror-sync` component.
+
+Zero-downtime rollout plan:
+
+1. Deploy the widened schema and functions first. This is safe with existing data
+   because legacy `workspaces.ownerId` remains optional, legacy `files` rows are
+   still valid, and all realtime-collab data lives in new tables or new optional
+   fields.
+2. Keep legacy sync clients on `files`/`assets` during rollout. New authenticated
+   clients create `users`, `members`, `documents`, and `docShares`; permission code
+   intentionally treats `ownerId === undefined` workspaces as legacy-accessible.
+3. Do not bulk-migrate legacy `files` rows to Live Documents as part of RD3. Import
+   to `documents`/ProseMirror state should be an operator-triggered follow-up with
+   dry-run counts, idempotent batching, and owner/share assignment rules.
+4. Only after the import/backfill is verified should any later slice narrow legacy
+   compatibility or require `ownerId`/membership on old workspaces.
+
+Blocker before production data mutation: no operator-confirmed production target or
+legacy-file import policy has been supplied. RD3 therefore validates deployability
+and the safe schema widen only; it does not run data backfills.
+
 ## Brief-expansion policy
 
-Full `tasks/` briefs for RD slices are written **at phase start**, not now: RD5 and
-RD6 are spikes whose decomposition depends on test outcomes, and RD3/RD10 depend on
-deployment specifics not yet decided. RT slices (in `READY-TO-TEST.plan.md`) have
-full briefs and are dispatch-ready today.
+Full `tasks/` briefs for RD slices are written **at phase start**, not all up
+front: RD5 and RD6 are spikes whose decomposition depends on test outcomes, and
+RD10 depends on merge/release specifics not yet decided. RD3 now has a phase-start
+brief in `tasks/`; RT slices (in `READY-TO-TEST.plan.md`) have full briefs and are
+dispatch-ready today.
