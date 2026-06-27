@@ -84,14 +84,15 @@ get/patch/shim/reconcile/export`).
 
 ### Tree state you are inheriting
 
-- **One uncommitted chunk is in the working tree** — the bidirectional reconcile
-  work (Stage 4 `replace-range`/`markdown-diff`, Stage 1 reconcile POC,
-  `scripts/reconcile-poc.mjs`, and the spec-doc updates). It's ~16 files. The
-  changelog describes it as complete and verified, but it is **not committed**.
-  **First action: review and commit it** so you start from a clean tree — don't
-  build on top of a dirty tree you didn't create.
-- `pnpm typecheck` passes clean across all 6 TS packages (editor, sync, ui,
-  convex-client, www, cli) as of this writing. Confirmed, not assumed.
+- **Clean tree as of handoff refresh 2026-06-27.** The inherited local changes
+  (Convex AI guidance files plus one import-order cleanup) were committed as
+  `17c73f8 chore: add convex agent guidance` before any new RD work began.
+- No RD1 implementation edits have been made in this session. The next agent is
+  starting from committed code, not an abandoned partial diff.
+- Last known load-bearing checks from the tracker: `pnpm typecheck`,
+  `pnpm build:desktop`, and the focused RT/RD checks described in the changelog.
+  Re-run the relevant checks before committing new work; do not rely on this
+  handoff as fresh verification.
 
 ### Verification commands — what actually proves what
 
@@ -117,30 +118,37 @@ known risk — see SPIKE.md for the Yjs/DO fallback, don't paper over it.
 
 ### What to pick up next (this overrides the "first `[ ]`" rule below)
 
-The protocol below says "pick the first `[ ]` task in the lowest-numbered
-unfinished stage." **Taken literally that misfires**, because nearly every task
-is `[~]` (built-but-unmerged), not `[ ]`. The only two true `[ ]` tasks are the
-two *hardest, most architectural* ones in the whole plan — do **not** start there
-cold:
+The RT slices are landed locally and RD3 is expanded/verified. The next phase-start
+slice is **RD1 — Reactive cloud→disk Convex subscription** from
+`READY-TO-DEPLOY.plan.md`.
 
-- ⚠️ Stage 6 "Desktop always-on app" `[ ]` and "Offline edit + merge" `[ ]` are
-  **Opus/design-shaped, not a cold Sonnet pickup.** They need an architecture
-  decision (Electron lifecycle; whether prosemirror-sync offline is sufficient or
-  the Yjs/`y-indexeddb` fallback is required — the unresolved Stage 1 gate). Get a
-  design agreed before writing code here.
+Use `/orchestrate` discipline here:
 
-**Good Sonnet-shaped next tasks** (well-scoped, build on committed + typechecked
-backends, verifiable by `pnpm typecheck`/`build` without interactive infra):
+1. Expand RD1 into `specs/realtime-collab/tasks/RD1-reactive-cloud-disk-sync.md`
+   before implementing. The RD plan is tiered, but only RD3 currently has a full
+   phase-start brief.
+2. Keep RD1 at **premier**. It is cross-process, data-loss-sensitive work touching
+   the desktop main-process synced-folder service, live Convex subscriptions, and
+   the rename/access-loss materialization interaction.
+3. Likely files to inspect first:
+   `apps/desktop/electron/syncedFolderService.ts`,
+   `apps/desktop/electron/syncedFolderService.test.ts`,
+   `packages/convex-client/src/index.ts`,
+   `packages/sync/src/sync.ts`, and
+   `packages/sync/src/syncedFolderIndex.ts`.
+4. Useful finding from the aborted pickup: `packages/convex-client/src/index.ts`
+   already has `createConvexSubscriber()` using `ConvexClient.onUpdate` for legacy
+   files/assets, but it is unauthenticated and does not subscribe to
+   `sync.listWorkspaces`, `folders.list`, or `documents.listWithMarkdown` yet.
+   `SyncedFolderService.refresh()` is still the manual full materialize fallback.
+5. The known RD1 bug to avoid: a cloud/materialize pass must not treat the old path
+   of a just-renamed local document as cloud access loss and move it to
+   `.hubble/trash/`. Preserve the direction split between watcher-origin local
+   deletes and materialize-origin access loss.
 
-1. **Stage 5 — Version history UI** (browse + restore). Backend
-   `documents.listRevisions` / `restoreRevision` already exist; only the UI is
-   pending. Lowest-numbered stage with pending UI → recommended first pickup.
-2. **Stage 5 — Comments UI** (threads/@mentions/resolve). Backend done.
-3. **Stage 6 — Search UI**. `documents.search` backend done.
-
-Tasks needing interactive infra (live two-browser, doc-size load test, `convex
-dev` login) are **poor Sonnet pickups** — they can't be verified headlessly. Leave
-those for a human/interactive session.
+Do not restart old Stage 5 UI tasks from this block. Version history, comments,
+activity, suggestions, and search UI are already described as locally landed later
+in this file.
 
 ---
 
@@ -742,6 +750,13 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 
 Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
 
+- 2026-06-27 — Codex — Handoff refresh before switching agents: committed the
+  inherited local Convex AI guidance/import-order changes as `17c73f8`, confirmed
+  the working tree was clean before any RD1 implementation edits, corrected the
+  START HERE block to stop recommending already-landed Stage 5 UI tasks, and
+  pointed the next agent at RD1 with `/orchestrate` discipline. RD plan is
+  tiered, but only RD3 has a full phase-start brief; RD1 still needs brief
+  expansion before implementation.
 - 2026-06-27 — Codex — Started RD3 ready-to-deploy validation: expanded the
   Convex schema migration/deployment brief, verified `strong-setter-709`
   accepts the widened realtime-collab schema and prosemirror-sync component,
