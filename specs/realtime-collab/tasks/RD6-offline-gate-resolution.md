@@ -2,7 +2,7 @@
 
 **Tier:** premier
 **Depends on:** RT done
-**Status:** in progress
+**Status:** closed locally with explicit v1 boundary
 
 ## Goal
 
@@ -16,7 +16,9 @@ RD6 has two independent tracks:
    a replay fails, then replayed through the existing reconcile path on reconnect.
 2. **In-editor durable offline:** the IndexedDB/sessionStorage step buffer from
    `d5355c7` is human-verified for reload-while-offline replay, or bounded as a
-   deferred limitation if it fails.
+   deferred limitation if it fails. **Result:** bounded/deferred for v1 full
+   reload while the backend is unavailable, because the current app shell still
+   needs live Convex workspace/document queries before the editor can mount.
 
 No Yjs/Durable Objects fork should be started unless the in-editor replay path has
 a concrete failing test that the thin buffer cannot address.
@@ -42,9 +44,27 @@ a concrete failing test that the thin buffer cannot address.
   overwrite the local edit.
 - `pnpm --filter @hubble.md/desktop test -- syncedFolderService.test.ts` passes.
 - `pnpm typecheck` passes.
-- Before RD6 can be closed: human browser verification of the in-editor durable
-  offline buffer must pass, or the product boundary must explicitly defer
-  reload-while-offline in-editor durability.
+- RD6 can close by explicit product boundary for in-editor durability: v1 supports
+  transient in-editor disconnect while the tab stays open and the external-file
+  durable queue; full reload/app-restart while Convex is unavailable is deferred to
+  a future app-shell offline cache + editor replay slice.
+
+## Closure Evidence
+
+Closed locally on 2026-06-28 with the v1 boundary above.
+
+- Browser probe on `http://localhost:5173` against
+  `https://strong-setter-709.convex.cloud` confirmed an offline in-editor edit
+  writes `sessionStorage["convex-sync-document:<id>"]` while visible in the editor.
+- The same probe found that reloading with the whole Convex backend blocked does
+  not remount the editor: the workspace/document shell queries fail before
+  `useTiptapSync` can consume the restored cache. This is outside the thin
+  ProseMirror buffer's scope and requires an app-shell offline cache.
+- Focused unit coverage verifies the session bridge and IndexedDB-to-session
+  hydration path:
+  `pnpm --filter @hubble.md/www test -- durableOfflineBuffer.test.ts`.
+- Desktop queue coverage verifies enqueue, replay, and failed-replay retention:
+  `pnpm --filter @hubble.md/desktop test -- syncedFolderService.test.ts`.
 
 ## Out of Scope
 

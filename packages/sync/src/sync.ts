@@ -693,7 +693,7 @@ function sanitizeSegment(name: string): string {
 		.replace(/[\u0000-\u001f]/g, " ")
 		.replace(/\s+/g, " ")
 		.trim()
-		.replace(/[. ]+$/, "");
+		.replace(/^[. ]+|[. ]+$/g, "");
 	return cleaned || "Untitled";
 }
 

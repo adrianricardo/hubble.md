@@ -680,4 +680,32 @@ describe("SyncedFolderService routing", () => {
 			/already syncing/i,
 		);
 	});
+
+	it("heartbeat loss stops sync instead of overwriting a fresh foreign owner", async () => {
+		vi.useFakeTimers();
+		const { service, fs } = makeService(calls, events);
+		await service.connect(CONNECT_INPUT);
+		await fs.writeFile(
+			`${SYNC_ROOT}/.hubble/index/owner.json`,
+			JSON.stringify({
+				deviceId: "other-device",
+				pid: 99,
+				heartbeatAt: NOW,
+			}),
+		);
+
+		await vi.advanceTimersByTimeAsync(10_000);
+
+		expect(
+			JSON.parse(await fs.readFile(`${SYNC_ROOT}/.hubble/index/owner.json`)),
+		).toMatchObject({ deviceId: "other-device" });
+		expect(service.getStatus()).toMatchObject({
+			state: "error",
+			lastError: "Already syncing this folder on device other-device",
+		});
+		expect(calls.subscriberUnsubscribed).toBe(1);
+		expect(calls.subscriberClosed).toBe(1);
+		expect(events).toContainEqual({ kind: "error" });
+		await expect(service.refresh()).rejects.toThrow(/not connected/i);
+	});
 });

@@ -138,10 +138,10 @@ not a blank check. RD5 found the current large-doc failure; the product decision
 to continue Convex/prosemirror-sync for this release with an initial **256 KiB
 Live Document markdown cap**, then revisit large-doc storage/revision design later.
 The offline gate is still open (**offline ❌** upstream; durable buffer WIP). The
-live co-edit/reconcile passes were human-verified locally, and RD5's hosted
-manual two-browser editor pass completed on `strong-setter-709` on 2026-06-28. If
-you hit a wall that looks foundational, check SPIKE.md and DECISIONS.md before
-reopening the Yjs/DO fallback.
+live co-edit/reconcile passes were human-verified locally, RD5's hosted manual
+two-browser editor pass completed on `strong-setter-709` on 2026-06-28, and RD6
+closed with an explicit v1 offline boundary. If you hit a wall that looks
+foundational, check SPIKE.md and DECISIONS.md before reopening the Yjs/DO fallback.
 
 ### What to pick up next (this overrides the "first `[ ]`" rule below)
 
@@ -156,8 +156,26 @@ markdown. **RD6 started locally 2026-06-28**: `tasks/RD6-offline-gate-resolution
 is expanded, and the desktop external-file offline queue now persists watcher
 events under `.hubble/queue/events.json`, replays them before reconnect
 materialization, and retains failed replays to avoid clobbering local offline
-edits. The RD6 gate is **not closed** until the in-editor durable offline buffer is
-human-verified (or explicitly bounded/deferred).
+edits. **RD6 closed locally 2026-06-28 with an explicit v1 boundary**: external-file
+offline queueing is in scope and verified; in-editor transient disconnect remains
+covered by `prosemirror-sync`'s in-memory buffer; the thin IndexedDB/sessionStorage
+writer is retained and unit-covered; full reload/app-restart while Convex is
+unavailable is deferred to a future app-shell offline cache + editor replay slice.
+Browser probing confirmed an offline editor edit writes the upstream
+`convex-sync-<id>` cache, but also confirmed the current app shell cannot remount
+the editor with the whole backend blocked because workspace/document queries fail
+first. No Yjs/DO fallback is triggered.
+**RD7 landed locally 2026-06-28** as the next standard-tier slice: the
+synced-folder `owner.json` heartbeat now refuses to overwrite fresh foreign owners,
+stale owners remain reclaimable, and the desktop sync engine stops
+watching/materializing if another device takes ownership after connect. Next
+unblocked launch gate was **RD8 security review** (premier). **RD8 landed locally
+2026-06-28**: removed throwaway public ProseMirror POC mutation endpoints, routed
+the reconcile POC script through production `documents.applyPatch`, validated
+cloud-sync IPC payloads in Electron main, removed renderer control of the
+synced-folder lock identity, and tightened synced-folder path sanitization for
+cloud-controlled leading-dot names. Next premier launch gate is **RD10
+flag-gated merge to fork `main`**; RD9 release remains blocked on RD10.
 
 Useful RD5 files to inspect first: `specs/realtime-collab/SPIKE.md`,
 `packages/sync-backend/convex/prosemirror.ts`,
@@ -776,6 +794,25 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
         **Human-gated:** live two-device lock, real chokidar, full Electron+Convex
         round-trip, a real revoked-share access-loss. —
         *Owner: Opus (orchestrated, reviewed) · 2026-06-25*
+- [~] **RD7 two-device single-writer lock hardening.** Standard-tier slice landed
+      locally in `tasks/RD7-two-device-single-writer-lock.md`: heartbeat now checks
+      `owner.json` before writing, refuses to overwrite a fresh foreign owner,
+      still reclaims stale owners, and the desktop engine stops watcher,
+      subscriptions, timers, and backend materialization if lock ownership is lost
+      after connect. Verified focused lock/service tests and Biome on touched
+      desktop files; true multi-device-same-root remains out of scope for v1.
+      — *Owner: Codex · Started: 2026-06-28*
+- [~] **RD8 security review.** Premier-tier slice landed locally in
+      `tasks/RD8-security-review.md`: removed public throwaway ProseMirror POC
+      mutation endpoints from the production Convex API, rerouted
+      `scripts/reconcile-poc.mjs` through `documents.applyPatch`, added
+      main-process zod validation for cloud-sync IPC payloads, removed renderer
+      control of the synced-folder single-writer lock identity, and tightened
+      synced-folder materializer sanitization for cloud-controlled leading-dot
+      path segments. Added a traversal-looking materialization regression test.
+      Verified focused Biome, focused sync/desktop tests, Convex codegen,
+      `node --check`, and `pnpm typecheck` plus `pnpm build:desktop`.
+      — *Owner: Codex · Started: 2026-06-28*
 - [~] Offline edit + merge on reconnect — two flavors (Decision 6): in-editor (CRDT
       local buffer/replay) and external-file (watcher queues edits, flushes on
       reconnect via the reconcile path). Decision: **no Yjs fork** — keep
@@ -792,7 +829,17 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
       a route failure, queued events replay before reconnect materialization, and a
       failed replay stays queued so cloud materialization cannot overwrite the
       unsynced local edit. Verified focused desktop service tests and
-      `pnpm typecheck`; gate remains open pending the in-editor browser pass.
+      `pnpm typecheck`. In-editor durable buffer follow-up fixed same-tab
+      sessionStorage hydration to seed the persister from the exact upstream
+      restore payload instead of a possibly stale/missing IndexedDB copy; added
+      focused web unit coverage. Verified
+      `pnpm --filter @hubble.md/www test -- durableOfflineBuffer.test.ts`.
+      Browser probe on `strong-setter-709` confirmed an offline editor edit writes
+      the upstream cache, but full reload with the whole backend blocked cannot
+      remount the editor because app-shell workspace/document queries fail before
+      the sync extension can consume the cache. **RD6 is closed for v1 with that
+      explicit boundary**: full reload/app-restart while Convex is unavailable is
+      deferred to a future app-shell offline cache + editor replay slice.
       — *Owner: Opus/Codex · Started: 2026-06-25 · RD6 resumed: 2026-06-28*
 - [~] Audit log, trash + restore, admin/role management. Trash/restore backend
       started locally with `documents.listTrash`, `documents.restoreRemoved`,
@@ -807,6 +854,44 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 
 Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
 
+- 2026-06-28 — Codex — Implemented RD8 premier-tier security review: removed the
+  public throwaway ProseMirror POC mutation endpoints, routed
+  `scripts/reconcile-poc.mjs` through production `documents.applyPatch`, added
+  main-process validation for cloud-sync IPC payloads, made the Electron main
+  process own the synced-folder lock identity instead of accepting a renderer
+  override, and hardened synced-folder materialization against cloud-controlled
+  leading-dot path segments with a regression test. Verified focused sync and
+  desktop tests, focused Biome, Convex codegen, `node --check
+  scripts/reconcile-poc.mjs`, and `pnpm typecheck` plus `pnpm build:desktop`.
+- 2026-06-28 — Codex — Implemented RD7 standard-tier two-device lock hardening:
+  `heartbeatSingleWriterLock` now refuses to overwrite a fresh foreign
+  `owner.json`, stale owners remain reclaimable, and `SyncedFolderService` stops
+  subscriptions/watchers/timers plus drops the backend if ownership is lost after
+  connect. Added focused classifier and service tests. Verified focused Biome,
+  `pnpm --filter @hubble.md/desktop test -- syncedFolderClassify.test.ts
+  syncedFolderService.test.ts`, `pnpm typecheck`, and `pnpm build:desktop`.
+- 2026-06-28 — Codex — Wrapped RD6 offline gate with an explicit v1 boundary:
+  browser probing against `strong-setter-709` confirmed offline in-editor edits
+  populate the upstream `convex-sync-document:<id>` cache, but also confirmed a
+  full reload while the whole Convex backend is unavailable cannot remount the
+  editor because app-shell workspace/document queries fail first. RD6 now ships
+  external-file durable queueing plus transient in-editor disconnect support; full
+  reload/app-restart while Convex is unavailable is deferred to a future
+  app-shell offline cache + editor replay slice. No Yjs/DO fallback is triggered.
+  Verified Convex function deployment/typecheck with
+  `pnpm --filter @hubble.md/sync-backend exec convex dev --once --typecheck enable`.
+- 2026-06-28 — Codex — Continued RD6 in-editor durable offline work: fixed
+  same-tab sessionStorage hydration so the durable persister seeds from the exact
+  `convex-sync-<id>` payload that `prosemirror-sync` restores, rather than a
+  possibly stale/missing IndexedDB copy after reload. Added a focused
+  `@hubble.md/www` Vitest harness and unit coverage for the session bridge and
+  durable-store hydration path. Verified
+  `pnpm --filter @hubble.md/www test -- durableOfflineBuffer.test.ts`,
+  `pnpm --filter @hubble.md/desktop test -- syncedFolderService.test.ts`,
+  `pnpm typecheck`, and `pnpm build:desktop`; `pnpm check` remains blocked only
+  by pre-existing formatting drift in `convex/tsconfig.json`,
+  `packages/sync/src/reconcile.test.ts`, and `skills-lock.json`. RD6 remains open
+  pending browser offline-reload verification or an explicit product boundary.
 - 2026-06-28 — Codex — Started RD6 offline resolution as the next premier gate:
   expanded `tasks/RD6-offline-gate-resolution.md` and implemented the desktop
   external-file offline queue in `syncedFolderService`. Watcher events now persist

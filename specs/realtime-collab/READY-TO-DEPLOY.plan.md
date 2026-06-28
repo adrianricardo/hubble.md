@@ -30,9 +30,9 @@ on.
 | RD3 | Convex schema migration + deployment | **premier** | — | All new tables/indexes (documents, folders, revisions, comments, suggestions, activity, notifications, members, docShares incl. `by_user`, prosemirror-sync component) applied to a real deployment; `convex codegen`/`convex dev --once --typecheck` green; migration/backfill plan for existing data. |
 | RD4 | Production auth hardening + enforcement audit | **premier** | RD3 | Convex Auth password (WorkOS/SSO later); audit `requireWorkspaceMember`/`requireDocument(Read\|Write)`/`checkRead`/`checkWrite` across **every** query/mutation; verify a viewer never receives editable steps; token refresh in the desktop main-process backend. |
 | RD5 | **Stage-1 hard gate**: doc-size + load test + live two-browser | **premier** | RD3 | Hosted doc-size probe found the current large-doc failure. Decision: continue Convex/prosemirror-sync with an initial 256 KiB Live Document markdown cap, enforce the cap before deploy, and defer cap removal to a storage/revision redesign. Hosted manual live two-browser pass completed on `strong-setter-709` 2026-06-28. |
-| RD6 | **Offline gate** resolution | **premier** | RT done | Brief expanded in `tasks/RD6-offline-gate-resolution.md`. External-file queue landed locally: watcher events persist under `.hubble/queue/events.json`, replay before reconnect materialization, and stay queued on failed replay. Remaining gate item: human-verify the in-editor durable buffer replay (`d5355c7`, `durableOfflineBuffer.ts`) or explicitly bound/defer reload-while-offline editor durability. No Yjs fork. |
-| RD7 | Two-device single-writer lock — real-world hardening | **standard** | RT done | `owner.json` heartbeat/reclaim under iCloud/Dropbox-shared sync roots; detect-and-refuse UX; the §6-case-4 path. |
-| RD8 | Security review of the branch | **premier** | RD4 | `/security-review`: auth, file-grant/`assertGranted(Root)`, path traversal in watcher/materializer, the IPC surface, prosemirror step injection, public-link shares. |
+| RD6 | **Offline gate** resolution | **premier** | RT done | **Closed locally with v1 boundary.** External-file queue landed locally: watcher events persist under `.hubble/queue/events.json`, replay before reconnect materialization, and stay queued on failed replay. In-editor transient disconnect remains on prosemirror-sync's in-memory buffer; the thin IndexedDB/sessionStorage writer is retained and unit-covered, but full reload/app-restart while Convex is unavailable is deferred to a future app-shell offline cache + editor replay slice. No Yjs fork. |
+| RD7 | Two-device single-writer lock — real-world hardening | **standard** | RT done | **Landed locally 2026-06-28.** `owner.json` acquire/heartbeat now refuses fresh foreign owners, reclaims stale owners, and stops the desktop sync engine if ownership is lost after connect; true multi-device-same-root remains out of scope. |
+| RD8 | Security review of the branch | **premier** | RD4 | **Landed locally 2026-06-28.** Removed public throwaway ProseMirror POC mutation endpoints, hardened cloud-sync IPC validation and lock identity ownership, and tightened synced-folder path sanitization. Residual public-link token policy should be confirmed during RD10 flag-gated merge. |
 | RD9 | Packaged desktop release | **standard** | RD5, RD6, RD8, RD10 | electron-vite production build, sign/notarize, auto-update channel (`UpdatesSection` already exists), install smoke. Must follow the gates (RD5/RD6), security (RD8), and the flag-gated merge (RD10) — never ship ahead of them. |
 | RD10 | Rebase/merge `spike/prosemirror-sync` → fork `main` behind a feature flag | **premier** | RD1, RD2, RD3–RD8 | ~30 commits; flag-gate the Live-Document/synced-folder surfaces; CI green; keep legacy file-authoritative paths untouched (ADR-0009). Includes RD1 (reactive sync) + RD2 (shared-with-me) since "full production" ships both. |
 | RD11 | Monitoring / observability / on-call | **standard** | RD10 | Convex dashboards, renderer error surfacing, reconcile-failure + backstop-rate alerts. |
@@ -54,20 +54,19 @@ RD7 (two-device lock) ───────────────────�
                                                               RD11 (monitoring)
 ```
 
-**Two hard gates can still affect the architecture** (SPIKE.md): **RD5**
-(doc-size) and **RD6** (offline). RD5's large-doc failure is accepted for the
-current release only with a conservative Live Document size cap; the hosted
-manual two-browser pass is complete. If RD6 fails in a
-way the durable-buffer path cannot address, that is still a Yjs/Durable-Objects
-fallback signal. Do not start RD9/RD10 until RD5 is accepted-with-cap and RD6
-passes or has an explicit accepted boundary.
+**The two hard gates are now accepted with boundaries** (SPIKE.md): **RD5**
+(doc-size) ships with a conservative 256 KiB Live Document markdown cap, and
+**RD6** (offline) ships with external-file durable queueing plus transient
+in-editor disconnect support. Full reload/app-restart while Convex is unavailable
+is deferred to a future app-shell offline cache + editor replay slice. Neither
+gate currently triggers a Yjs/Durable-Objects fallback.
 
 ## Acceptance criteria
 
 - Hosted Convex deployment with migrated schema; `convex` typecheck green (RD3).
 - A viewer provably cannot obtain editable steps; auth audited end-to-end (RD4, RD8).
 - Doc-size/load gate accepted with a cap and live two-browser pass complete (RD5);
-  offline gate passed on the real stack or has an explicit accepted boundary (RD6).
+  offline gate has an explicit accepted v1 boundary (RD6).
 - Reactive two-way sync live; `Shared with me/` populated (RD1, RD2).
 - Branch merged to fork `main` behind a flag, CI green, legacy paths intact (RD10).
 - Signed desktop build installs and smoke-passes; monitoring + alerts live (RD9, RD11).

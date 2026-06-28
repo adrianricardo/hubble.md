@@ -351,6 +351,49 @@ describe("materializeSyncedFolder", () => {
 		).toBe("# Shared Doc\n");
 	});
 
+	it("sanitizes cloud-controlled names as path segments", async () => {
+		const fs = createMemoryFs();
+		const backend = createBackend({
+			workspaces: [{ _id: "ws_a", name: "../Team" }],
+			folders: {
+				ws_a: [
+					{
+						_id: "f_escape",
+						name: "..\\Secrets",
+						parentId: null,
+						workspaceId: "ws_a",
+					},
+				],
+			},
+			documents: {
+				ws_a: [
+					doc({
+						_id: "d_escape",
+						title: "../../Plan",
+						folderId: "f_escape",
+					}),
+				],
+			},
+			shared: [
+				{
+					...doc({ _id: "d_shared_escape", title: "../Shared" }),
+					workspaceId: "ws_other",
+					workspaceName: "../Other",
+				},
+			],
+		});
+
+		const result = await materializeSyncedFolder(backend, fs, {
+			syncRoot: SYNC_ROOT,
+		});
+
+		expect(result.written).toContain(`${SYNC_ROOT}/Team/Secrets/Plan.md`);
+		expect(result.written).toContain(
+			`${SYNC_ROOT}/Shared with me/Other - Shared.md`,
+		);
+		expect(result.written.some((path) => path.includes(".."))).toBe(false);
+	});
+
 	it("does not rewrite an unchanged projection during materialization", async () => {
 		const fs = createMemoryFs({
 			[`${SYNC_ROOT}/Product Team/Roadmap.md`]: "# Roadmap\n",

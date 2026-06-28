@@ -17,6 +17,7 @@
 		"dev": "vite",
 		"build": "tsc -b && vite build",
 		"preview": "vite preview",
+		"test": "vitest run",
 		"typecheck": "tsc -b --noEmit"
 	},
 	"dependencies": {
@@ -53,6 +54,7 @@
 		"tailwindcss": "^4.1.18",
 		"typescript": "~5.8.3",
 		"unplugin-icons": "^23.0.1",
-		"vite": "^7.0.4"
+		"vite": "^7.0.4",
+		"vitest": "^3.2.4"
 	}
 }

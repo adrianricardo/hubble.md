@@ -104,7 +104,6 @@ export type SyncedFolderConnectInput = {
 	deploymentUrl: string;
 	/** Convex Auth JWT from the renderer session. IPC carries a string, not a token fetcher. */
 	authToken: string;
-	deviceId?: string;
 };
 
 export type SyncedFolderRootInspection = {

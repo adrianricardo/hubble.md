@@ -126,13 +126,32 @@ export function clearSessionCache(docId: string): void {
 	}
 }
 
-function hasSessionCache(docId: string): boolean {
+function readSessionCache(docId: string): DurableBuffer | null {
 	const storage = getSessionStorage();
-	if (!storage) return false;
+	if (!storage) return null;
 	try {
-		return storage.getItem(sessionCacheKey(docId)) !== null;
+		const raw = storage.getItem(sessionCacheKey(docId));
+		if (!raw) return null;
+		const parsed = JSON.parse(raw) as {
+			content?: unknown;
+			version?: unknown;
+			steps?: unknown;
+		};
+		if (
+			typeof parsed.version !== "number" ||
+			!Array.isArray(parsed.steps) ||
+			parsed.content === undefined
+		) {
+			return null;
+		}
+		return {
+			content: parsed.content,
+			version: parsed.version,
+			steps: parsed.steps as object[],
+			updatedAt: Date.now(),
+		};
 	} catch {
-		return false;
+		return null;
 	}
 }
 
@@ -146,10 +165,11 @@ export async function hydrateSessionCache(
 	docId: string,
 	store: DurableBufferStore,
 ): Promise<DurableBuffer | null> {
-	// A live same-tab buffer is already authoritative; don't clobber it.
-	if (hasSessionCache(docId)) {
-		return store.load(docId).catch(() => null);
-	}
+	// A live same-tab buffer is already authoritative; return the same snapshot
+	// the upstream synchronous reader will restore so the persister seeds the
+	// matching confirmed baseline.
+	const sessionBuffer = readSessionCache(docId);
+	if (sessionBuffer) return sessionBuffer;
 	const buffer = await store.load(docId).catch(() => null);
 	if (buffer) writeSessionCache(docId, buffer);
 	return buffer;

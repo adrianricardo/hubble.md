@@ -205,6 +205,38 @@ const workspaceConfigSchema = z.object({
 			),
 	),
 });
+const convexDeploymentUrlSchema = z
+	.string()
+	.trim()
+	.url()
+	.refine((value) => {
+		const url = new URL(value);
+		return url.protocol === "https:" || (isDev && url.protocol === "http:");
+	}, "Convex deployment URL must be https");
+const authTokenSchema = z.string().trim().min(1, "Auth token is required");
+const liveSyncConnectSchema = z.object({
+	workspacePath: z.string().min(1),
+	deploymentUrl: convexDeploymentUrlSchema,
+	workspaceId: z.string().min(1),
+	authToken: authTokenSchema,
+});
+const liveSyncReconcileSchema = z.object({
+	documentId: z.string().min(1),
+	projectionPath: z.string().min(1),
+	actor: z.string().optional(),
+	path: z.string().optional(),
+});
+const syncedFolderConnectSchema = z.object({
+	syncRoot: z.string().min(1),
+	deploymentUrl: convexDeploymentUrlSchema,
+	authToken: authTokenSchema,
+});
+const syncedFolderImportSchema = z.object({
+	syncRoot: z.string().min(1),
+	deploymentUrl: convexDeploymentUrlSchema,
+	workspaceId: z.string().min(1),
+	authToken: authTokenSchema,
+});
 const defaultWindowState: WindowState = { width: 920, height: 720 };
 const windowStateSchema = z.object({
 	width: z.number().int().min(640).max(4096),
@@ -1427,12 +1459,13 @@ function registerIpc() {
 	ipcMain.handle(
 		"desktop:live-sync:connect",
 		(_event, input: LiveSyncConnectInput) => {
-			const workspacePath = assertGrantedRoot(input.workspacePath);
+			const parsed = liveSyncConnectSchema.parse(input);
+			const workspacePath = assertGrantedRoot(parsed.workspacePath);
 			const status = liveSync.connect({
 				workspacePath,
-				deploymentUrl: input.deploymentUrl,
-				workspaceId: input.workspaceId,
-				authToken: input.authToken,
+				deploymentUrl: parsed.deploymentUrl,
+				workspaceId: parsed.workspaceId,
+				authToken: parsed.authToken,
 			});
 			// Connecting a cloud workspace engages always-on mode (Decision C).
 			setBackgroundActive(true);
@@ -1451,12 +1484,13 @@ function registerIpc() {
 	ipcMain.handle(
 		"desktop:live-sync:reconcile",
 		async (_event, input: LiveSyncReconcileInput) => {
-			const projectionPath = assertGranted(input.projectionPath);
+			const parsed = liveSyncReconcileSchema.parse(input);
+			const projectionPath = assertGranted(parsed.projectionPath);
 			return liveSync.reconcile({
-				documentId: input.documentId,
+				documentId: parsed.documentId,
 				projectionPath,
-				actor: input.actor,
-				path: input.path,
+				actor: parsed.actor,
+				path: parsed.path,
 			});
 		},
 	);
@@ -1464,12 +1498,12 @@ function registerIpc() {
 	ipcMain.handle(
 		"desktop:live-sync:connect-folder",
 		async (_event, input: SyncedFolderConnectInput) => {
-			const syncRoot = assertGrantedRoot(input.syncRoot);
+			const parsed = syncedFolderConnectSchema.parse(input);
+			const syncRoot = assertGrantedRoot(parsed.syncRoot);
 			const status = await syncedFolder.connect({
 				syncRoot,
-				deploymentUrl: input.deploymentUrl,
-				authToken: input.authToken,
-				deviceId: input.deviceId,
+				deploymentUrl: parsed.deploymentUrl,
+				authToken: parsed.authToken,
 			});
 			// Connecting the synced folder engages always-on mode (Decision C).
 			setBackgroundActive(true);
@@ -1496,10 +1530,14 @@ function registerIpc() {
 	ipcMain.handle(
 		"desktop:live-sync:import-folder-markdown",
 		async (_event, input: SyncedFolderImportInput) => {
-			const syncRoot = assertGrantedRoot(input.syncRoot);
-			const backend = createConvexBackend(input.deploymentUrl, input.authToken);
+			const parsed = syncedFolderImportSchema.parse(input);
+			const syncRoot = assertGrantedRoot(parsed.syncRoot);
+			const backend = createConvexBackend(
+				parsed.deploymentUrl,
+				parsed.authToken,
+			);
 			return importLiveDocuments(backend, createNodeFileSystem(), {
-				workspaceId: input.workspaceId,
+				workspaceId: parsed.workspaceId,
 				workspacePath: syncRoot,
 				actor: "synced-folder-first-run-import",
 			});

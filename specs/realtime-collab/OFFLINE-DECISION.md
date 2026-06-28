@@ -1,7 +1,7 @@
 # Offline Decision — resolving the open FOUNDATION gate
 
-**Status:** Recommendation (design/investigation only — no production code written).
-**Date:** 2026-06-25
+**Status:** Accepted for v1 with explicit boundary.
+**Date:** 2026-06-25; closure updated 2026-06-28
 **Resolves:** Stage 1 decision-gate open item **"offline ❌ (not implemented
 upstream)"** (SPIKE.md), which blocks Stage 6 "Offline edit + merge on reconnect."
 
@@ -184,6 +184,15 @@ the package's *own* primitives rather than forking:
 If, and only if, step 3 shows the replay is unreliable under rebase/step-vacuum
 edge cases (README flags "old clients with local changes … steps since vacuumed"
 as unhandled), escalate to the contingency below.
+
+**2026-06-28 closure result:** RD6 closes with a v1 product boundary rather than a
+Yjs fork. The thin buffer is retained and unit-covered, and browser probing
+confirmed that an offline edit writes the upstream `convex-sync-<id>` cache while
+visible in the editor. A full reload while the entire Convex backend is
+unavailable is deferred: the current app shell still requires live
+workspace/document Convex queries before the editor mounts, so the ProseMirror
+cache cannot be consumed in that state. Closing that gap requires an app-shell
+offline cache plus editor replay verification, not a different realtime CRDT.
 
 ### Contingency (option c, pre-stated trigger — not now)
 

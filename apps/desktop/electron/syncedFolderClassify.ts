@@ -418,25 +418,31 @@ export async function acquireSingleWriterLock(
 /** Refresh our heartbeat in place (called on an interval while watching). */
 export async function heartbeatSingleWriterLock(
 	fs: {
+		readFileOrNull(path: string): Promise<string | null>;
 		ensureDir(path: string): Promise<void>;
 		writeFile(path: string, content: string): Promise<void>;
 	},
 	syncRoot: string,
-	identity: { deviceId: string; pid: number; now: number },
-): Promise<void> {
+	identity: { deviceId: string; pid: number; now: number; staleMs?: number },
+): Promise<AcquireLockResult> {
+	const path = ownerLockPath(syncRoot);
+	const raw = await fs.readFileOrNull(path);
+	const staleMs = identity.staleMs ?? OWNER_LOCK_STALE_MS;
+	if (raw !== null) {
+		const current = JSON.parse(raw) as OwnerLock;
+		const fresh = identity.now - current.heartbeatAt <= staleMs;
+		if (fresh && current.deviceId !== identity.deviceId) {
+			return { acquired: false, reason: "held-by-other", current };
+		}
+	}
+	const lock: OwnerLock = {
+		deviceId: identity.deviceId,
+		pid: identity.pid,
+		heartbeatAt: identity.now,
+	};
 	await fs.ensureDir(`${syncRoot}/.hubble/index`);
-	await fs.writeFile(
-		ownerLockPath(syncRoot),
-		JSON.stringify(
-			{
-				deviceId: identity.deviceId,
-				pid: identity.pid,
-				heartbeatAt: identity.now,
-			} satisfies OwnerLock,
-			null,
-			2,
-		),
-	);
+	await fs.writeFile(path, JSON.stringify(lock, null, 2));
+	return { acquired: true, lock };
 }
 
 /** Release the lock if (and only if) we still own it. */

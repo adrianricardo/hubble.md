@@ -70,7 +70,6 @@ export type ConnectFolderInput = {
 	syncRoot: string;
 	deploymentUrl: string;
 	authToken: string;
-	deviceId?: string;
 };
 
 const CORRELATION_WINDOW_MS = 750;
@@ -206,8 +205,7 @@ export class SyncedFolderService {
 		}
 
 		const { syncRoot, deploymentUrl, authToken } = input;
-		const deviceId = input.deviceId ?? this.#deviceId;
-		this.#deviceId = deviceId;
+		const deviceId = this.#deviceId;
 		const connectionGeneration = this.#connectionGeneration + 1;
 
 		const lock = await acquireSingleWriterLock(this.#fs, syncRoot, {
@@ -427,11 +425,42 @@ export class SyncedFolderService {
 
 	async #heartbeat(): Promise<void> {
 		if (!this.#syncRoot) return;
-		await heartbeatSingleWriterLock(this.#fs, this.#syncRoot, {
+		const result = await heartbeatSingleWriterLock(this.#fs, this.#syncRoot, {
 			deviceId: this.#deviceId,
 			pid: this.#pid,
 			now: this.#now(),
 		}).catch(() => {});
+		if (!result || result.acquired) return;
+		this.#lastError = `Already syncing this folder on device ${result.current?.deviceId ?? "another device"}`;
+		this.#state = "error";
+		this.#emit({ kind: "error" });
+		await this.#stopAfterLockLoss();
+	}
+
+	async #stopAfterLockLoss(): Promise<void> {
+		this.#connectionGeneration += 1;
+		await this.#stopCloudSubscriptions();
+		if (this.#watcher) {
+			await this.#watcher.close();
+			this.#watcher = null;
+		}
+		if (this.#heartbeatTimer) {
+			clearInterval(this.#heartbeatTimer);
+			this.#heartbeatTimer = null;
+		}
+		if (this.#flushTimer) {
+			clearTimeout(this.#flushTimer);
+			this.#flushTimer = null;
+		}
+		if (this.#cloudMaterializeTimer) {
+			clearTimeout(this.#cloudMaterializeTimer);
+			this.#cloudMaterializeTimer = null;
+		}
+		for (const timer of this.#changeTimers.values()) clearTimeout(timer);
+		this.#changeTimers.clear();
+		this.#cloudMaterializeRunning = false;
+		this.#cloudMaterializePending = false;
+		this.#backend = null;
 	}
 
 	// ─── Raw event intake (production watcher) ─────────────────────────────────

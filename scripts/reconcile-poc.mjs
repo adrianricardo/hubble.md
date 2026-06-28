@@ -120,7 +120,6 @@ async function main() {
 	const client = new ConvexHttpClient(args.url);
 	const filePath = resolve(args.file);
 	const live = await getLiveDocument(client, args.documentId);
-	const syncDocId = `document:${args.documentId}`;
 
 	await mkdir(dirname(filePath), { recursive: true });
 	if (args.initFromLive || !existsSync(filePath)) {
@@ -128,6 +127,7 @@ async function main() {
 	}
 
 	let baseMarkdown = await readFile(filePath, "utf8");
+	let baseRevision = live.revision;
 	if (baseMarkdown !== live.markdown) {
 		console.warn(
 			"Watched file differs from live markdown at startup. For the cleanest POC, rerun with --init-from-live.",
@@ -148,19 +148,21 @@ async function main() {
 		}
 
 		const startedAt = Date.now();
-		const result = await client.mutation(
-			api.prosemirror.reconcileMarkdownRangePoc,
-			{
-				docId: syncDocId,
+		const result = await client.mutation(api.documents.applyPatch, {
+			documentId: args.documentId,
+			baseRevision,
+			intent: {
+				kind: "replace-range",
 				baseMarkdown,
 				from: range.from,
 				to: range.to,
 				markdown: range.markdown,
-				actor: args.actor,
 			},
-		);
+			actor: args.actor,
+		});
 		const elapsed = Date.now() - startedAt;
 		baseMarkdown = result.markdown;
+		baseRevision = result.revision;
 
 		projecting = true;
 		await writeFile(filePath, baseMarkdown);

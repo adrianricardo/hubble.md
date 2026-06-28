@@ -17,6 +17,7 @@ import {
 	classifySyncedFolderRoot,
 	flushExpiredUnlinks,
 	type HeldUnlink,
+	heartbeatSingleWriterLock,
 	OWNER_LOCK_STALE_MS,
 	ownerLockPath,
 	type RawWatcherEvent,
@@ -306,6 +307,50 @@ describe("acquireSingleWriterLock", () => {
 			pid: 1,
 			now: 10_000 + OWNER_LOCK_STALE_MS + 1,
 		});
+		expect(result.acquired).toBe(true);
+		expect(
+			JSON.parse(fs.files.get(ownerLockPath(SYNC_ROOT)) ?? "{}"),
+		).toMatchObject({ deviceId: "device-a" });
+	});
+});
+
+describe("heartbeatSingleWriterLock", () => {
+	it("refuses to overwrite a fresh foreign heartbeat", async () => {
+		const fs = lockFs({
+			[ownerLockPath(SYNC_ROOT)]: JSON.stringify({
+				deviceId: "device-b",
+				pid: 99,
+				heartbeatAt: 10_000,
+			}),
+		});
+		const result = await heartbeatSingleWriterLock(fs, SYNC_ROOT, {
+			deviceId: "device-a",
+			pid: 1,
+			now: 10_000 + OWNER_LOCK_STALE_MS - 1,
+		});
+
+		expect(result.acquired).toBe(false);
+		expect(JSON.parse(fs.files.get(ownerLockPath(SYNC_ROOT)) ?? "{}")).toEqual({
+			deviceId: "device-b",
+			pid: 99,
+			heartbeatAt: 10_000,
+		});
+	});
+
+	it("reclaims a stale foreign heartbeat", async () => {
+		const fs = lockFs({
+			[ownerLockPath(SYNC_ROOT)]: JSON.stringify({
+				deviceId: "device-b",
+				pid: 99,
+				heartbeatAt: 10_000,
+			}),
+		});
+		const result = await heartbeatSingleWriterLock(fs, SYNC_ROOT, {
+			deviceId: "device-a",
+			pid: 1,
+			now: 10_000 + OWNER_LOCK_STALE_MS + 1,
+		});
+
 		expect(result.acquired).toBe(true);
 		expect(
 			JSON.parse(fs.files.get(ownerLockPath(SYNC_ROOT)) ?? "{}"),
