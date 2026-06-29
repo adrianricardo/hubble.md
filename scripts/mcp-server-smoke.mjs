@@ -3,7 +3,10 @@ import { spawn } from "node:child_process";
 import { basename } from "node:path";
 import { createConvexBackend } from "../packages/convex-client/dist/index.js";
 
-const DEFAULT_WORKSPACE_NAME = "MCP Server Smoke";
+const DEFAULT_WORKSPACE_NAME = `MCP Server Smoke ${new Date()
+	.toISOString()
+	.replace(/[-:T.Z]/g, "")
+	.slice(0, 14)}`;
 
 function parseArgs(argv) {
 	const parsed = {
@@ -126,24 +129,15 @@ class McpStdioClient {
 	handleStdout(chunk) {
 		this.buffer = Buffer.concat([this.buffer, chunk]);
 		while (true) {
-			const headerEnd = this.buffer.indexOf("\r\n\r\n");
-			if (headerEnd === -1) return;
-
-			const header = this.buffer.subarray(0, headerEnd).toString();
-			const lengthMatch = /^Content-Length: (\d+)$/im.exec(header);
-			if (!lengthMatch) {
-				throw new Error(`Missing MCP Content-Length header: ${header}`);
-			}
-
-			const contentLength = Number(lengthMatch[1]);
-			const messageStart = headerEnd + 4;
-			const messageEnd = messageStart + contentLength;
-			if (this.buffer.length < messageEnd) return;
+			const lineEnd = this.buffer.indexOf("\n");
+			if (lineEnd === -1) return;
 
 			const rawMessage = this.buffer
-				.subarray(messageStart, messageEnd)
-				.toString();
-			this.buffer = this.buffer.subarray(messageEnd);
+				.subarray(0, lineEnd)
+				.toString()
+				.replace(/\r$/, "");
+			this.buffer = this.buffer.subarray(lineEnd + 1);
+			if (!rawMessage) continue;
 			this.handleMessage(JSON.parse(rawMessage));
 		}
 	}
@@ -174,9 +168,7 @@ class McpStdioClient {
 			params,
 		};
 		const raw = JSON.stringify(message);
-		this.child.stdin.write(
-			`Content-Length: ${Buffer.byteLength(raw)}\r\n\r\n${raw}`,
-		);
+		this.child.stdin.write(`${raw}\n`);
 		return new Promise((resolve, reject) => {
 			this.pending.set(id, { method, resolve, reject });
 		});
@@ -188,9 +180,7 @@ class McpStdioClient {
 			method,
 			params,
 		});
-		this.child.stdin.write(
-			`Content-Length: ${Buffer.byteLength(raw)}\r\n\r\n${raw}`,
-		);
+		this.child.stdin.write(`${raw}\n`);
 	}
 
 	async close() {

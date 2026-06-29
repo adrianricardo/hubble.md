@@ -30,6 +30,8 @@ out to `hubble cloud document ...`.
   `packages/mcp-server/dist/index.js` over MCP stdio, imports a timestamped Live
   Document, calls get/patch/export tools, and verifies the patch advances the
   revision.
+- Hardened MCP stdio by routing process console output to stderr, keeping stdout
+  reserved for protocol messages even when Convex/Tiptap emits warnings.
 
 ## Acceptance
 
@@ -48,6 +50,11 @@ CONVEX_URL=<url> AUTH_TOKEN=<jwt> node scripts/mcp-server-smoke.mjs
 pnpm typecheck
 pnpm build:desktop
 ```
+
+Hosted smoke passed on `strong-setter-709` 2026-06-29 using a freshly signed-up
+password-auth smoke account: document `kn756w6xs8147tp4ahzb4se6js89jxmv`
+advanced revision `1 -> 2` through `hubble_patch_document`, and
+`hubble_export_markdown` returned the patch marker.
 
 ## Follow-Up
 

@@ -866,8 +866,12 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
       attribution checks remain server-side. Follow-up added
       `scripts/mcp-server-smoke.mjs` to launch the built MCP server over stdio
       against a hosted authenticated deployment, call get/patch/export tools, and
-      verify the patch advances the revision. Verified focused sync/mcp builds,
-      script syntax, `pnpm typecheck`, and `pnpm build:desktop`.
+      verify the patch advances the revision. Hosted smoke passed on
+      `strong-setter-709` 2026-06-29 with document
+      `kn756w6xs8147tp4ahzb4se6js89jxmv` advancing revision `1 -> 2`; MCP server
+      stdout was hardened so Convex/Tiptap warnings go to stderr instead of
+      corrupting stdio protocol messages. Verified focused sync/mcp builds, script
+      syntax, `pnpm typecheck`, and `pnpm build:desktop`.
       — *Owner: Codex · Started: 2026-06-29 · Landed: 2026-06-29*
 - [~] Offline edit + merge on reconnect — two flavors (Decision 6): in-editor (CRDT
       local buffer/replay) and external-file (watcher queues edits, flushes on
@@ -915,7 +919,10 @@ Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
   stdio, imports a timestamped Live Document through the existing Convex client,
   calls `hubble_get_document`, `hubble_patch_document`, and
   `hubble_export_markdown`, then fails unless the MCP patch advances the revision
-  and the exported markdown contains the patch marker.
+  and the exported markdown contains the patch marker. Hosted verification passed
+  on `strong-setter-709` with document `kn756w6xs8147tp4ahzb4se6js89jxmv`
+  advancing revision `1 -> 2`; the MCP server now routes console output to stderr
+  so backend warnings do not corrupt stdout protocol frames.
 - 2026-06-29 — Codex — Landed RD12 post-launch standard-tier MCP server:
   added `@hubble.md/mcp-server` with a `hubble-mcp` stdio entrypoint and tools
   for Live Document get, patch, and markdown export. The server reuses the

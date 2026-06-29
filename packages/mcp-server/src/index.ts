@@ -5,6 +5,12 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
+for (const method of ["debug", "info", "log", "warn", "error"] as const) {
+	console[method] = (...args: unknown[]) => {
+		process.stderr.write(`${args.map(String).join(" ")}\n`);
+	};
+}
+
 type HubbleToolResult = {
 	content: Array<{ type: "text"; text: string }>;
 	isError?: boolean;
