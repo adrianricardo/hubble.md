@@ -23,7 +23,8 @@
 		}
 	},
 	"scripts": {
-		"dev": "convex dev"
+		"dev": "convex dev",
+		"test": "vitest run"
 	},
 	"dependencies": {
 		"@auth/core": "0.41.1",
@@ -38,6 +39,9 @@
 		"unist-util-visit": "^5.1.0"
 	},
 	"devDependencies": {
-		"typescript": "~5.8.3"
+		"@edge-runtime/vm": "^5.0.0",
+		"convex-test": "^0.0.54",
+		"typescript": "~5.8.3",
+		"vitest": "^3.2.4"
 	}
 }
