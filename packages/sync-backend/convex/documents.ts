@@ -16,6 +16,7 @@ import {
 	query,
 } from "./_generated/server";
 import { currentActorName } from "./authIdentity";
+import { findUserIdByEmail, upsertDocumentInvite } from "./members";
 import {
 	canWriteRole,
 	documentRole,
@@ -1391,13 +1392,25 @@ export const setUserShareByEmail = mutation({
 		await requireDocumentOwner(ctx, documentId);
 		const normalizedEmail = email.trim().toLowerCase();
 		if (!normalizedEmail) throw new Error("Email is required");
-		const users = await ctx.db.query("users").collect();
-		const user = users.find(
-			(candidate) => candidate.email?.toLowerCase() === normalizedEmail,
-		);
-		if (!user) throw new Error(`No Hubble user found for ${normalizedEmail}`);
-		await ensureDocumentShare(ctx, { documentId, userId: user._id, role });
-		return user._id;
+		const existingUserId = await findUserIdByEmail(ctx, normalizedEmail);
+		if (existingUserId) {
+			await ensureDocumentShare(ctx, {
+				documentId,
+				userId: existingUserId,
+				role,
+			});
+			return { status: "shared" as const, userId: existingUserId };
+		}
+		// No account yet: record a pending invite resolved on the invitee's
+		// signup instead of rejecting the share.
+		const invitedBy = (await getAuthUserId(ctx)) ?? undefined;
+		await upsertDocumentInvite(ctx, {
+			documentId,
+			email: normalizedEmail,
+			role,
+			invitedBy,
+		});
+		return { status: "invited" as const, userId: null };
 	},
 });
 

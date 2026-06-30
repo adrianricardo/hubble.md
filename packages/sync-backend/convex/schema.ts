@@ -21,6 +21,31 @@ export default defineSchema({
 		.index("by_user", ["userId"])
 		.index("by_workspace_user", ["workspaceId", "userId"]),
 
+	// Pending invites keyed by email, resolved into members/docShares when the
+	// invitee signs up (Convex Auth afterUserCreatedOrUpdated). Shared by both
+	// team-workspace invites and per-document email shares.
+	invites: defineTable({
+		email: v.string(),
+		workspaceId: v.optional(v.id("workspaces")),
+		documentId: v.optional(v.id("documents")),
+		workspaceRole: v.optional(
+			v.union(v.literal("owner"), v.literal("admin"), v.literal("member")),
+		),
+		documentRole: v.optional(
+			v.union(
+				v.literal("owner"),
+				v.literal("editor"),
+				v.literal("commenter"),
+				v.literal("viewer"),
+			),
+		),
+		invitedBy: v.optional(v.id("users")),
+		createdAt: v.number(),
+	})
+		.index("by_email", ["email"])
+		.index("by_workspace_email", ["workspaceId", "email"])
+		.index("by_document_email", ["documentId", "email"]),
+
 	files: defineTable({
 		workspaceId: v.id("workspaces"),
 		path: v.string(),

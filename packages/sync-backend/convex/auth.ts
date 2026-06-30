@@ -1,5 +1,7 @@
 import { Password } from "@convex-dev/auth/providers/Password";
 import { convexAuth } from "@convex-dev/auth/server";
+import type { MutationCtx } from "./_generated/server";
+import { resolveInvitesForUser } from "./members";
 
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
 	providers: [
@@ -14,4 +16,10 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
 			},
 		}),
 	],
+	callbacks: {
+		// Apply any pending email-keyed invites once the account exists.
+		async afterUserCreatedOrUpdated(ctx, { userId }) {
+			await resolveInvitesForUser(ctx as unknown as MutationCtx, userId);
+		},
+	},
 });

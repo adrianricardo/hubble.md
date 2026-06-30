@@ -129,7 +129,12 @@ export const listWorkspaces = query({
 	handler: async (ctx) => {
 		const userId = await getAuthUserId(ctx);
 		const workspaces = await ctx.db.query("workspaces").collect();
-		if (!userId) return workspaces;
+		if (!userId) {
+			// Never leak real (owned) workspaces to unauthenticated callers. Legacy
+			// anonymous workspaces (ownerId === undefined) stay reachable for CLI/test
+			// flows, consistent with workspaceRole()'s anonymous "owner" semantics.
+			return workspaces.filter((workspace) => workspace.ownerId === undefined);
+		}
 
 		const memberships = await ctx.db
 			.query("members")
