@@ -57,7 +57,8 @@ to a Sonnet sub-agent with a path-scoped brief returning a short summary.
 |----|--------|---------------|-------------|-------|
 | P1 Backend foundation | done | opus / session-1 | 2026-06-30 | Committed `b5a650a` on `v1-release`. invites table, member mutations, B2b leak fix. codegen + typecheck green. |
 | P2 Web auth + routing | done (typecheck/build only) | opus / session-1 | 2026-06-30 | Root `ConvexAuthProvider` + auth gate + env-baked URL in `App.tsx`; `ConnectScreen` deleted; auth screens extracted to `auth/AuthScreens.tsx`; JWT threaded into store/subscriber clients; A1d personal-workspace auto-provision. typecheck+build green. **Runtime smoke still owed** (sign-in → provision → land → authed queries). |
-| P2-tests Backend test net | done | opus / session-2 | 2026-06-30 | convex-test infra (`vitest.config.ts`, `test` script, deps) + 14 passing tests over P1/P2 logic (members.test/documents.test/sync.test). `pnpm dedupe` fixed a vite 7.3.1/7.3.5 split introduced by the install. typecheck+build+codegen green. **Not committed yet.** |
+| P2-tests Backend test net | done | opus / session-2 | 2026-06-30 | Committed `b7cf458`. convex-test infra (`vitest.config.ts`, `test` script, deps) + 14 passing tests over P1/P2 logic (members.test/documents.test/sync.test). `pnpm dedupe` fixed a vite 7.3.1/7.3.5 split introduced by the install. typecheck+build+codegen green. |
+| P2-smoke (server) Auth→provision | done | opus / session-2 | 2026-06-30 | Headless signup smoke vs **dev** deployment: Password `signUp` → `afterUserCreatedOrUpdated` fired → 1 personal workspace provisioned → authed `listWorkspaces` (real JWT) returned it. Closes the callback path convex-test can't trigger. Left a `smoke+<ts>@example.com` user in dev. **Browser JWT-threading smoke still owed.** |
 | P3 Dashboard surface | next | — | — | Includes A1f aggregate queries (relocated from P1). Depends on P2. |
 | P4 Production presence | pending | — | — | A3 launch-critical; un-gate presence from `testIdentity`. Depends on P2. |
 | P5 Completeness | pending | — | — | A5 auto-snapshot + @mention picker, B1c member UI, A4 onboarding. Delegable. |
@@ -151,8 +152,17 @@ vite-env.d.ts,auth/AuthScreens.tsx(new)}`; `apps/www/src/screens/OpenWorkspaceSc
   (what `getAuthUserId` parses). The `pnpm add` pulled a 2nd vite (7.3.1 via @vitest/mocker
   vs 7.3.5 elsewhere) which broke `apps/www` tsc; `pnpm dedupe` collapsed it to one.
   Checks: sync-backend `test`=14✓, `npx convex codegen`=0, `pnpm typecheck` (all pkgs)=✓,
-  `pnpm --filter @hubble.md/www build`=✓.
-  **Still owed:** P2 browser smoke (human, Next-step #3) before trusting P2 in P3.
+  `pnpm --filter @hubble.md/www build`=✓. Committed `b7cf458`.
+  Then ran a **headless server-side smoke** vs the dev deployment (`convex dev --once`
+  to deploy current code, then a one-shot ConvexHttpClient script — not committed):
+  Password `signUp` issued a JWT → the `afterUserCreatedOrUpdated` callback ran →
+  exactly one personal workspace was provisioned → authed `listWorkspaces` returned
+  it. This is the first end-to-end exercise of the callback (convex-test can't fire it).
+  **Still owed (browser-only):** confirm the signed-in JWT threads into the *standalone*
+  store/subscriber `ConvexReactClient`s (`store/actions.ts`, `createConvexSubscriber`)
+  — i.e. authed file/doc sync works in the running web app. Needs a browser; no
+  permitted browser tool in this session (`/browse` unavailable, chrome MCP disallowed).
+  Resume in a new session at P3 (or run the browser smoke first).
 - 2026-06-30: **Paused after P2 at user request.** P1 (`b5a650a`) + P2 (`39895d8`)
   committed on `v1-release`; all build/typecheck/codegen green; P2 runtime smoke +
   backend tests owed (see Handoff → Next step). Resume at Next-step #1.
