@@ -31,6 +31,7 @@ import {
 const prosemirrorSync = new ProsemirrorSync(components.prosemirrorSync);
 
 const LIVE_DOCUMENT_MARKDOWN_MAX_BYTES = 256 * 1024;
+const AUTO_REVISION_MIN_INTERVAL_MS = 60_000;
 const textEncoder = new TextEncoder();
 
 type DocumentRole = "owner" | "editor" | "commenter" | "viewer";
@@ -103,9 +104,14 @@ function assertLiveDocumentMarkdownWithinCap(markdown: string) {
 	const bytes = markdownByteLength(markdown);
 	if (bytes > LIVE_DOCUMENT_MARKDOWN_MAX_BYTES) {
 		throw new Error(
-			`Live Document markdown is too large: ${bytes} bytes exceeds the 256 KiB limit`,
+			`Live Document size limit exceeded: this document is ${formatBytes(bytes)}, but Live Documents currently support up to 256 KiB of markdown. Keep this as a local markdown file or split it into smaller Live Documents.`,
 		);
 	}
+}
+
+function formatBytes(bytes: number): string {
+	if (bytes < 1024) return `${bytes} bytes`;
+	return `${Math.ceil(bytes / 1024)} KiB`;
 }
 
 async function ensureDocumentShare(
@@ -652,6 +658,38 @@ async function materializeRevisionForDocument(
 	});
 }
 
+async function materializeRevisionForDocumentIfStale(
+	ctx: MutationCtx,
+	args: {
+		documentId: Id<"documents">;
+		actor?: string;
+		label?: string;
+		minIntervalMs: number;
+	},
+) {
+	const revisions = await ctx.db
+		.query("revisions")
+		.withIndex("by_document", (q) => q.eq("documentId", args.documentId))
+		.collect();
+	const latest = revisions.sort((a, b) => b.createdAt - a.createdAt)[0];
+	const now = Date.now();
+	if (latest && now - latest.createdAt < args.minIntervalMs) return null;
+
+	const projection = await projectMarkdown(ctx, args.documentId);
+	if (latest && latest.revision === (projection.version ?? 0)) return null;
+
+	return ctx.db.insert("revisions", {
+		documentId: args.documentId,
+		createdAt: now,
+		actor: args.actor,
+		label: args.label,
+		pmDoc: projection.pmDoc,
+		markdown: projection.markdown,
+		revision: projection.version ?? 0,
+		crdtMeta: { prosemirrorVersion: projection.version ?? 0 },
+	});
+}
+
 function markdownOutline(markdown: string) {
 	return markdown
 		.split(/\r?\n/)
@@ -844,7 +882,8 @@ export const list = query({
 export const listTrash = query({
 	args: { workspaceId: v.id("workspaces") },
 	handler: async (ctx, { workspaceId }) => {
-		await requireWorkspaceMember(ctx, workspaceId);
+		// Direct document shares can outlive workspace membership; filter each
+		// deleted document by its saved role instead of gating on the workspace.
 		const documents = await ctx.db
 			.query("documents")
 			.withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
@@ -1037,6 +1076,63 @@ export const listCommentThreads = query({
 		);
 	},
 });
+
+export const listMentionCandidates = query({
+	args: { documentId: v.id("documents") },
+	handler: async (ctx, { documentId }) => {
+		await requireDocumentComment(ctx, documentId);
+		const document = await ctx.db.get(documentId);
+		if (!document || document.deletedAt !== undefined) return [];
+
+		const userIds = new Set<Id<"users">>();
+		const workspace = await ctx.db.get(document.workspaceId);
+		if (workspace?.ownerId) userIds.add(workspace.ownerId);
+
+		const [members, shares] = await Promise.all([
+			ctx.db
+				.query("members")
+				.withIndex("by_workspace", (q) =>
+					q.eq("workspaceId", document.workspaceId),
+				)
+				.collect(),
+			ctx.db
+				.query("docShares")
+				.withIndex("by_document", (q) => q.eq("documentId", documentId))
+				.collect(),
+		]);
+
+		for (const member of members) userIds.add(member.userId);
+		for (const share of shares) {
+			if (share.userId) userIds.add(share.userId);
+		}
+
+		const users = await Promise.all(
+			[...userIds].map((userId) => ctx.db.get(userId)),
+		);
+		return users
+			.filter((user) => user !== null)
+			.map((user) => ({
+				userId: user._id,
+				name: user.name,
+				email: user.email,
+				token: mentionTokenForUser(user.name, user.email),
+			}))
+			.filter((user) => user.token !== null)
+			.sort((a, b) =>
+				(a.name ?? a.email ?? "").localeCompare(b.name ?? b.email ?? ""),
+			);
+	},
+});
+
+function mentionTokenForUser(
+	name: string | undefined,
+	email: string | undefined,
+): string | null {
+	const compactName = name?.trim().replace(/\s+/g, "");
+	if (compactName) return compactName;
+	const localPart = email?.split("@")[0]?.trim();
+	return localPart || null;
+}
 
 export const createCommentThread = mutation({
 	args: {
@@ -1620,6 +1716,12 @@ export const markEdited = mutation({
 		const document = await ctx.db.get(documentId);
 		if (!document || document.deletedAt !== undefined) return;
 		const resolvedActor = await currentActorName(ctx, actor);
+		await materializeRevisionForDocumentIfStale(ctx, {
+			documentId,
+			label: "Autosaved",
+			actor: resolvedActor,
+			minIntervalMs: AUTO_REVISION_MIN_INTERVAL_MS,
+		});
 		await ctx.db.patch(documentId, {
 			updatedBy: resolvedActor,
 			updatedAt: Date.now(),

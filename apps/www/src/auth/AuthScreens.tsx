@@ -1,5 +1,6 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { useState } from "react";
+import { categorizeError, describeError } from "../connection/convex-error";
 
 // Root-level auth surface. Lifted out of AppShell (P2/A1b) so the auth gate can
 // live at the router root instead of inside a per-workspace shell.
@@ -18,7 +19,7 @@ export function SignInScreen() {
 		try {
 			await signIn("password", formData);
 		} catch (err) {
-			setError(err instanceof Error ? err.message : "Sign in failed");
+			setError(describeAuthError(err, mode));
 		} finally {
 			setPending(false);
 		}
@@ -100,6 +101,20 @@ export function SignInScreen() {
 			</form>
 		</main>
 	);
+}
+
+function describeAuthError(err: unknown, mode: "signIn" | "signUp"): string {
+	const message = err instanceof Error ? err.message : String(err);
+	const lower = message.toLowerCase();
+	if (lower.includes("invalid") || lower.includes("password")) {
+		return mode === "signIn"
+			? "Email or password didn't match."
+			: "Use a valid email and a stronger password.";
+	}
+	if (lower.includes("already") || lower.includes("exists")) {
+		return "An account with that email already exists. Sign in instead.";
+	}
+	return describeError(categorizeError(err));
 }
 
 export function SignOutButton() {

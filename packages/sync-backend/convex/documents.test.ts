@@ -177,3 +177,261 @@ describe("dashboard", () => {
 		]);
 	});
 });
+
+describe("markEdited auto-snapshot", () => {
+	test("throttles autosave when a recent revision already exists", async () => {
+		const t = convexTest(schema, modules);
+		const { ownerId, documentId } = await setupOwnedDocument(t);
+		await t.run((ctx) =>
+			ctx.db.insert("revisions", {
+				documentId,
+				createdAt: Date.now(),
+				actor: "Owner",
+				label: "Autosaved",
+				pmDoc: null,
+				markdown: "",
+				revision: 0,
+			}),
+		);
+
+		await asUser(t, ownerId).mutation(api.documents.markEdited, {
+			documentId,
+		});
+
+		const revisions = await t.run((ctx) => ctx.db.query("revisions").collect());
+		expect(revisions).toHaveLength(1);
+	});
+});
+
+describe("Live Document cap UX", () => {
+	test("importMarkdown rejects oversized documents with product copy", async () => {
+		const t = convexTest(schema, modules);
+		const { ownerId, workspaceId } = await t.run(async (ctx) => {
+			const ownerId = await ctx.db.insert("users", {
+				email: "owner@example.com",
+				name: "Owner",
+			});
+			const workspaceId = await ctx.db.insert("workspaces", {
+				name: "Team",
+				ownerId,
+				createdAt: 1,
+			});
+			return { ownerId, workspaceId };
+		});
+
+		await expect(
+			asUser(t, ownerId).mutation(api.documents.importMarkdown, {
+				workspaceId,
+				path: "large.md",
+				title: "Large",
+				markdown: "a".repeat(256 * 1024 + 1),
+			}),
+		).rejects.toThrow(
+			"Live Documents currently support up to 256 KiB of markdown",
+		);
+	});
+});
+
+describe("listMentionCandidates", () => {
+	test("returns workspace members and direct document shares", async () => {
+		const t = convexTest(schema, modules);
+		const { ownerId, documentId } = await setupOwnedDocument(t);
+		const { memberId, sharedId } = await t.run(async (ctx) => {
+			const document = await ctx.db.get(documentId);
+			if (!document) throw new Error("missing document");
+			const memberId = await ctx.db.insert("users", {
+				email: "member@example.com",
+				name: "Member Person",
+			});
+			const sharedId = await ctx.db.insert("users", {
+				email: "shared@example.com",
+				name: "Shared Person",
+			});
+			await ctx.db.insert("members", {
+				workspaceId: document.workspaceId,
+				userId: memberId,
+				role: "member",
+				createdAt: 1,
+			});
+			await ctx.db.insert("docShares", {
+				documentId,
+				userId: sharedId,
+				role: "commenter",
+				createdAt: 1,
+				updatedAt: 1,
+			});
+			return { memberId, sharedId };
+		});
+
+		const result = await asUser(t, ownerId).query(
+			api.documents.listMentionCandidates,
+			{ documentId },
+		);
+
+		expect(result.map((candidate) => candidate.userId).sort()).toEqual(
+			[ownerId, memberId, sharedId].sort(),
+		);
+		expect(result.map((candidate) => candidate.token).sort()).toEqual([
+			"MemberPerson",
+			"Owner",
+			"SharedPerson",
+		]);
+	});
+});
+
+describe("permission regressions", () => {
+	async function setupSharedDocument(t: ReturnType<typeof convexTest>) {
+		return await t.run(async (ctx) => {
+			const ownerId = await ctx.db.insert("users", {
+				email: "owner@example.com",
+				name: "Owner",
+			});
+			const commenterId = await ctx.db.insert("users", {
+				email: "commenter@example.com",
+				name: "Commenter",
+			});
+			const viewerId = await ctx.db.insert("users", {
+				email: "viewer@example.com",
+				name: "Viewer",
+			});
+			const strangerId = await ctx.db.insert("users", {
+				email: "stranger@example.com",
+				name: "Stranger",
+			});
+			const workspaceId = await ctx.db.insert("workspaces", {
+				name: "Team",
+				ownerId,
+				createdAt: 1,
+			});
+			const documentId = await ctx.db.insert("documents", {
+				workspaceId,
+				title: "Doc",
+				createdAt: 1,
+				updatedAt: 1,
+			});
+			for (const [userId, role] of [
+				[commenterId, "commenter"],
+				[viewerId, "viewer"],
+			] as const) {
+				await ctx.db.insert("docShares", {
+					documentId,
+					userId,
+					role,
+					createdAt: 1,
+					updatedAt: 1,
+				});
+			}
+			return {
+				ownerId,
+				commenterId,
+				viewerId,
+				strangerId,
+				workspaceId,
+				documentId,
+			};
+		});
+	}
+
+	test("viewer and commenter roles cannot apply editable document patches", async () => {
+		const t = convexTest(schema, modules);
+		const { commenterId, viewerId, documentId } = await setupSharedDocument(t);
+		const patchArgs = {
+			documentId,
+			baseRevision: 0,
+			intent: { kind: "append-markdown" as const, markdown: "\nDenied" },
+		};
+
+		await expect(
+			asUser(t, viewerId).mutation(api.documents.applyPatch, patchArgs),
+		).rejects.toThrow(/Unauthorized/);
+		await expect(
+			asUser(t, commenterId).mutation(api.documents.applyPatch, patchArgs),
+		).rejects.toThrow(/Unauthorized/);
+	});
+
+	test("commenters can comment, viewers cannot create comments or suggestions", async () => {
+		const t = convexTest(schema, modules);
+		const { commenterId, viewerId, documentId } = await setupSharedDocument(t);
+
+		await asUser(t, commenterId).mutation(api.documents.createCommentThread, {
+			documentId,
+			anchor: null,
+			body: "Please review this.",
+		});
+
+		await expect(
+			asUser(t, viewerId).mutation(api.documents.createCommentThread, {
+				documentId,
+				anchor: null,
+				body: "I should not be able to comment.",
+			}),
+		).rejects.toThrow(/Unauthorized/);
+		await expect(
+			asUser(t, viewerId).mutation(api.documents.proposeSuggestion, {
+				documentId,
+				baseRevision: 0,
+				intent: { kind: "append-markdown", markdown: "\nSuggestion" },
+			}),
+		).rejects.toThrow(/Unauthorized/);
+	});
+
+	test("public viewer links do not grant write access", async () => {
+		const t = convexTest(schema, modules);
+		const { ownerId, strangerId, documentId } = await setupSharedDocument(t);
+		await asUser(t, ownerId).mutation(api.documents.setLinkShare, {
+			documentId,
+			linkScope: "public",
+			role: "viewer",
+		});
+
+		await expect(
+			asUser(t, strangerId).query(api.documents.listCommentThreads, {
+				documentId,
+			}),
+		).resolves.toEqual([]);
+		await expect(
+			asUser(t, strangerId).mutation(api.documents.applyPatch, {
+				documentId,
+				baseRevision: 0,
+				intent: { kind: "append-markdown", markdown: "\nDenied" },
+			}),
+		).rejects.toThrow(/Unauthorized/);
+	});
+
+	test("trash listing uses deleted-document roles, not broad workspace membership", async () => {
+		const t = convexTest(schema, modules);
+		const { ownerId, viewerId, documentId, workspaceId } =
+			await setupSharedDocument(t);
+		const workspaceMemberId = await t.run(async (ctx) => {
+			const userId = await ctx.db.insert("users", {
+				email: "member@example.com",
+				name: "Member",
+			});
+			await ctx.db.insert("members", {
+				workspaceId,
+				userId,
+				role: "member",
+				createdAt: 1,
+			});
+			return userId;
+		});
+
+		await asUser(t, ownerId).mutation(api.documents.remove, { documentId });
+
+		const ownerTrash = await asUser(t, ownerId).query(api.documents.listTrash, {
+			workspaceId,
+		});
+		const viewerTrash = await asUser(t, viewerId).query(
+			api.documents.listTrash,
+			{ workspaceId },
+		);
+		const memberTrash = await asUser(t, workspaceMemberId).query(
+			api.documents.listTrash,
+			{ workspaceId },
+		);
+
+		expect(ownerTrash.map((document) => document._id)).toEqual([documentId]);
+		expect(viewerTrash.map((document) => document._id)).toEqual([documentId]);
+		expect(memberTrash).toEqual([]);
+	});
+});

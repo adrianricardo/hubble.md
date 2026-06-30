@@ -6,6 +6,7 @@ import MingcuteAddLine from "~icons/mingcute/add-line";
 import MingcuteArrowRightLine from "~icons/mingcute/arrow-right-line";
 import MingcuteSearchLine from "~icons/mingcute/search-line";
 import { SignOutButton } from "../auth/AuthScreens";
+import { categorizeError, describeError } from "../connection/convex-error";
 
 const LOADING_ROW_KEYS = ["one", "two", "three", "four"];
 
@@ -23,7 +24,9 @@ export function DashboardScreen({ onOpenDocument, onOpenWorkspace }: Props) {
 	const [creating, setCreating] = useState(false);
 	const [searchInput, setSearchInput] = useState("");
 	const [debouncedSearch, setDebouncedSearch] = useState("");
+	const [error, setError] = useState<string | null>(null);
 	const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const firstRunCreateRef = useRef(false);
 
 	useEffect(() => {
 		if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -49,15 +52,42 @@ export function DashboardScreen({ onOpenDocument, onOpenWorkspace }: Props) {
 	const teams =
 		dashboard?.workspaces.filter((workspace) => !workspace.personal) ?? [];
 
+	useEffect(() => {
+		if (!dashboard || !privateWorkspace || firstRunCreateRef.current) return;
+		const hasReachableDocuments =
+			dashboard.recents.length > 0 || dashboard.sharedWithMe.length > 0;
+		if (hasReachableDocuments) return;
+		firstRunCreateRef.current = true;
+		setCreating(true);
+		setError(null);
+		void createDocument({
+			workspaceId: privateWorkspace._id,
+			title: "Welcome to Hubble",
+		})
+			.then((documentId) => {
+				onOpenDocument(privateWorkspace._id, documentId);
+			})
+			.catch((err) => {
+				setError(describeError(categorizeError(err)));
+				firstRunCreateRef.current = false;
+			})
+			.finally(() => {
+				setCreating(false);
+			});
+	}, [createDocument, dashboard, onOpenDocument, privateWorkspace]);
+
 	const handleCreate = async () => {
 		if (!createTarget) return;
 		setCreating(true);
+		setError(null);
 		try {
 			const documentId = await createDocument({
 				workspaceId: createTarget._id,
 				title: "Untitled",
 			});
 			onOpenDocument(createTarget._id, documentId);
+		} catch (err) {
+			setError(describeError(categorizeError(err)));
 		} finally {
 			setCreating(false);
 		}
@@ -88,6 +118,11 @@ export function DashboardScreen({ onOpenDocument, onOpenWorkspace }: Props) {
 						</button>
 					</div>
 				</header>
+				{error ? (
+					<p className="[margin:0] rounded-md border border-destructive/30 bg-destructive/10 text-sm text-destructive [padding-block:0.625rem] [padding-inline:0.75rem]">
+						{error}
+					</p>
+				) : null}
 
 				<div className="relative">
 					<MingcuteSearchLine className="pointer-events-none absolute size-4 text-muted-foreground [inset-block-start:0.8rem] [inset-inline-start:0.875rem]" />

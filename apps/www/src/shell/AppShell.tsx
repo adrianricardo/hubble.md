@@ -7,6 +7,10 @@ import { AppShellFrame, Modal } from "@hubble.md/ui";
 import { useStoreValue } from "@simplestack/store/react";
 import { useMutation, useQuery } from "convex/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import MingcuteAtLine from "~icons/mingcute/at-line";
+import MingcuteCloseLine from "~icons/mingcute/close-line";
+import MingcuteGroupLine from "~icons/mingcute/group-line";
+import MingcuteUserAddLine from "~icons/mingcute/user-add-line";
 import type { TestIdentity } from "../App";
 import { SignOutButton } from "../auth/AuthScreens";
 import { saveWorkspace } from "../connection/connection";
@@ -299,7 +303,14 @@ function AppShellContent({
 			toolbar={
 				<Toolbar
 					onNewNote={onNewNote}
-					sessionSlot={!testIdentity ? <SignOutButton /> : undefined}
+					sessionSlot={
+						<div className="flex items-center gap-1">
+							{realtimeCollabEnabled ? (
+								<WorkspaceMembersButton workspaceId={workspace.snapshot.id} />
+							) : null}
+							{!testIdentity ? <SignOutButton /> : undefined}
+						</div>
+					}
 				/>
 			}
 		>
@@ -753,6 +764,10 @@ function CommentsButton({
 	const createThread = useMutation(api.documents.createCommentThread);
 	const replyToThread = useMutation(api.documents.replyToCommentThread);
 	const resolveThread = useMutation(api.documents.resolveCommentThread);
+	const mentionCandidates = useQuery(
+		api.documents.listMentionCandidates,
+		open ? { documentId: documentId as Id<"documents"> } : "skip",
+	);
 	const [newBody, setNewBody] = useState("");
 	const [replyBodies, setReplyBodies] = useState<Record<string, string>>({});
 	const [busy, setBusy] = useState(false);
@@ -840,6 +855,11 @@ function CommentsButton({
 							rows={2}
 							className="w-full resize-none rounded-sm border border-border bg-muted/30 text-xs text-foreground outline-none focus:border-ring [padding-block:0.375rem] [padding-inline:0.5rem]"
 						/>
+						<MentionPicker
+							value={newBody}
+							onChange={setNewBody}
+							candidates={mentionCandidates}
+						/>
 						<button
 							type="button"
 							disabled={busy || !newBody.trim()}
@@ -896,6 +916,17 @@ function CommentsButton({
 										}
 									}}
 								/>
+								<MentionPicker
+									value={replyBodies[thread._id] ?? ""}
+									onChange={(nextValue) =>
+										setReplyBodies((prev) => ({
+											...prev,
+											[thread._id]: nextValue,
+										}))
+									}
+									candidates={mentionCandidates}
+									compact
+								/>
 								<button
 									type="button"
 									disabled={busy || !(replyBodies[thread._id] ?? "").trim()}
@@ -927,6 +958,76 @@ function CommentsButton({
 			</Modal>
 		</>
 	);
+}
+
+type MentionCandidate = {
+	userId: Id<"users">;
+	name?: string;
+	email?: string;
+	token: string | null;
+};
+
+function MentionPicker({
+	value,
+	onChange,
+	candidates,
+	compact = false,
+}: {
+	value: string;
+	onChange: (value: string) => void;
+	candidates: MentionCandidate[] | undefined;
+	compact?: boolean;
+}) {
+	const query = currentMentionQuery(value);
+	const matches = useMemo(() => {
+		if (query === null || !candidates) return [];
+		const normalized = query.toLowerCase();
+		return candidates
+			.filter((candidate) => {
+				if (!candidate.token) return false;
+				const label = `${candidate.name ?? ""} ${candidate.email ?? ""} ${candidate.token}`;
+				return label.toLowerCase().includes(normalized);
+			})
+			.slice(0, compact ? 2 : 4);
+	}, [candidates, compact, query]);
+
+	if (query === null || matches.length === 0) return null;
+
+	return (
+		<div
+			className={
+				compact
+					? "flex shrink-0 items-center gap-1"
+					: "mt-1 flex flex-wrap items-center gap-1"
+			}
+		>
+			{!compact ? (
+				<span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+					<MingcuteAtLine className="size-3.5" />
+					Mention
+				</span>
+			) : null}
+			{matches.map((candidate) => (
+				<button
+					key={candidate.userId}
+					type="button"
+					onClick={() => onChange(insertMention(value, candidate.token ?? ""))}
+					className="max-w-36 truncate rounded-sm border border-border bg-muted text-[11px] text-foreground hover:bg-accent [padding-block:0.1875rem] [padding-inline:0.375rem]"
+				>
+					@{candidate.token}
+				</button>
+			))}
+		</div>
+	);
+}
+
+function currentMentionQuery(value: string): string | null {
+	const match = /(^|\s)@([a-zA-Z0-9._%+-]*)$/.exec(value);
+	return match ? (match[2] ?? "") : null;
+}
+
+function insertMention(value: string, token: string): string {
+	return value.replace(/(^|\s)@([a-zA-Z0-9._%+-]*)$/, `$1@${token} `);
 }
 
 // ── Task C: Activity feed UI ──────────────────────────────────────────────────
@@ -994,6 +1095,222 @@ function formatEditedMeta(updatedAt: number, updatedBy?: string) {
 	return updatedBy
 		? `Last edited by ${updatedBy} at ${editedAt}`
 		: `Last edited ${editedAt}`;
+}
+
+type WorkspaceRole = "owner" | "admin" | "member";
+
+function WorkspaceMembersButton({ workspaceId }: { workspaceId: string }) {
+	const [open, setOpen] = useState(false);
+	const [email, setEmail] = useState("");
+	const [role, setRole] = useState<WorkspaceRole>("member");
+	const [busy, setBusy] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+	const members = useQuery(
+		api.sync.listWorkspaceMembers,
+		open ? { workspaceId: workspaceId as Id<"workspaces"> } : "skip",
+	);
+	const invites = useQuery(
+		api.members.listWorkspaceInvites,
+		open ? { workspaceId: workspaceId as Id<"workspaces"> } : "skip",
+	);
+	const inviteMember = useMutation(api.members.inviteWorkspaceMember);
+	const setMemberRole = useMutation(api.members.setWorkspaceMemberRole);
+	const removeMember = useMutation(api.members.removeWorkspaceMember);
+	const revokeInvite = useMutation(api.members.revokeWorkspaceInvite);
+
+	const run = async (action: () => Promise<unknown>) => {
+		setBusy(true);
+		setError(null);
+		try {
+			await action();
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Action failed");
+		} finally {
+			setBusy(false);
+		}
+	};
+
+	const submitInvite = async (event: React.FormEvent) => {
+		event.preventDefault();
+		const trimmed = email.trim();
+		if (!trimmed) return;
+		await run(async () => {
+			await inviteMember({
+				workspaceId: workspaceId as Id<"workspaces">,
+				email: trimmed,
+				role,
+			});
+			setEmail("");
+			setRole("member");
+		});
+	};
+
+	return (
+		<>
+			<button
+				type="button"
+				onClick={() => setOpen(true)}
+				className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-border bg-background text-xs font-medium text-foreground hover:bg-accent [padding-inline:0.625rem]"
+			>
+				<MingcuteGroupLine className="size-4" />
+				Members
+			</button>
+			<Modal
+				open={open}
+				onOpenChange={setOpen}
+				title="Workspace members"
+				description="Invite collaborators and manage workspace roles."
+				className="max-w-xl"
+			>
+				<form
+					onSubmit={(event) => void submitInvite(event)}
+					className="grid gap-2 rounded-sm border border-border bg-background [padding-block:0.75rem] [padding-inline:0.75rem]"
+				>
+					<label
+						htmlFor="workspace-member-email"
+						className="text-xs font-medium text-foreground"
+					>
+						Invite by email
+					</label>
+					<div className="grid gap-2 sm:grid-cols-[1fr_8rem_auto]">
+						<input
+							id="workspace-member-email"
+							type="email"
+							value={email}
+							onChange={(event) => setEmail(event.target.value)}
+							placeholder="person@example.com"
+							className="min-h-9 rounded-sm border border-border bg-muted/30 text-xs text-foreground outline-none focus:border-ring [padding-block:0.375rem] [padding-inline:0.5rem]"
+						/>
+						<RoleSelect
+							value={role}
+							onChange={(nextRole) => setRole(nextRole)}
+							disabled={busy}
+						/>
+						<button
+							type="submit"
+							disabled={busy || !email.trim()}
+							className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-sm bg-primary text-xs font-medium text-primary-foreground disabled:opacity-50 [padding-inline:0.75rem]"
+						>
+							<MingcuteUserAddLine className="size-4" />
+							Invite
+						</button>
+					</div>
+					{error ? (
+						<p className="m-0 text-xs text-destructive">{error}</p>
+					) : null}
+				</form>
+
+				<div className="mt-3 grid gap-2">
+					{members === undefined ? (
+						<p className="text-sm text-muted-foreground">Loading members…</p>
+					) : members.length === 0 ? (
+						<p className="text-sm text-muted-foreground">No members yet.</p>
+					) : (
+						members.map((member) => (
+							<div
+								key={member._id}
+								className="grid gap-2 rounded-sm border border-border bg-background [padding-block:0.75rem] [padding-inline:0.75rem] sm:grid-cols-[1fr_8rem_auto]"
+							>
+								<div className="min-w-0">
+									<p className="m-0 truncate text-xs font-medium text-foreground">
+										{member.user?.name ?? member.user?.email ?? "Unknown user"}
+									</p>
+									<p className="m-0 mt-0.5 truncate text-[11px] text-muted-foreground">
+										{member.user?.email ?? member.role}
+									</p>
+								</div>
+								<RoleSelect
+									value={member.role}
+									onChange={(nextRole) =>
+										void run(() =>
+											setMemberRole({
+												workspaceId: workspaceId as Id<"workspaces">,
+												userId: member.userId,
+												role: nextRole,
+											}),
+										)
+									}
+									disabled={busy}
+								/>
+								<button
+									type="button"
+									disabled={busy}
+									onClick={() =>
+										void run(() =>
+											removeMember({
+												workspaceId: workspaceId as Id<"workspaces">,
+												userId: member.userId,
+											}),
+										)
+									}
+									className="inline-flex min-h-9 items-center justify-center rounded-sm text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50 [padding-inline:0.625rem]"
+								>
+									<MingcuteCloseLine className="size-4" />
+									<span className="sr-only">Remove member</span>
+								</button>
+							</div>
+						))
+					)}
+				</div>
+
+				{invites !== undefined && invites.length > 0 ? (
+					<div className="mt-4 grid gap-2">
+						<p className="m-0 text-xs font-medium text-muted-foreground">
+							Pending invites
+						</p>
+						{invites.map((invite) => (
+							<div
+								key={invite._id}
+								className="flex items-center justify-between gap-2 rounded-sm bg-muted/40 [padding-block:0.5rem] [padding-inline:0.625rem]"
+							>
+								<span className="min-w-0 truncate text-xs text-foreground">
+									{invite.email} · {invite.workspaceRole}
+								</span>
+								<button
+									type="button"
+									disabled={busy}
+									onClick={() =>
+										void run(() =>
+											revokeInvite({
+												workspaceId: workspaceId as Id<"workspaces">,
+												inviteId: invite._id,
+											}),
+										)
+									}
+									className="rounded-sm text-xs text-muted-foreground hover:text-foreground disabled:opacity-50 [padding-block:0.25rem] [padding-inline:0.375rem]"
+								>
+									Revoke
+								</button>
+							</div>
+						))}
+					</div>
+				) : null}
+			</Modal>
+		</>
+	);
+}
+
+function RoleSelect({
+	value,
+	onChange,
+	disabled,
+}: {
+	value: WorkspaceRole;
+	onChange: (role: WorkspaceRole) => void;
+	disabled?: boolean;
+}) {
+	return (
+		<select
+			value={value}
+			disabled={disabled}
+			onChange={(event) => onChange(event.target.value as WorkspaceRole)}
+			className="min-h-9 rounded-sm border border-border bg-muted/30 text-xs text-foreground outline-none focus:border-ring disabled:opacity-50 [padding-block:0.375rem] [padding-inline:0.5rem]"
+		>
+			<option value="member">Member</option>
+			<option value="admin">Admin</option>
+			<option value="owner">Owner</option>
+		</select>
+	);
 }
 
 function normalizeNotePath(name: string): string {

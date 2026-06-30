@@ -11,6 +11,7 @@ import {
 	Navigate,
 	Route,
 	Routes,
+	useLocation,
 	useNavigate,
 	useParams,
 } from "react-router";
@@ -80,13 +81,23 @@ function AppRoutes() {
 				<AuthStatus message="Checking session…" />
 			</AuthLoading>
 			<Unauthenticated>
-				<SignInScreen />
+				<SignedOutRoute />
 			</Unauthenticated>
 			<Authenticated>
 				<RoutedApp testIdentity={null} />
 			</Authenticated>
 		</>
 	);
+}
+
+function SignedOutRoute() {
+	const location = useLocation();
+	if (location.pathname !== "/") {
+		// Avoid carrying a stale workspace/document route into the next account.
+		clearWorkspace();
+		return <Navigate to="/" replace />;
+	}
+	return <SignInScreen />;
 }
 
 function RoutedApp({ testIdentity }: { testIdentity: TestIdentity | null }) {

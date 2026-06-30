@@ -61,13 +61,22 @@ to a Sonnet sub-agent with a path-scoped brief returning a short summary.
 | P2-smoke (server) Auth→provision | done | opus / session-2 | 2026-06-30 | Headless signup smoke vs **dev** deployment: Password `signUp` → `afterUserCreatedOrUpdated` fired → 1 personal workspace provisioned → authed `listWorkspaces` (real JWT) returned it. Closes the callback path convex-test can't trigger. Left a `smoke+<ts>@example.com` user in dev. **Browser JWT-threading smoke still owed.** |
 | P3 Dashboard surface | done (visual smoke blocked) | codex / session-3 | 2026-06-30 | A1f aggregate dashboard/search queries + authenticated Home dashboard landed. Tests/type/build green; in-app browser smoke blocked by browser-tool setup error. |
 | P4 Production presence | done (browser smoke blocked) | codex / session-4 | 2026-06-30 | A3 launch-critical; signed-in presence derives identity from Convex Auth, read/write authorization follows document/workspace permissions, and `?test=1` anonymous bootstrap remains supported. |
-| P5 Completeness | pending | — | — | A5 auto-snapshot + @mention picker, B1c member UI, A4 onboarding. Delegable. |
-| P6 Hardening | pending | — | — | B2 permission regression suite, B3 session edges, D6 cap UX. |
+| P5 Completeness | done (browser smoke blocked) | codex / session-5 | 2026-06-30 | A5 autosaved revisions, document-scoped @mention picker, B1c member UI, and A4 first-run auto-doc onboarding landed. |
+| P6 Hardening | done (browser smoke blocked) | codex / session-6 | 2026-06-30 | B2 permission regression suite, B3 signed-out route reset, and D6 cap/error UX landed. |
 | P7 Launch gate | pending | — | — | C1/C2 QA, D1 flag delete (LAST), D2 merge, D3/D4 deploy, D5 ops, D7 signup cap. |
 
 ## Handoff
 
-**Current state:** P1/P2/P2-tests/P2-smoke/P3/P4 are complete on `v1-release`.
+**Current state:** P1/P2/P2-tests/P2-smoke/P3/P4/P5/P6 are complete on
+`v1-release`. P5 adds in-app autosaved revision materialization from `markEdited`,
+a document-scoped @mention picker in comment composers/replies, a workspace member
+management modal wired to the existing member/invite mutations, and first-run
+dashboard onboarding that creates and opens a "Welcome to Hubble" Live Document
+when a new private workspace has no reachable documents.
+P6 adds permission regression coverage for document edit/comment/link/trash
+boundaries, resets signed-out stale workspace routes before the next login, and
+normalizes auth/session plus 256 KiB Live Document cap errors into user-facing
+copy.
 P4 turns the POC presence path into signed-in production presence: authenticated
 heartbeats ignore spoofed client identity and derive `{userId,name}` from Convex
 Auth, presence reads/writes authorize against Live Document roles or legacy
@@ -75,17 +84,22 @@ workspace membership, `listActive` returns stable colors, editor cursors publish
 for signed-in sessions, and Live Document headers show active collaborators. The
 `?test=1` anonymous identity path remains available for legacy POC bootstrap.
 
-**Next step:** P5 Completeness: A5 version auto-snapshot + @mention picker, B1c
-member-management UI, A4 onboarding. Browser smoke remains owed for P2/P3/P4
+**Next step:** P7 Launch gate: C1/C2 cross-surface QA, D1 flag deletion as the
+last code step, D2 merge gate, D3/D4 deploy, D5 external ops sink, and D7 signup
+cap. Browser smoke remains owed for P2/P3/P4/P5/P6
 because the in-app browser Node REPL failed before execution (`sandboxCwd must be
 an absolute file URI`) and Playwright is not installed for a CLI screenshot
-fallback. A dev server responded at `http://127.0.0.1:5175/` during the P4 attempt.
+fallback. A dev server responded at `http://127.0.0.1:5173/?test=1` during the P6
+attempt.
 
 **Pending manual tests:** Browser smoke the signed-in web flow once Browser tooling
-is available: sign in, confirm personal workspace/dashboard provisioning, create a
-Live Document from Home, open it, and verify signed-in collaborator presence/cursors
-with a second account/session. Also confirm `?test=1` still reaches the configured
-workspace for POC bootstrap.
+is available: sign in, confirm personal workspace/dashboard provisioning, confirm
+first-run "Welcome to Hubble" auto-doc creation for a new empty account, create a
+Live Document from Home, open it, verify signed-in collaborator presence/cursors
+with a second account/session, manage workspace members/invites, add a comment
+with an @mention and verify notification delivery, edit long enough to produce an
+autosaved History revision, restore it, and confirm `?test=1` still reaches the
+configured workspace for POC bootstrap.
 
 **Files changed (P3):**
 `packages/sync-backend/convex/documents.ts`, `packages/sync-backend/convex/documents.test.ts`,
@@ -98,15 +112,32 @@ workspace for POC bootstrap.
 `apps/www/src/shell/EditorView.tsx`, `apps/www/src/shell/AppShell.tsx`,
 `specs/realtime-collab/PROGRESS.md`, `specs/realtime-collab/V1-EXECUTION.plan.md`.
 
+**Files changed (P5):**
+`packages/sync-backend/convex/documents.ts`,
+`packages/sync-backend/convex/documents.test.ts`,
+`apps/www/src/shell/AppShell.tsx`,
+`apps/www/src/screens/DashboardScreen.tsx`,
+`specs/realtime-collab/PROGRESS.md`, `specs/realtime-collab/V1-EXECUTION.plan.md`.
+
+**Files changed (P6):**
+`packages/sync-backend/convex/documents.ts`,
+`packages/sync-backend/convex/documents.test.ts`,
+`apps/www/src/App.tsx`,
+`apps/www/src/auth/AuthScreens.tsx`,
+`apps/www/src/connection/convex-error.ts`,
+`apps/www/src/screens/DashboardScreen.tsx`,
+`specs/realtime-collab/PROGRESS.md`, `specs/realtime-collab/V1-EXECUTION.plan.md`.
+
 **Checks run:** `npx convex codegen` → 0. `pnpm --filter @hubble.md/sync-backend
-test` → 18 passing. `pnpm --filter @hubble.md/www typecheck` → 0.
+test` → 25 passing. `pnpm --filter @hubble.md/www typecheck` → 0.
 `pnpm --filter @hubble.md/www build` → 0. `pnpm typecheck` → green.
 `pnpm build:desktop` → green. `pnpm exec biome check <touched files>` → green.
+Vite HTTP smoke for `?test=1` → 200.
 Full `pnpm check` was not rerun; it previously failed on unrelated existing
 formatting/import drift outside this work.
 
 **Open questions / risks:**
-- P2/P3/P4 browser smoke is still owed because the browser tool was unavailable in
+- P2/P3/P4/P5/P6 browser smoke is still owed because the browser tool was unavailable in
   this session.
 - Standalone clients use a static JWT snapshot; token refresh re-runs the AppShell
   effects (reconnect), acceptable for v1.
@@ -114,6 +145,27 @@ formatting/import drift outside this work.
   intended (auth-first; the flag/legacy path is retired in P7/D1).
 
 ## Status log
+- 2026-06-30 (session-6): **P6 Hardening landed (uncommitted).** Added backend
+  permission regression tests for edit/write denial, comment vs viewer boundaries,
+  public viewer links, deleted-document trash visibility, and oversized Live
+  Document import copy; changed trash listing to filter by deleted-document roles
+  rather than requiring workspace membership first; added user-facing auth/session
+  and Live Document cap error normalization; reset signed-out stale workspace
+  routes to `/` before the next login to avoid multi-account route bleed. Checks:
+  codegen, sync-backend tests (25), www typecheck/build, repo typecheck,
+  `build:desktop`, touched-file Biome, and Vite HTTP 200 for `?test=1` all green.
+  Browser visual smoke remains blocked by the in-app browser setup error.
+- 2026-06-30 (session-5): **P5 Completeness landed (uncommitted).** Added
+  autosaved revision materialization from `documents.markEdited` with a one-minute
+  stale guard so normal in-app co-editing populates History; added a
+  document-scoped `documents.listMentionCandidates` query and compact @mention
+  picker for new comments and replies; added workspace member management from the
+  workspace toolbar using existing invite/role/remove/revoke mutations; added
+  first-run dashboard onboarding that auto-creates and opens a "Welcome to Hubble"
+  Live Document for an empty private workspace. Checks: codegen, sync-backend
+  tests (20), www typecheck/build, repo typecheck, `build:desktop`, touched-file
+  Biome, and Vite HTTP 200 for `?test=1` all green. Browser visual smoke remains
+  blocked by the in-app browser setup error.
 - 2026-06-30 (session-4): **P4 Production presence landed (uncommitted).** Updated
   `pocIdentity` so authenticated heartbeats derive user id/name server-side,
   authorize Live Document presence against document roles, authorize POC doc ids
