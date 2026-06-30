@@ -14,7 +14,6 @@ import MingcuteUserAddLine from "~icons/mingcute/user-add-line";
 import type { TestIdentity } from "../App";
 import { SignOutButton } from "../auth/AuthScreens";
 import { saveWorkspace } from "../connection/connection";
-import { realtimeCollabEnabled } from "../realtimeFlag";
 import {
 	applyRemoteChange,
 	clearCurrentPath,
@@ -213,7 +212,7 @@ export function AppShell({
 	const shellContent = (
 		<AppShellContent
 			url={url}
-			documentId={realtimeCollabEnabled ? documentId : null}
+			documentId={documentId}
 			testIdentity={testIdentity}
 			viewer={viewer}
 			workspace={workspace}
@@ -236,7 +235,6 @@ export function AppShell({
 					authToken ?? undefined,
 				);
 			}}
-			realtimeCollabEnabled={realtimeCollabEnabled}
 		/>
 	);
 
@@ -262,7 +260,6 @@ function AppShellContent({
 	onSubmitNewNote,
 	onSetNewNoteName,
 	onReloadWorkspace,
-	realtimeCollabEnabled,
 }: {
 	url: string;
 	documentId: string | null;
@@ -281,7 +278,6 @@ function AppShellContent({
 	onSubmitNewNote: (event: React.FormEvent) => void;
 	onSetNewNoteName: (name: string | null) => void;
 	onReloadWorkspace: () => void;
-	realtimeCollabEnabled: boolean;
 }) {
 	if (!workspace.snapshot) return null;
 
@@ -297,7 +293,6 @@ function AppShellContent({
 					onSelectDocument={onSelectDocument}
 					onSwitch={onSwitch}
 					onDisconnect={onDisconnect}
-					realtimeCollabEnabled={realtimeCollabEnabled}
 				/>
 			}
 			toolbar={
@@ -305,9 +300,7 @@ function AppShellContent({
 					onNewNote={onNewNote}
 					sessionSlot={
 						<div className="flex items-center gap-1">
-							{realtimeCollabEnabled ? (
-								<WorkspaceMembersButton workspaceId={workspace.snapshot.id} />
-							) : null}
+							<WorkspaceMembersButton workspaceId={workspace.snapshot.id} />
 							{!testIdentity ? <SignOutButton /> : undefined}
 						</div>
 					}
@@ -363,7 +356,7 @@ function AppShellContent({
 					)}
 				</form>
 			)}
-			{realtimeCollabEnabled && documentId && (
+			{documentId && (
 				<LiveDocumentView
 					workspaceId={workspace.snapshot.id}
 					documentId={documentId}

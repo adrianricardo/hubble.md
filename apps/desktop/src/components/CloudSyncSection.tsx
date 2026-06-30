@@ -72,7 +72,7 @@ function CloudSignInForm() {
 		try {
 			await signIn("password", formData);
 		} catch (err) {
-			setError(err instanceof Error ? err.message : "Sign in failed");
+			setError(describeCloudAuthError(err));
 		} finally {
 			setPending(false);
 		}
@@ -140,6 +140,14 @@ function CloudSignInForm() {
 			</div>
 		</form>
 	);
+}
+
+function describeCloudAuthError(err: unknown): string {
+	const message = err instanceof Error ? err.message : String(err);
+	if (message.toLowerCase().includes("daily signup limit")) {
+		return "Daily signup limit reached. Signups reopen tomorrow.";
+	}
+	return err instanceof Error ? err.message : "Sign in failed";
 }
 
 function SignedInCloudSync({ deploymentUrl }: { deploymentUrl: string }) {

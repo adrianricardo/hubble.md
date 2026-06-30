@@ -16,14 +16,8 @@ import {
 	useParams,
 } from "react-router";
 import { AuthStatus, SignInScreen } from "./auth/AuthScreens";
-import {
-	clearWorkspace,
-	readWorkspaceId,
-	saveWorkspace,
-} from "./connection/connection";
-import { realtimeCollabEnabled } from "./realtimeFlag";
+import { clearWorkspace, saveWorkspace } from "./connection/connection";
 import { DashboardScreen } from "./screens/DashboardScreen";
-import { OpenWorkspaceScreen } from "./screens/OpenWorkspaceScreen";
 import { AppShell } from "./shell/AppShell";
 
 export type TestIdentity = {
@@ -128,14 +122,10 @@ function RoutedApp({ testIdentity }: { testIdentity: TestIdentity | null }) {
 				path="/w/:workspaceId/f/*"
 				element={<WorkspaceRoute testIdentity={testIdentity} />}
 			/>
-			{realtimeCollabEnabled ? (
-				<Route
-					path="/w/:workspaceId/d/:documentId"
-					element={
-						<WorkspaceRoute testIdentity={testIdentity} filePath={null} />
-					}
-				/>
-			) : null}
+			<Route
+				path="/w/:workspaceId/d/:documentId"
+				element={<WorkspaceRoute testIdentity={testIdentity} filePath={null} />}
+			/>
 			<Route path="*" element={<Navigate to="/" replace />} />
 		</Routes>
 	);
@@ -160,23 +150,12 @@ function HomeRoute({
 		}
 	}
 
-	if (realtimeCollabEnabled) {
-		return (
-			<DashboardScreen
-				onOpenDocument={onOpenDocument}
-				onOpenWorkspace={onSelected}
-			/>
-		);
-	}
-
-	// Legacy flag-off flow: returning users go to their last workspace; otherwise
-	// pick/create one.
-	const lastWorkspaceId = readWorkspaceId();
-	if (lastWorkspaceId) {
-		return <Navigate to={workspaceRoute(lastWorkspaceId)} replace />;
-	}
-
-	return <OpenWorkspaceScreen onSelected={onSelected} />;
+	return (
+		<DashboardScreen
+			onOpenDocument={onOpenDocument}
+			onOpenWorkspace={onSelected}
+		/>
+	);
 }
 
 function WorkspaceRoute({
@@ -189,7 +168,7 @@ function WorkspaceRoute({
 	const params = useParams();
 	const navigate = useNavigate();
 	const workspaceId = params.workspaceId;
-	const documentId = realtimeCollabEnabled ? (params.documentId ?? null) : null;
+	const documentId = params.documentId ?? null;
 	const routeFilePath =
 		filePath === undefined ? (params["*"] ?? null) : filePath;
 
@@ -206,7 +185,6 @@ function WorkspaceRoute({
 				navigate(withTestSearch(workspaceFileRoute(workspaceId, path)));
 			}}
 			onSelectDocument={(id) => {
-				if (!realtimeCollabEnabled) return;
 				navigate(withTestSearch(workspaceDocumentRoute(workspaceId, id)));
 			}}
 			onSwitch={(id) => {

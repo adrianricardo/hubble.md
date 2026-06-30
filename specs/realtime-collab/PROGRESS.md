@@ -197,11 +197,13 @@ support workflow, escalation thresholds, safe user actions, and future alert
 wiring points for the local synced-folder telemetry.
 
 **Current pickup state:** V1 release execution is continuing from
-`V1-EXECUTION.plan.md`. **P6 Hardening landed locally 2026-06-30**: backend
-permission regression tests now cover edit/comment/link/trash boundaries, signed
-out stale workspace routes reset before the next login, and auth/session plus
-256 KiB Live Document cap errors now show user-facing copy. Next phase: **P7
-Launch gate** (cross-surface QA, flag deletion last, merge/deploy/ops/signup cap).
+`V1-EXECUTION.plan.md`. **P7 local launch gate landed locally 2026-06-30**:
+signup is capped at 100 new accounts/day through a Convex-backed UTC-day counter,
+`VITE_HUBBLE_REALTIME_COLLAB` and the web/desktop flag modules are deleted, and
+Live Documents plus desktop Cloud Sync are now default product surfaces when
+`VITE_CONVEX_URL` is configured. Local checks are green. Remaining P7 gates are
+operator/manual: C1/C2 cross-surface QA, D3 production Convex deploy, D4 web
+deploy, D5 external monitoring sink, and release operations.
 
 Prior RD pickup state: RD1-RD12 are landed locally. There is no unchecked
 ready-to-deploy slice left in this plan. The remaining named follow-ups are
@@ -933,6 +935,16 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 
 Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
 
+- 2026-06-30 — Codex — Continued V1 release P7 local launch gate: added a
+  Convex-backed UTC-day signup counter capped at 100 new accounts/day with focused
+  backend tests and web/desktop signup copy; deleted `VITE_HUBBLE_REALTIME_COLLAB`
+  plus the web/desktop flag modules so the dashboard, Live Document route/sidebar,
+  member management, and desktop Cloud Sync settings are default product surfaces
+  when `VITE_CONVEX_URL` is configured. Verified codegen, sync-backend tests (27),
+  web typecheck/build, repo typecheck, desktop build, touched-file Biome, and Vite
+  HTTP 200 for `?test=1`; browser visual smoke remains blocked by the in-app
+  Browser setup error. Remaining P7 gates are operator/manual: C1/C2 QA, D3/D4
+  deploy, D5 external ops sink, and release ops.
 - 2026-06-30 — Codex — Continued V1 release P6 hardening: added permission
   regression coverage for viewer/commenter write denial, comment boundaries,
   public viewer links, deleted-document trash visibility, and oversized Live

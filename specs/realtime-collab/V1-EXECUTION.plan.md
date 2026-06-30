@@ -63,12 +63,17 @@ to a Sonnet sub-agent with a path-scoped brief returning a short summary.
 | P4 Production presence | done (browser smoke blocked) | codex / session-4 | 2026-06-30 | A3 launch-critical; signed-in presence derives identity from Convex Auth, read/write authorization follows document/workspace permissions, and `?test=1` anonymous bootstrap remains supported. |
 | P5 Completeness | done (browser smoke blocked) | codex / session-5 | 2026-06-30 | A5 autosaved revisions, document-scoped @mention picker, B1c member UI, and A4 first-run auto-doc onboarding landed. |
 | P6 Hardening | done (browser smoke blocked) | codex / session-6 | 2026-06-30 | B2 permission regression suite, B3 signed-out route reset, and D6 cap/error UX landed. |
-| P7 Launch gate | pending | — | — | C1/C2 QA, D1 flag delete (LAST), D2 merge, D3/D4 deploy, D5 ops, D7 signup cap. |
+| P7 Launch gate | in-progress (local code gate done) | codex / session-7 | 2026-06-30 | D7 100/day signup cap, D1 flag deletion, and local D2 checks landed. C1/C2 manual QA plus D3/D4 deploy and D5 external ops sink remain operator-gated. |
 
 ## Handoff
 
 **Current state:** P1/P2/P2-tests/P2-smoke/P3/P4/P5/P6 are complete on
-`v1-release`. P5 adds in-app autosaved revision materialization from `markEdited`,
+`v1-release`; P7 local launch-code gate is in progress with the flag deleted and
+signup cap implemented. P7 adds a Convex-backed UTC-day signup counter capped at
+100 new accounts/day, removes `VITE_HUBBLE_REALTIME_COLLAB` from web/desktop
+surfaces so Live Documents and desktop Cloud Sync are the product defaults, and
+keeps `?test=1` bootstrap available for local smoke testing.
+P5 adds in-app autosaved revision materialization from `markEdited`,
 a document-scoped @mention picker in comment composers/replies, a workspace member
 management modal wired to the existing member/invite mutations, and first-run
 dashboard onboarding that creates and opens a "Welcome to Hubble" Live Document
@@ -84,13 +89,12 @@ workspace membership, `listActive` returns stable colors, editor cursors publish
 for signed-in sessions, and Live Document headers show active collaborators. The
 `?test=1` anonymous identity path remains available for legacy POC bootstrap.
 
-**Next step:** P7 Launch gate: C1/C2 cross-surface QA, D1 flag deletion as the
-last code step, D2 merge gate, D3/D4 deploy, D5 external ops sink, and D7 signup
-cap. Browser smoke remains owed for P2/P3/P4/P5/P6
-because the in-app browser Node REPL failed before execution (`sandboxCwd must be
-an absolute file URI`) and Playwright is not installed for a CLI screenshot
-fallback. A dev server responded at `http://127.0.0.1:5173/?test=1` during the P6
-attempt.
+**Next step:** Complete the remaining P7 operator gates: C1/C2 manual cross-surface
+QA, D3 production Convex deployment, D4 web hosting deploy, D5 external monitoring
+sink selection/wiring, and release operations. Browser smoke remains owed for
+P2/P3/P4/P5/P6/P7 because the in-app Browser setup still fails before page
+execution (`sandboxCwd must be an absolute file URI`). A dev server responded at
+`http://127.0.0.1:5174/?test=1` during the P7 attempt.
 
 **Pending manual tests:** Browser smoke the signed-in web flow once Browser tooling
 is available: sign in, confirm personal workspace/dashboard provisioning, confirm
@@ -128,8 +132,26 @@ configured workspace for POC bootstrap.
 `apps/www/src/screens/DashboardScreen.tsx`,
 `specs/realtime-collab/PROGRESS.md`, `specs/realtime-collab/V1-EXECUTION.plan.md`.
 
+**Files changed (P7 local gate):**
+`packages/sync-backend/convex/auth.ts`,
+`packages/sync-backend/convex/auth.test.ts`,
+`packages/sync-backend/convex/schema.ts`,
+`apps/www/src/App.tsx`,
+`apps/www/src/auth/AuthScreens.tsx`,
+`apps/www/src/shell/AppShell.tsx`,
+`apps/www/src/shell/Sidebar.tsx`,
+`apps/www/src/vite-env.d.ts`,
+`apps/www/.env.example`,
+`apps/desktop/src/App.tsx`,
+`apps/desktop/src/components/CloudSyncSection.tsx`,
+`apps/desktop/src/convex.ts`,
+`apps/desktop/src/vite-env.d.ts`,
+`apps/www/src/realtimeFlag.ts` (deleted),
+`apps/desktop/src/realtimeFlag.ts` (deleted),
+`specs/realtime-collab/PROGRESS.md`, `specs/realtime-collab/V1-EXECUTION.plan.md`.
+
 **Checks run:** `npx convex codegen` → 0. `pnpm --filter @hubble.md/sync-backend
-test` → 25 passing. `pnpm --filter @hubble.md/www typecheck` → 0.
+test` → 27 passing. `pnpm --filter @hubble.md/www typecheck` → 0.
 `pnpm --filter @hubble.md/www build` → 0. `pnpm typecheck` → green.
 `pnpm build:desktop` → green. `pnpm exec biome check <touched files>` → green.
 Vite HTTP smoke for `?test=1` → 200.
@@ -137,14 +159,27 @@ Full `pnpm check` was not rerun; it previously failed on unrelated existing
 formatting/import drift outside this work.
 
 **Open questions / risks:**
-- P2/P3/P4/P5/P6 browser smoke is still owed because the browser tool was unavailable in
+- P2/P3/P4/P5/P6/P7 browser smoke is still owed because the browser tool was unavailable in
   this session.
+- P7 production deploy, external monitoring sink, and C1/C2 manual QA are
+  operator-gated and not completed locally.
 - Standalone clients use a static JWT snapshot; token refresh re-runs the AppShell
   effects (reconnect), acceptable for v1.
 - Forcing auth at the root now gates the legacy non-realtime file path too; that is
   intended (auth-first; the flag/legacy path is retired in P7/D1).
 
 ## Status log
+- 2026-06-30 (session-7): **P7 local launch gate landed.**
+  Added a
+  Convex-backed UTC-day signup counter capped at 100 new accounts/day with focused
+  backend tests and web/desktop signup copy. Deleted `VITE_HUBBLE_REALTIME_COLLAB`
+  and its web/desktop flag modules; the dashboard, Live Document route/sidebar,
+  workspace member management, and desktop Cloud Sync settings are now default
+  product surfaces when `VITE_CONVEX_URL` is configured. Checks: codegen,
+  sync-backend tests (27), www typecheck/build, repo typecheck, `build:desktop`,
+  touched-file Biome, and Vite HTTP 200 for `?test=1` all green. Browser visual
+  smoke remains blocked by the in-app Browser setup error. Remaining P7 gates are
+  operator/manual: C1/C2 QA, D3/D4 deploy, D5 external ops sink, and release ops.
 - 2026-06-30 (session-6): **P6 Hardening landed (uncommitted).** Added backend
   permission regression tests for edit/write denial, comment vs viewer boundaries,
   public viewer links, deleted-document trash visibility, and oversized Live

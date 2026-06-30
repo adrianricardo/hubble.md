@@ -114,6 +114,9 @@ function describeAuthError(err: unknown, mode: "signIn" | "signUp"): string {
 	if (lower.includes("already") || lower.includes("exists")) {
 		return "An account with that email already exists. Sign in instead.";
 	}
+	if (lower.includes("daily signup limit")) {
+		return "Daily signup limit reached. Signups reopen tomorrow.";
+	}
 	return describeError(categorizeError(err));
 }
 

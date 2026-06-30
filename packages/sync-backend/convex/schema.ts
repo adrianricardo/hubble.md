@@ -51,6 +51,12 @@ export default defineSchema({
 		.index("by_workspace_email", ["workspaceId", "email"])
 		.index("by_document_email", ["documentId", "email"]),
 
+	launchSignupDays: defineTable({
+		day: v.string(),
+		count: v.number(),
+		updatedAt: v.number(),
+	}).index("by_day", ["day"]),
+
 	files: defineTable({
 		workspaceId: v.id("workspaces"),
 		path: v.string(),
