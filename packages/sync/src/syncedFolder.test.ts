@@ -212,6 +212,18 @@ describe("materializeSyncedFolder", () => {
 				// Sibling-title collision at the workspace root.
 				doc({ _id: "d_notes1", title: "Notes" }),
 				doc({ _id: "d_notes2", title: "Notes" }),
+				doc({
+					_id: "d_path",
+					title: "Notes",
+					path: "Pinned/Canonical.md",
+					markdown: "# Stored path wins\n",
+				}),
+				doc({
+					_id: "d_legacy_prefixed",
+					title: "Legacy Prefixed",
+					path: "Product Team/Legacy Prefixed.md",
+					markdown: "# Legacy prefix\n",
+				}),
 			],
 			ws_b: [doc({ _id: "d_journal", title: "Journal" })],
 		};
@@ -266,6 +278,12 @@ describe("materializeSyncedFolder", () => {
 		expect(await fs.readFile(`${SYNC_ROOT}/Product Team/Notes (2).md`)).toBe(
 			"# Notes\n",
 		);
+		expect(
+			await fs.readFile(`${SYNC_ROOT}/Product Team/Pinned/Canonical.md`),
+		).toBe("# Stored path wins\n");
+		expect(
+			await fs.readFile(`${SYNC_ROOT}/Product Team/Legacy Prefixed.md`),
+		).toBe("# Legacy prefix\n");
 
 		// --- Base caches at the reconcileProjectionFile-expected location. ---
 		const cacheRoot = liveDocumentBaseCacheRoot(SYNC_ROOT);
@@ -296,6 +314,12 @@ describe("materializeSyncedFolder", () => {
 			"d_notes2",
 		);
 		expect(
+			index[`${SYNC_ROOT}/Product Team/Pinned/Canonical.md`]?.documentId,
+		).toBe("d_path");
+		expect(
+			index[`${SYNC_ROOT}/Product Team/Legacy Prefixed.md`]?.documentId,
+		).toBe("d_legacy_prefixed");
+		expect(
 			index[`${SYNC_ROOT}/Shared with me/Alice Finance - Budget 2026.md`],
 		).toEqual({
 			documentId: "d_budget",
@@ -318,7 +342,7 @@ describe("materializeSyncedFolder", () => {
 		expect(fs.readOnly.get(`${SYNC_ROOT}/Product Team/Roadmap.md`)).toBe(false);
 
 		// --- Result summary. ---
-		expect(result.written).toHaveLength(7);
+		expect(result.written).toHaveLength(9);
 		expect(result.syncRoot).toBe(SYNC_ROOT);
 	});
 

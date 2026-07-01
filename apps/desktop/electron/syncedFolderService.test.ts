@@ -354,6 +354,31 @@ describe("SyncedFolderService routing", () => {
 		expect(calls.patch).toEqual([]);
 	});
 
+	it("create: imports new files with workspace-relative cloud paths", async () => {
+		const { service, fs } = makeService(calls, events);
+		await service.connect(CONNECT_INPUT);
+
+		const path = `${SYNC_ROOT}/WS/New.md`;
+		await fs.writeFile(path, "new document");
+		await service.handleRawEvent({
+			type: "add",
+			absPath: path,
+			hash: await contentHash("new document"),
+			inode: 222,
+			at: NOW,
+		});
+
+		expect(calls.import).toEqual([
+			{
+				workspaceId: "ws",
+				path: "New.md",
+				title: "New",
+				markdown: "new document",
+			},
+		]);
+		expect(service.lookup(path)?.documentId).toBe("d_new");
+	});
+
 	it("cloud subscription: rapid updates coalesce into one materialize pass", async () => {
 		const { service, fs, state, subscription } = makeService(calls, events);
 		await service.connect(CONNECT_INPUT);
@@ -439,7 +464,7 @@ describe("SyncedFolderService routing", () => {
 		expect(calls.import).toEqual([
 			{
 				workspaceId: "ws",
-				path: "WS/New.md",
+				path: "New.md",
 				title: "New",
 				markdown: "fresh note",
 			},

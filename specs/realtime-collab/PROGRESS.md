@@ -205,6 +205,23 @@ Live Documents plus desktop Cloud Sync are now default product surfaces when
 operator/manual: C1/C2 cross-surface QA, D3 production Convex deploy, D4 web
 deploy, D5 external monitoring sink, and release operations.
 
+**Demo follow-up noted 2026-06-30:** share dialog still needs a Google-Docs-style
+"visible to anyone with the link" state plus one-click copy link. A same-day
+frontend fix also changed unauthorized Live Document opens from a Convex exception
+page into an access-denied screen with guidance to share by account or enable link
+access.
+
+**Desktop IA follow-up planned 2026-07-01:** `DESKTOP-CLOUD-FIRST-IA.plan.md`
+captures the phased route for making desktop cloud-first: Live Documents as the
+primary object, with local folders optional for manual file editing, backup, and
+agent/tool access. **Implemented locally 2026-07-01:** desktop now shows a
+cloud-first Live Documents home/sidebar section when Convex is configured, keeps
+local folders as optional synced/local Markdown support, and makes the toolbar
+plus Cmd/Ctrl+N create Live Documents for signed-in cloud users while preserving
+local Markdown creation elsewhere. Verified focused Biome and `pnpm
+build:desktop`; Electron CDP smoke confirmed the primary create action and sidebar
+hierarchy in the running desktop renderer.
+
 Prior RD pickup state: RD1-RD12 are landed locally. There is no unchecked
 ready-to-deploy slice left in this plan. The remaining named follow-ups are
 operator/product-choice gated: external monitoring sink selection, packaged MCP
@@ -935,6 +952,37 @@ presence cursors. **Resolves the `prosemirror-sync` decision gate (TECH.md).**
 
 Newest first. One line per meaningful change: `YYYY-MM-DD — who — what`.
 
+- 2026-07-01 — Codex — Implemented the desktop cloud-first IA plan: added
+  Live Documents home/sidebar hierarchy in Convex-enabled desktop builds, kept
+  local folders as optional synced/local Markdown support, made toolbar/Cmd+N
+  create Live Documents for signed-in cloud users, and updated desktop copy. Verified
+  focused Biome, `pnpm build:desktop`, and an Electron CDP smoke of the primary
+  create action/sidebar hierarchy.
+- 2026-07-01 — Codex — Added `DESKTOP-CLOUD-FIRST-IA.plan.md`, a phased
+  desktop IA plan that makes Live Documents the primary desktop object and treats
+  local folders as optional support for external editors and agents.
+- 2026-07-01 — Adrian/Codex — Completed a v1 demo UX pass on
+  `strong-setter-709`: signed-in two-profile web flow, workspace-member copied URL
+  access, desktop Cloud Sync reconnect to
+  `/Users/adriantavares/Hubble-A-test/jul1test/Untitled`, disk -> cloud ->
+  disk round trip on `Desktop Test/UX Smoke 2026-07-01.md`, clean synced-folder
+  telemetry, no conflict/backstop files, and duplicate backend check still at
+  `activeMatches: 0` / `deletedMatches: 188`. Detailed log recorded in
+  `TEST-RUNBOOK.md`.
+- 2026-06-30 — Codex — Investigated v1 demo duplicate Live Documents and
+  member-link access failures on `strong-setter-709`. Found real backend rows
+  created by the desktop synced-folder import path, not a sidebar render duplicate:
+  materialization ignored stable document paths while watcher-created imports
+  stored sync-root-relative paths. Fixed synced-folder materialization to prefer
+  stable workspace-relative document paths, normalize legacy duplicated workspace
+  prefixes, and import new local files without the top-level workspace directory.
+  Also fixed document permissions so regular workspace members can open documents
+  in that workspace from a copied URL. Added regression coverage in sync,
+  desktop, and sync-backend tests.
+- 2026-06-30 — Codex — Added the v1 demo TODO for explicit "visible to anyone
+  with the link" plus copy-link sharing UI, and guarded Live Document routes with
+  an access-error boundary so unresolved/unauthorized shared links show product
+  copy instead of crashing on `documents.getWithMarkdown`.
 - 2026-06-30 — Codex — Continued V1 release P7 local launch gate: added a
   Convex-backed UTC-day signup counter capped at 100 new accounts/day with focused
   backend tests and web/desktop signup copy; deleted `VITE_HUBBLE_REALTIME_COLLAB`

@@ -294,6 +294,10 @@ describe("permission regressions", () => {
 				email: "viewer@example.com",
 				name: "Viewer",
 			});
+			const workspaceMemberId = await ctx.db.insert("users", {
+				email: "member@example.com",
+				name: "Member",
+			});
 			const strangerId = await ctx.db.insert("users", {
 				email: "stranger@example.com",
 				name: "Stranger",
@@ -308,6 +312,12 @@ describe("permission regressions", () => {
 				title: "Doc",
 				createdAt: 1,
 				updatedAt: 1,
+			});
+			await ctx.db.insert("members", {
+				workspaceId,
+				userId: workspaceMemberId,
+				role: "member",
+				createdAt: 1,
 			});
 			for (const [userId, role] of [
 				[commenterId, "commenter"],
@@ -325,12 +335,22 @@ describe("permission regressions", () => {
 				ownerId,
 				commenterId,
 				viewerId,
+				workspaceMemberId,
 				strangerId,
 				workspaceId,
 				documentId,
 			};
 		});
 	}
+
+	test("workspace members can open documents in that workspace", async () => {
+		const t = convexTest(schema, modules);
+		const { workspaceMemberId, documentId } = await setupSharedDocument(t);
+
+		await expect(
+			asUser(t, workspaceMemberId).query(api.documents.get, { documentId }),
+		).resolves.toMatchObject({ _id: documentId, title: "Doc" });
+	});
 
 	test("viewer and commenter roles cannot apply editable document patches", async () => {
 		const t = convexTest(schema, modules);
@@ -432,6 +452,6 @@ describe("permission regressions", () => {
 
 		expect(ownerTrash.map((document) => document._id)).toEqual([documentId]);
 		expect(viewerTrash.map((document) => document._id)).toEqual([documentId]);
-		expect(memberTrash).toEqual([]);
+		expect(memberTrash.map((document) => document._id)).toEqual([documentId]);
 	});
 });

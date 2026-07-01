@@ -120,6 +120,7 @@ export function Sidebar({
 	sortMode,
 	storageScope,
 	header,
+	topSlot,
 	footer,
 	emptyState,
 	getDisplayPath = (path) => path,
@@ -146,6 +147,7 @@ export function Sidebar({
 	/** Stable key used to persist folder expansion for one workspace/open folder. */
 	storageScope?: string | null;
 	header?: ReactNode;
+	topSlot?: ReactNode;
 	footer?: ReactNode;
 	emptyState?: ReactNode;
 	getDisplayPath?: (path: string) => string;
@@ -705,6 +707,7 @@ export function Sidebar({
 
 	return (
 		<SidebarFrame onCollapse={onCollapse} storageScope={storageScope}>
+			{topSlot}
 			<div className="flex items-center justify-between border-b border-sidebar-border px-2.5 py-1.5">
 				{header ?? (
 					<span className="text-[11px] font-medium uppercase text-muted-foreground">

@@ -610,9 +610,12 @@ export class SyncedFolderService {
 
 			case "create": {
 				const markdown = await this.#fs.readFile(decision.absPath);
+				const workspaceRelativePath = stripTopLevelWorkspaceDir(
+					decision.relPath,
+				);
 				const imported = await backend.importLiveDocument({
 					workspaceId: decision.workspaceId,
-					path: decision.relPath,
+					path: workspaceRelativePath,
 					title: titleFromPath(decision.absPath),
 					markdown,
 					actor: "synced-folder",
@@ -1027,6 +1030,12 @@ function relPath(syncRoot: string, absPath: string): string {
 function titleFromPath(absPath: string): string {
 	const name = absPath.slice(absPath.lastIndexOf("/") + 1);
 	return name.replace(/\.md$/i, "") || "Untitled";
+}
+
+function stripTopLevelWorkspaceDir(relPath: string): string {
+	const slash = relPath.indexOf("/");
+	if (slash === -1) return relPath;
+	return relPath.slice(slash + 1) || relPath;
 }
 
 function findIndexEntryByDocumentId(

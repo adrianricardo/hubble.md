@@ -18,6 +18,7 @@ import type {
 	FileState,
 	LiveDocumentExportResult,
 	LiveDocumentImportResult,
+	LiveDocumentProjection,
 	LiveDocumentProjectionWriteResult,
 	RemoteAsset,
 	SharedLiveDocumentProjection,
@@ -417,8 +418,8 @@ export type MaterializeSyncedFolderResult = {
  * Sibling of {@link writeLiveDocumentProjections} (the legacy flat agent tree),
  * kept separate so the user-facing mirror and the agent projection stay
  * independent (SYNCED-FOLDER §3). It:
- *  - computes the nested on-disk path from `(workspace, folder tree, title)` —
- *    **not** `document.path`, which stays mutable metadata;
+ *  - computes the nested on-disk path from stable document paths when available,
+ *    falling back to `(workspace, folder tree, title)`;
  *  - writes the markdown file and applies the read-only chmod by role;
  *  - refreshes the reconcile **base cache** via {@link writeReconcileBase} with
  *    `syncRoot` as the workspace path, so it lands exactly where
@@ -460,19 +461,20 @@ export async function materializeSyncedFolder(
 		const usedNamesByDir = new Map<string, Set<string>>();
 
 		for (const document of documents) {
-			const folderRel =
-				document.folderId !== null
-					? (folderRelPaths.get(document.folderId) ?? "")
-					: "";
-			const dirRel = joinRel(workspaceName, folderRel);
+			const desiredWorkspacePath = workspaceRelativeDocumentPath(
+				document,
+				workspaceName,
+				folderRelPaths,
+			);
+			const desiredRelPath = joinRel(workspaceName, desiredWorkspacePath);
+			const slash = desiredRelPath.lastIndexOf("/");
+			const dirRel =
+				slash === -1 ? workspaceName : desiredRelPath.slice(0, slash);
 			const dirAbs = `${syncRoot}/${dirRel}`;
 
 			const used = usedNamesByDir.get(dirRel) ?? new Set<string>();
 			usedNamesByDir.set(dirRel, used);
-			const fileName = uniqueName(
-				used,
-				`${sanitizeSegment(document.title)}.md`,
-			);
+			const fileName = uniqueName(used, desiredRelPath.slice(slash + 1));
 
 			const relPath = `${dirRel}/${fileName}`;
 			const absPath = `${syncRoot}/${relPath}`;
@@ -677,6 +679,33 @@ function titleFromPath(path: string): string {
 	return fileName.replace(/\.(md|markdown|mdown)$/i, "") || "Untitled";
 }
 
+function workspaceRelativeDocumentPath(
+	document: LiveDocumentProjection,
+	workspaceName: string,
+	folderRelPaths: Map<string, string>,
+): string {
+	const storedPath = normalizeRelativePath(document.path ?? "").replace(
+		/^\/+/,
+		"",
+	);
+	if (storedPath) {
+		const duplicatedWorkspacePrefix = `${workspaceName}/`;
+		if (storedPath.startsWith(duplicatedWorkspacePrefix)) {
+			return (
+				storedPath.slice(duplicatedWorkspacePrefix.length) ||
+				`${sanitizeSegment(document.title)}.md`
+			);
+		}
+		return storedPath;
+	}
+
+	const folderRel =
+		document.folderId !== null
+			? (folderRelPaths.get(document.folderId) ?? "")
+			: "";
+	return joinRel(folderRel, `${sanitizeSegment(document.title)}.md`);
+}
+
 function normalizeRelativePath(path: string): string {
 	return path.split("\\").join("/");
 }
@@ -726,6 +755,7 @@ function buildFolderRelPaths(
 
 /** Join two relative path fragments, dropping an empty tail. */
 function joinRel(head: string, tail: string): string {
+	if (!head) return tail;
 	return tail ? `${head}/${tail}` : head;
 }
 

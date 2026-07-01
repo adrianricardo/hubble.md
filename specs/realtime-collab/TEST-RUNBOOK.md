@@ -162,3 +162,64 @@ Expected:
 - [ ] It edits the projection, runs `reconcileProjectionFile`, and reports a newer
       revision.
 - [ ] A final cloud read contains the local edit marker.
+
+## Manual Test Log
+
+### 2026-07-01 — V1 demo UX pass on `strong-setter-709`
+
+Scope:
+
+- Signed-in web create/share/open flow.
+- Workspace-member access to copied document URLs.
+- Desktop Cloud Sync reconnect against an existing indexed root.
+- File round trip: disk -> cloud -> disk.
+- Duplicate-document regression check for the prior `Untitled (2) (N)` runaway.
+
+Environment:
+
+- Web dev server: `http://localhost:5174/` (`5173` was occupied).
+- Convex deployment: `https://strong-setter-709.convex.cloud`.
+- Desktop dev app: `@hubble.md/desktop@0.1.13`.
+- Sync root: `/Users/adriantavares/Hubble-A-test/jul1test/Untitled`.
+- Workspace: `Desktop Test`.
+- Test document: `Desktop Test/UX Smoke 2026-07-01.md`.
+
+Results:
+
+- Two separate Chrome profiles signed in successfully for owner/member testing.
+- The web document opened and saved edits through `documents:markEdited`.
+- Desktop Cloud Sync was already connected to the sync root as an
+  `existing-hubble` folder.
+- Desktop status after reconnect/use:
+  - `connected: true`
+  - `documentCount: 6`
+  - `lastError: null`
+  - `reconciledCount: 1`
+  - `backstopCount: 0`
+  - `readOnlyRejectedCount: 0`
+  - `errorCount: 0`
+  - `queuedEventCount: 0`
+- Disk -> cloud passed: editing
+  `Desktop Test/UX Smoke 2026-07-01.md` added `disk smoke jjul 1` and triggered
+  `documents:applyPatch`.
+- Cloud -> disk passed: adding `web smoke 14:31` in the web editor appeared in
+  the disk file.
+- No `*.conflict-*` or `*.local-edit-*` files were created under the sync root.
+- Duplicate backend check stayed clean:
+  - `activeMatches: 0`
+  - `deletedMatches: 188`
+
+Notes:
+
+- The local sync folder contains one existing
+  `Desktop Test/Untitled (2) (2).md`, but not the runaway generated sequence.
+- Dev logs still show repeated Tiptap warnings:
+  `Duplicate extension names found: ['link']`.
+- During web dev, Vite briefly logged
+  `Can't resolve '@hubble.md/ui/tailwind.css'`; the UI recovered after the UI
+  package watcher rebuilt.
+- The in-app Browser automation path remained blocked by
+  `sandboxCwd must be an absolute file URI`, so the pass used human browser
+  interaction plus server/CDP/log inspection.
+- Web and desktop dev servers were stopped after the pass; no matching dev
+  processes remained.

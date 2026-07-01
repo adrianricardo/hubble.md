@@ -119,6 +119,8 @@ export async function documentRole(
 	setRole(userShare?.role);
 	if (membership?.role === "owner" || membership?.role === "admin") {
 		setRole("owner");
+	} else if (membership?.role === "member") {
+		setRole("editor");
 	}
 	if (membership && workspaceShare) {
 		setRole(workspaceShare.role);

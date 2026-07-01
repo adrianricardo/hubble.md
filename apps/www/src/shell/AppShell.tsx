@@ -6,7 +6,16 @@ import type { Id } from "@hubble.md/sync-backend/types";
 import { AppShellFrame, Modal } from "@hubble.md/ui";
 import { useStoreValue } from "@simplestack/store/react";
 import { useMutation, useQuery } from "convex/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+	Component,
+	type ErrorInfo,
+	type ReactNode,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import MingcuteAtLine from "~icons/mingcute/at-line";
 import MingcuteCloseLine from "~icons/mingcute/close-line";
 import MingcuteGroupLine from "~icons/mingcute/group-line";
@@ -44,6 +53,36 @@ type Props = {
 	onWorkspaceLoaded: (workspaceId: string) => void;
 	onDisconnect: () => void;
 };
+
+type LiveDocumentErrorBoundaryProps = {
+	children: ReactNode;
+};
+
+type LiveDocumentErrorBoundaryState = {
+	error: Error | null;
+};
+
+class LiveDocumentErrorBoundary extends Component<
+	LiveDocumentErrorBoundaryProps,
+	LiveDocumentErrorBoundaryState
+> {
+	state: LiveDocumentErrorBoundaryState = { error: null };
+
+	static getDerivedStateFromError(error: Error) {
+		return { error };
+	}
+
+	componentDidCatch(error: Error, info: ErrorInfo) {
+		console.error("Live document route failed:", error, info.componentStack);
+	}
+
+	render() {
+		if (this.state.error) {
+			return <LiveDocumentAccessError error={this.state.error} />;
+		}
+		return this.props.children;
+	}
+}
 
 export function AppShell({
 	url,
@@ -357,11 +396,13 @@ function AppShellContent({
 				</form>
 			)}
 			{documentId && (
-				<LiveDocumentView
-					workspaceId={workspace.snapshot.id}
-					documentId={documentId}
-					testIdentity={testIdentity}
-				/>
+				<LiveDocumentErrorBoundary key={documentId}>
+					<LiveDocumentView
+						workspaceId={workspace.snapshot.id}
+						documentId={documentId}
+						testIdentity={testIdentity}
+					/>
+				</LiveDocumentErrorBoundary>
 			)}
 			{!documentId && viewer.currentPath && (
 				<div className="flex h-full min-h-0 flex-col">
@@ -416,6 +457,27 @@ function AppShellContent({
 					</div>
 				)}
 		</AppShellFrame>
+	);
+}
+
+function LiveDocumentAccessError({ error }: { error: Error }) {
+	const message = error.message.toLowerCase();
+	const isUnauthorized = message.includes("unauthorized");
+	return (
+		<div className="flex h-full items-center justify-center [padding-block:1.5rem] [padding-inline:1.5rem]">
+			<div className="max-w-md rounded-sm border border-border bg-background [padding-block:1rem] [padding-inline:1rem]">
+				<p className="m-0 text-sm font-medium text-foreground">
+					{isUnauthorized
+						? "You do not have access to this document."
+						: "Document failed to load."}
+				</p>
+				<p className="m-0 text-sm text-muted-foreground [margin-block-start:0.5rem]">
+					{isUnauthorized
+						? "Ask the owner to share it with your account, or enable public link access before sending the link."
+						: error.message}
+				</p>
+			</div>
+		</div>
 	);
 }
 

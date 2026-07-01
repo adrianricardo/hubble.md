@@ -1,11 +1,21 @@
 import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { wikiDisplayNameForTarget } from "@hubble.md/editor";
+import { api } from "@hubble.md/sync-backend";
 import { Button, EditorView, type WikiTarget } from "@hubble.md/ui";
 import { useStoreValue } from "@simplestack/store/react";
-import { ConvexReactClient } from "convex/react";
+import {
+	Authenticated,
+	AuthLoading,
+	ConvexReactClient,
+	Unauthenticated,
+	useMutation,
+	useQuery,
+} from "convex/react";
 import { keymatch } from "keymatch";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import MingcuteAddLine from "~icons/mingcute/add-line";
+import MingcuteFileNewLine from "~icons/mingcute/file-new-line";
 import {
 	CloudSyncSection,
 	CloudSyncUnavailableSection,
@@ -79,6 +89,19 @@ function focusSidebarNav() {
 	document.querySelector<HTMLElement>(SIDEBAR_NAV_SELECTOR)?.focus();
 }
 
+function triggerCreateAction() {
+	// The primary create target is auth-aware, so keyboard handling delegates to
+	// the rendered button instead of duplicating cloud/local branching here.
+	const button = document.querySelector<HTMLButtonElement>(
+		'[data-desktop-create-action="primary"]',
+	);
+	if (button && !button.disabled) {
+		button.click();
+		return true;
+	}
+	return false;
+}
+
 async function copyFilePath(path: string | null) {
 	if (!path) return;
 
@@ -134,6 +157,7 @@ function AppContent() {
 	const [dismissedVersion, setDismissedVersion] = useState<string | null>(null);
 	const [htmlAppsDialogOpen, setHtmlAppsDialogOpen] = useState(false);
 	const [htmlAppsCalloutVisible, setHtmlAppsCalloutVisible] = useState(false);
+	const cloudEnabled = Boolean(desktopConvexUrl);
 
 	const dismissHtmlAppsCallout = useCallback(() => {
 		if (workspacePath) {
@@ -252,7 +276,7 @@ function AppContent() {
 		const onKeyDown = async (event: KeyboardEvent) => {
 			if (keymatch(event, "CmdOrCtrl+N")) {
 				event.preventDefault();
-				await createMarkdownFile();
+				if (!triggerCreateAction()) await createMarkdownFile();
 			} else if (keymatch(event, "CmdOrCtrl+,")) {
 				event.preventDefault();
 				openSettings();
@@ -380,9 +404,14 @@ function AppContent() {
 			<Toolbar
 				scrollContainer={scrollContainerEl}
 				showSidebarBadge={!sidebarOpen && showUpdateCallout}
+				leftSlot={
+					cloudEnabled ? <CloudCreateButton /> : <LocalFileCreateButton />
+				}
 			/>
 			<div className="flex min-h-0 flex-1 overflow-hidden">
 				<Sidebar
+					cloudEnabled={cloudEnabled}
+					onOpenSettings={openSettings}
 					onFocusedPathChange={setFocusedSidebarPath}
 					footer={
 						updateState?.status === "ready" && showUpdateCallout ? (
@@ -413,8 +442,15 @@ function AppContent() {
 									<Button onClick={() => void openFilePicker()}>
 										Open file
 									</Button>
+								) : cloudEnabled ? (
+									<CloudWorkspaceHome
+										onOpenSettings={openSettings}
+										onCreateFolder={() => void createWorkspaceWithSidebar()}
+										onOpenFolder={() => void openWorkspaceWithSidebar()}
+									/>
 								) : (
 									<WelcomeScreen
+										cloudEnabled={false}
 										onCreateFolder={() => void createWorkspaceWithSidebar()}
 										onOpenFolder={() => void openWorkspaceWithSidebar()}
 									/>
@@ -458,6 +494,236 @@ function AppContent() {
 			/>
 		</main>
 	);
+}
+
+function LocalFileCreateButton() {
+	return (
+		<Button
+			variant="ghost"
+			size="icon-sm"
+			data-desktop-create-action="primary"
+			onClick={() => void createMarkdownFile()}
+			aria-label="New Markdown File"
+			title="New Markdown File (⌘N)"
+		>
+			<MingcuteFileNewLine className="size-4" />
+		</Button>
+	);
+}
+
+function CloudCreateButton() {
+	return (
+		<>
+			<AuthLoading>
+				<LocalFileCreateButton />
+			</AuthLoading>
+			<Unauthenticated>
+				<LocalFileCreateButton />
+			</Unauthenticated>
+			<Authenticated>
+				<AuthenticatedCloudCreateButton />
+			</Authenticated>
+		</>
+	);
+}
+
+function AuthenticatedCloudCreateButton() {
+	const dashboard = useQuery(api.documents.dashboard, {
+		recentLimit: 1,
+		sharedLimit: 0,
+	});
+	const createDocument = useMutation(api.documents.create);
+	const [creating, setCreating] = useState(false);
+	const workspace =
+		dashboard?.workspaces.find((item) => item.personal) ??
+		dashboard?.workspaces[0];
+
+	const createLiveDocument = async () => {
+		if (!workspace || creating) return;
+		setCreating(true);
+		try {
+			await createDocument({
+				workspaceId: workspace._id,
+				title: "Untitled",
+			});
+			toast.success("Live Document created", {
+				description:
+					"Connect a synced folder in Settings to edit it from local Markdown.",
+			});
+		} catch (error) {
+			toast.error("Failed to create Live Document", {
+				description: error instanceof Error ? error.message : String(error),
+			});
+		} finally {
+			setCreating(false);
+		}
+	};
+
+	return (
+		<Button
+			variant="ghost"
+			size="icon-sm"
+			data-desktop-create-action="primary"
+			onClick={() => void createLiveDocument()}
+			disabled={!workspace || creating}
+			aria-label="New Live Document"
+			title="New Live Document (⌘N)"
+		>
+			<MingcuteAddLine className="size-4" />
+		</Button>
+	);
+}
+
+function CloudWorkspaceHome({
+	onOpenSettings,
+	onCreateFolder,
+	onOpenFolder,
+}: {
+	onOpenSettings: () => void;
+	onCreateFolder: () => void;
+	onOpenFolder: () => void;
+}) {
+	return (
+		<>
+			<AuthLoading>
+				<div className="flex max-w-md flex-col items-center gap-3 text-center">
+					<p className="text-sm text-muted-foreground">
+						Checking cloud workspace…
+					</p>
+				</div>
+			</AuthLoading>
+			<Unauthenticated>
+				<WelcomeScreen
+					cloudEnabled
+					onOpenSettings={onOpenSettings}
+					onCreateFolder={onCreateFolder}
+					onOpenFolder={onOpenFolder}
+				/>
+			</Unauthenticated>
+			<Authenticated>
+				<AuthenticatedCloudWorkspaceHome
+					onOpenSettings={onOpenSettings}
+					onCreateFolder={onCreateFolder}
+					onOpenFolder={onOpenFolder}
+				/>
+			</Authenticated>
+		</>
+	);
+}
+
+function AuthenticatedCloudWorkspaceHome({
+	onOpenSettings,
+	onCreateFolder,
+	onOpenFolder,
+}: {
+	onOpenSettings: () => void;
+	onCreateFolder: () => void;
+	onOpenFolder: () => void;
+}) {
+	const dashboard = useQuery(api.documents.dashboard, {
+		recentLimit: 5,
+		sharedLimit: 3,
+	});
+	const createDocument = useMutation(api.documents.create);
+	const [creating, setCreating] = useState(false);
+	const workspace =
+		dashboard?.workspaces.find((item) => item.personal) ??
+		dashboard?.workspaces[0];
+	const documents = dashboard
+		? [...dashboard.recents, ...dashboard.sharedWithMe].slice(0, 5)
+		: [];
+
+	const createLiveDocument = async () => {
+		if (!workspace || creating) return;
+		setCreating(true);
+		try {
+			await createDocument({
+				workspaceId: workspace._id,
+				title: "Untitled",
+			});
+			toast.success("Live Document created");
+		} catch (error) {
+			toast.error("Failed to create Live Document", {
+				description: error instanceof Error ? error.message : String(error),
+			});
+		} finally {
+			setCreating(false);
+		}
+	};
+
+	return (
+		<div className="flex w-full max-w-2xl flex-col gap-5 [padding-inline:1rem]">
+			<div className="flex flex-col items-center gap-2 text-center">
+				<p className="text-xs font-medium uppercase text-muted-foreground">
+					Hubble workspace
+				</p>
+				<h2 className="font-rounded text-3xl font-medium tracking-normal">
+					Live Documents
+				</h2>
+				<p className="max-w-md text-sm text-muted-foreground">
+					Local folders are optional support for external editors, backup, grep,
+					and agents.
+				</p>
+			</div>
+			<div className="flex flex-wrap justify-center gap-2">
+				<Button
+					onClick={() => void createLiveDocument()}
+					disabled={!workspace || creating}
+				>
+					{creating ? "Creating…" : "New Live Document"}
+				</Button>
+				<Button variant="outline" onClick={onOpenSettings}>
+					Connect synced folder
+				</Button>
+			</div>
+			<div className="grid gap-2 rounded-sm border border-border bg-card/40 [padding-block:0.75rem] [padding-inline:0.75rem]">
+				<div className="flex items-center justify-between gap-3">
+					<p className="text-sm font-medium">Recent Live Documents</p>
+					<p className="text-xs text-muted-foreground">
+						{workspace?.name ?? "Workspace loading"}
+					</p>
+				</div>
+				{dashboard === undefined ? (
+					<p className="text-sm text-muted-foreground">Loading documents…</p>
+				) : documents.length > 0 ? (
+					<ul className="grid gap-1">
+						{documents.map((document) => (
+							<li
+								key={document._id}
+								className="flex items-center justify-between gap-3 rounded-sm bg-background/70 [padding-block:0.5rem] [padding-inline:0.625rem]"
+							>
+								<span className="min-w-0 truncate text-sm">
+									{document.title}
+								</span>
+								<span className="shrink-0 text-xs text-muted-foreground">
+									{formatEditedDate(document.updatedAt)}
+								</span>
+							</li>
+						))}
+					</ul>
+				) : (
+					<p className="text-sm text-muted-foreground">
+						Create a Live Document to start the workspace.
+					</p>
+				)}
+			</div>
+			<div className="flex flex-wrap justify-center gap-2 text-xs text-muted-foreground">
+				<Button variant="ghost" size="sm" onClick={onCreateFolder}>
+					Create local folder
+				</Button>
+				<Button variant="ghost" size="sm" onClick={onOpenFolder}>
+					Open local folder
+				</Button>
+			</div>
+		</div>
+	);
+}
+
+function formatEditedDate(timestamp: number) {
+	return new Intl.DateTimeFormat(undefined, {
+		month: "short",
+		day: "numeric",
+	}).format(timestamp);
 }
 
 function DocumentViewer({

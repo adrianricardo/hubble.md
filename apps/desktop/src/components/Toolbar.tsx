@@ -1,7 +1,7 @@
 import { Menu } from "@base-ui/react/menu";
 import { Button, Toolbar as SharedToolbar } from "@hubble.md/ui";
 import { useStoreValue } from "@simplestack/store/react";
-import { type CSSProperties, useEffect, useState } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
 import { toast } from "sonner";
 import MingcuteCopy2Line from "~icons/mingcute/copy-2-line";
 import MingcuteFolderOpenLine from "~icons/mingcute/folder-open-line";
@@ -32,9 +32,11 @@ function useIsFullScreen() {
 export function Toolbar({
 	scrollContainer,
 	showSidebarBadge = false,
+	leftSlot,
 }: {
 	scrollContainer: HTMLDivElement | null;
 	showSidebarBadge?: boolean;
+	leftSlot?: ReactNode;
 }) {
 	const workspacePath = useStoreValue(workspacePathStore);
 	const sidebarOpen = useStoreValue(sidebarOpenStore);
@@ -49,6 +51,7 @@ export function Toolbar({
 			scrollContainer={scrollContainer}
 			platformInset={!isFullScreen}
 			rootProps={{ style: dragRegionStyle }}
+			leftSlot={leftSlot}
 			onToggleSidebar={toggleSidebar}
 			onRenameCurrentPath={(nextName) =>
 				void renameCurrentMarkdownFile(nextName)

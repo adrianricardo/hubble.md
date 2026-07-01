@@ -96,6 +96,11 @@ P2/P3/P4/P5/P6/P7 because the in-app Browser setup still fails before page
 execution (`sandboxCwd must be an absolute file URI`). A dev server responded at
 `http://127.0.0.1:5174/?test=1` during the P7 attempt.
 
+**Demo TODO:** Add the Google-Docs-style sharing affordance: "visible to anyone
+with the link" plus a one-click "copy link" action in the share dialog. The backend
+already supports `public` link shares; the UI needs to make that state obvious and
+copy the current document URL.
+
 **Pending manual tests:** Browser smoke the signed-in web flow once Browser tooling
 is available: sign in, confirm personal workspace/dashboard provisioning, confirm
 first-run "Welcome to Hubble" auto-doc creation for a new empty account, create a
@@ -159,6 +164,8 @@ Full `pnpm check` was not rerun; it previously failed on unrelated existing
 formatting/import drift outside this work.
 
 **Open questions / risks:**
+- Share dialog still needs the explicit "visible to anyone with the link" + copy
+  link affordance before a polished v1 demo.
 - P2/P3/P4/P5/P6/P7 browser smoke is still owed because the browser tool was unavailable in
   this session.
 - P7 production deploy, external monitoring sink, and C1/C2 manual QA are
