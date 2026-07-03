@@ -251,6 +251,7 @@ export function AppShell({
 	const shellContent = (
 		<AppShellContent
 			url={url}
+			authToken={authToken ?? undefined}
 			documentId={documentId}
 			testIdentity={testIdentity}
 			viewer={viewer}
@@ -283,6 +284,7 @@ export function AppShell({
 
 function AppShellContent({
 	url,
+	authToken,
 	documentId,
 	testIdentity,
 	viewer,
@@ -301,6 +303,7 @@ function AppShellContent({
 	onReloadWorkspace,
 }: {
 	url: string;
+	authToken?: string;
 	documentId: string | null;
 	testIdentity: TestIdentity | null;
 	viewer: ReturnType<typeof viewerStore.get>;
@@ -325,6 +328,7 @@ function AppShellContent({
 			sidebar={
 				<Sidebar
 					url={url}
+					authToken={authToken}
 					workspaceId={workspace.snapshot.id}
 					workspaceName={workspace.snapshot.name}
 					selectedDocumentId={documentId}

@@ -1,5 +1,16 @@
 # Hubble v1 — Orchestration Execution Plan
 
+> **⚑ REORDERED (2026-07-03) by the repo-brain direction.** This executes
+> `V1-RELEASE.plan.md`, which was repositioned to **repo-first + all-cloud** with a
+> **Workspace ⊃ Folders ⊃ Docs** model. Phase content is largely reusable, but the
+> sequencing/front-door assumptions inherit the same reorder. See
+> `REPO-BRAIN-VISION.md` for the current framing.
+>
+> **⚑ P7 PAUSED (2026-07-03, D15 full-pivot decision).** The remaining P7
+> operator gates (C1/C2 QA, D3/D4 deploy, D5 ops sink) are **not** run for a
+> web-first launch. They are absorbed into `REPO-BRAIN-EXECUTION.plan.md` RB7 —
+> one repo-first launch. Do not resume P7 from this file.
+
 Derived from `V1-RELEASE.plan.md` via `/orchestrate` (2026-06-30). This is the
 *execution* plan (route, phases, tiers, sequencing). The release plan is the
 *what/why*; this is the *how/when*.

@@ -20,6 +20,7 @@ import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 
 export function Sidebar({
 	url,
+	authToken,
 	workspaceId,
 	workspaceName,
 	selectedDocumentId,
@@ -29,6 +30,7 @@ export function Sidebar({
 	onDisconnect,
 }: {
 	url: string;
+	authToken?: string;
 	workspaceId: string;
 	workspaceName: string;
 	selectedDocumentId: string | null;
@@ -56,6 +58,7 @@ export function Sidebar({
 			header={
 				<WorkspaceSwitcher
 					url={url}
+					authToken={authToken}
 					currentWorkspaceId={workspaceId}
 					currentWorkspaceName={workspaceName}
 					onSelect={onSwitch}

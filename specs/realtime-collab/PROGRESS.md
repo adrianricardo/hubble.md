@@ -222,6 +222,24 @@ local Markdown creation elsewhere. Verified focused Biome and `pnpm
 build:desktop`; Electron CDP smoke confirmed the primary create action and sidebar
 hierarchy in the running desktop renderer.
 
+**Desktop native Live Documents follow-up planned 2026-07-01:**
+`DESKTOP-NATIVE-LIVE-DOCUMENTS.plan.md` captures the next phased route: desktop
+should open and edit Live Documents directly without requiring a synced folder,
+while synced folders remain optional projection infrastructure for external
+editors, backup, grep, and agents. The plan explicitly requires desktop to join
+the same `document:<id>` presence channel as web so cross-surface collaborators see
+shared live presence and remote cursors.
+
+**Implemented locally 2026-07-01:** desktop now has a native Live Document editor
+route that opens from sidebar rows, home recents, toolbar create, sidebar create,
+and Cmd/Ctrl+N without requiring a synced folder. The desktop editor uses
+`useTiptapSync(api.prosemirror, "document:<id>")`, publishes selection heartbeats
+through `api.pocIdentity.heartbeat`, subscribes to `api.pocIdentity.listActive`,
+and renders shared remote cursors through the existing shared editor. Synced
+folders remain optional local projection infrastructure. Verified focused Biome,
+`pnpm --filter @hubble.md/desktop build`, and `pnpm build:desktop`; manual
+cross-surface cursor smoke remains to run with signed-in web + desktop sessions.
+
 **User/session + data reset follow-up landed locally 2026-07-01:** web and desktop
 now show the signed-in account in the main toolbar with a compact avatar/name/email
 badge. The web dashboard no longer auto-creates a "Welcome to Hubble" document so

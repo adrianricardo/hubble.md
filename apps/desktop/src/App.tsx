@@ -1,7 +1,20 @@
 import { ConvexAuthProvider } from "@convex-dev/auth/react";
-import { wikiDisplayNameForTarget } from "@hubble.md/editor";
+import { useTiptapSync } from "@convex-dev/prosemirror-sync/tiptap";
+import {
+	markdownToTiptapDoc,
+	parseMarkdownFrontMatter,
+	wikiDisplayNameForTarget,
+	withMarkdownExtension,
+} from "@hubble.md/editor";
 import { api } from "@hubble.md/sync-backend";
-import { Button, EditorView, UserBadge, type WikiTarget } from "@hubble.md/ui";
+import type { Id } from "@hubble.md/sync-backend/types";
+import {
+	Button,
+	EditorView,
+	type RemotePresenceCursor,
+	UserBadge,
+	type WikiTarget,
+} from "@hubble.md/ui";
 import { useStoreValue } from "@simplestack/store/react";
 import {
 	Authenticated,
@@ -12,7 +25,16 @@ import {
 	useQuery,
 } from "convex/react";
 import { keymatch } from "keymatch";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+	Component,
+	type ErrorInfo,
+	type ReactNode,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { toast } from "sonner";
 import MingcuteAddLine from "~icons/mingcute/add-line";
 import MingcuteFileNewLine from "~icons/mingcute/file-new-line";
@@ -61,6 +83,7 @@ import {
 	updateEditorContent,
 } from "./store/actions";
 import {
+	emptyDoc,
 	sidebarOpenStore,
 	uiStore,
 	viewerStore,
@@ -157,6 +180,9 @@ function AppContent() {
 	const [dismissedVersion, setDismissedVersion] = useState<string | null>(null);
 	const [htmlAppsDialogOpen, setHtmlAppsDialogOpen] = useState(false);
 	const [htmlAppsCalloutVisible, setHtmlAppsCalloutVisible] = useState(false);
+	const [activeLiveDocumentId, setActiveLiveDocumentId] = useState<
+		string | null
+	>(null);
 	const cloudEnabled = Boolean(desktopConvexUrl);
 
 	const dismissHtmlAppsCallout = useCallback(() => {
@@ -192,6 +218,17 @@ function AppContent() {
 
 	const openSettings = useCallback(() => {
 		setSettingsOpen(true);
+	}, []);
+
+	const openLocalPath = useCallback(async (path: string) => {
+		setActiveLiveDocumentId(null);
+		await loadPath(path);
+	}, []);
+
+	const openLiveDocument = useCallback((documentId: string) => {
+		setActiveLiveDocumentId(documentId);
+		setScrollContainerEl(null);
+		viewerStore.set((state) => emptyDoc(state.lastOpenedPath));
 	}, []);
 
 	const installUpdate = useCallback(async () => {
@@ -260,9 +297,9 @@ function AppContent() {
 			undefined;
 		const selected = await desktopApi.openFilePicker({ defaultPath });
 		if (typeof selected === "string") {
-			await loadPath(selected);
+			await openLocalPath(selected);
 		}
-	}, []);
+	}, [openLocalPath]);
 
 	useEffect(() => {
 		void desktopApi.setMenuState({ hasWorkspace });
@@ -329,12 +366,12 @@ function AppContent() {
 
 	useEffect(() => {
 		const unlisten = desktopApi.onOpenFile((path) => {
-			void loadPath(path);
+			void openLocalPath(path);
 		});
 		return () => {
 			unlisten();
 		};
-	}, []);
+	}, [openLocalPath]);
 
 	useEffect(() => {
 		const disposers = [
@@ -368,7 +405,7 @@ function AppContent() {
 			if (!active) return;
 
 			if (typeof launchPath === "string" && launchPath.length > 0) {
-				await loadPath(launchPath);
+				await openLocalPath(launchPath);
 				return;
 			}
 			const launchWorkspacePath = await desktopApi.getLaunchWorkspacePath();
@@ -390,14 +427,14 @@ function AppContent() {
 					? workspace.lastOpenedPaths[workspace.workspacePath]
 					: undefined);
 			if (lastPath) {
-				await loadPath(lastPath);
+				await openLocalPath(lastPath);
 			}
 		};
 		void init();
 		return () => {
 			active = false;
 		};
-	}, []);
+	}, [openLocalPath]);
 
 	return (
 		<main className="flex h-dvh flex-col bg-background text-foreground">
@@ -405,13 +442,20 @@ function AppContent() {
 				scrollContainer={scrollContainerEl}
 				showSidebarBadge={!sidebarOpen && showUpdateCallout}
 				leftSlot={
-					cloudEnabled ? <CloudCreateButton /> : <LocalFileCreateButton />
+					cloudEnabled ? (
+						<CloudCreateButton onOpenLiveDocument={openLiveDocument} />
+					) : (
+						<LocalFileCreateButton
+							onBeforeCreate={() => setActiveLiveDocumentId(null)}
+						/>
+					)
 				}
 				sessionSlot={cloudEnabled ? <DesktopUserBadge /> : undefined}
 			/>
 			<div className="flex min-h-0 flex-1 overflow-hidden">
 				<Sidebar
 					cloudEnabled={cloudEnabled}
+					onOpenLiveDocument={openLiveDocument}
 					onOpenSettings={openSettings}
 					onFocusedPathChange={setFocusedSidebarPath}
 					footer={
@@ -437,7 +481,8 @@ function AppContent() {
 					)}
 					{state.status !== "loading" &&
 						state.status !== "error" &&
-						!state.currentPath && (
+						!state.currentPath &&
+						!activeLiveDocumentId && (
 							<div className="flex h-full items-center justify-center p-6">
 								{hasWorkspace ? (
 									<Button onClick={() => void openFilePicker()}>
@@ -446,6 +491,7 @@ function AppContent() {
 								) : cloudEnabled ? (
 									<CloudWorkspaceHome
 										onOpenSettings={openSettings}
+										onOpenLiveDocument={openLiveDocument}
 										onCreateFolder={() => void createWorkspaceWithSidebar()}
 										onOpenFolder={() => void openWorkspaceWithSidebar()}
 									/>
@@ -458,6 +504,15 @@ function AppContent() {
 								)}
 							</div>
 						)}
+					{activeLiveDocumentId && (
+						<LiveDocumentErrorBoundary key={activeLiveDocumentId}>
+							<LiveDocumentView
+								documentId={activeLiveDocumentId}
+								onOpenLocalPath={openLocalPath}
+								onScrollContainerChange={setScrollContainerEl}
+							/>
+						</LiveDocumentErrorBoundary>
+					)}
 					{state.status === "ready" && state.currentPath && (
 						<div className="flex h-full min-h-0 flex-col">
 							{state.externalChange.kind === "conflict" && (
@@ -497,13 +552,22 @@ function AppContent() {
 	);
 }
 
-function LocalFileCreateButton() {
+function LocalFileCreateButton({
+	onBeforeCreate,
+}: {
+	onBeforeCreate?: () => void;
+}) {
+	const createLocalFile = async () => {
+		onBeforeCreate?.();
+		await createMarkdownFile();
+	};
+
 	return (
 		<Button
 			variant="ghost"
 			size="icon-sm"
 			data-desktop-create-action="primary"
-			onClick={() => void createMarkdownFile()}
+			onClick={() => void createLocalFile()}
 			aria-label="New Markdown File"
 			title="New Markdown File (⌘N)"
 		>
@@ -512,7 +576,11 @@ function LocalFileCreateButton() {
 	);
 }
 
-function CloudCreateButton() {
+function CloudCreateButton({
+	onOpenLiveDocument,
+}: {
+	onOpenLiveDocument: (documentId: string) => void;
+}) {
 	return (
 		<>
 			<AuthLoading>
@@ -522,7 +590,9 @@ function CloudCreateButton() {
 				<LocalFileCreateButton />
 			</Unauthenticated>
 			<Authenticated>
-				<AuthenticatedCloudCreateButton />
+				<AuthenticatedCloudCreateButton
+					onOpenLiveDocument={onOpenLiveDocument}
+				/>
 			</Authenticated>
 		</>
 	);
@@ -547,7 +617,11 @@ function AuthenticatedDesktopUserBadge() {
 	return <UserBadge user={viewer} />;
 }
 
-function AuthenticatedCloudCreateButton() {
+function AuthenticatedCloudCreateButton({
+	onOpenLiveDocument,
+}: {
+	onOpenLiveDocument: (documentId: string) => void;
+}) {
 	const dashboard = useQuery(api.documents.dashboard, {
 		recentLimit: 1,
 		sharedLimit: 0,
@@ -562,14 +636,12 @@ function AuthenticatedCloudCreateButton() {
 		if (!workspace || creating) return;
 		setCreating(true);
 		try {
-			await createDocument({
+			const documentId = await createDocument({
 				workspaceId: workspace._id,
 				title: "Untitled",
 			});
-			toast.success("Live Document created", {
-				description:
-					"Connect a synced folder in Settings to edit it from local Markdown.",
-			});
+			onOpenLiveDocument(documentId);
+			toast.success("Live Document created");
 		} catch (error) {
 			toast.error("Failed to create Live Document", {
 				description: error instanceof Error ? error.message : String(error),
@@ -596,10 +668,12 @@ function AuthenticatedCloudCreateButton() {
 
 function CloudWorkspaceHome({
 	onOpenSettings,
+	onOpenLiveDocument,
 	onCreateFolder,
 	onOpenFolder,
 }: {
 	onOpenSettings: () => void;
+	onOpenLiveDocument: (documentId: string) => void;
 	onCreateFolder: () => void;
 	onOpenFolder: () => void;
 }) {
@@ -623,6 +697,7 @@ function CloudWorkspaceHome({
 			<Authenticated>
 				<AuthenticatedCloudWorkspaceHome
 					onOpenSettings={onOpenSettings}
+					onOpenLiveDocument={onOpenLiveDocument}
 					onCreateFolder={onCreateFolder}
 					onOpenFolder={onOpenFolder}
 				/>
@@ -633,10 +708,12 @@ function CloudWorkspaceHome({
 
 function AuthenticatedCloudWorkspaceHome({
 	onOpenSettings,
+	onOpenLiveDocument,
 	onCreateFolder,
 	onOpenFolder,
 }: {
 	onOpenSettings: () => void;
+	onOpenLiveDocument: (documentId: string) => void;
 	onCreateFolder: () => void;
 	onOpenFolder: () => void;
 }) {
@@ -657,10 +734,11 @@ function AuthenticatedCloudWorkspaceHome({
 		if (!workspace || creating) return;
 		setCreating(true);
 		try {
-			await createDocument({
+			const documentId = await createDocument({
 				workspaceId: workspace._id,
 				title: "Untitled",
 			});
+			onOpenLiveDocument(documentId);
 			toast.success("Live Document created");
 		} catch (error) {
 			toast.error("Failed to create Live Document", {
@@ -712,12 +790,18 @@ function AuthenticatedCloudWorkspaceHome({
 								key={document._id}
 								className="flex items-center justify-between gap-3 rounded-sm bg-background/70 [padding-block:0.5rem] [padding-inline:0.625rem]"
 							>
-								<span className="min-w-0 truncate text-sm">
-									{document.title}
-								</span>
-								<span className="shrink-0 text-xs text-muted-foreground">
-									{formatEditedDate(document.updatedAt)}
-								</span>
+								<button
+									type="button"
+									className="flex min-w-0 flex-1 items-center justify-between gap-3 text-start"
+									onClick={() => onOpenLiveDocument(document._id)}
+								>
+									<span className="min-w-0 truncate text-sm">
+										{document.title}
+									</span>
+									<span className="shrink-0 text-xs text-muted-foreground">
+										{formatEditedDate(document.updatedAt)}
+									</span>
+								</button>
 							</li>
 						))}
 					</ul>
@@ -744,6 +828,348 @@ function formatEditedDate(timestamp: number) {
 		month: "short",
 		day: "numeric",
 	}).format(timestamp);
+}
+
+type LiveDocumentErrorBoundaryProps = {
+	children: ReactNode;
+};
+
+type LiveDocumentErrorBoundaryState = {
+	error: Error | null;
+};
+
+class LiveDocumentErrorBoundary extends Component<
+	LiveDocumentErrorBoundaryProps,
+	LiveDocumentErrorBoundaryState
+> {
+	state: LiveDocumentErrorBoundaryState = { error: null };
+
+	static getDerivedStateFromError(error: Error) {
+		return { error };
+	}
+
+	componentDidCatch(error: Error, info: ErrorInfo) {
+		console.error(
+			"Desktop Live Document route failed:",
+			error,
+			info.componentStack,
+		);
+	}
+
+	render() {
+		if (this.state.error) {
+			return <LiveDocumentAccessError error={this.state.error} />;
+		}
+		return this.props.children;
+	}
+}
+
+function LiveDocumentAccessError({ error }: { error: Error }) {
+	const message = error.message.toLowerCase();
+	const isUnauthorized = message.includes("unauthorized");
+	return (
+		<div className="flex h-full items-center justify-center [padding-block:1.5rem] [padding-inline:1.5rem]">
+			<div className="max-w-md rounded-sm border border-border bg-background [padding-block:1rem] [padding-inline:1rem]">
+				<p className="m-0 text-sm font-medium text-foreground">
+					{isUnauthorized
+						? "You do not have access to this document."
+						: "Document failed to load."}
+				</p>
+				<p className="m-0 text-sm text-muted-foreground [margin-block-start:0.5rem]">
+					{isUnauthorized
+						? "Ask the owner to share it with your account, or enable link access before sending the link."
+						: error.message}
+				</p>
+			</div>
+		</div>
+	);
+}
+
+function LiveDocumentView({
+	documentId,
+	onOpenLocalPath,
+	onScrollContainerChange,
+}: {
+	documentId: string;
+	onOpenLocalPath: (path: string) => Promise<void>;
+	onScrollContainerChange?: (el: HTMLDivElement | null) => void;
+}) {
+	const document = useQuery(api.documents.getWithMarkdown, {
+		documentId: documentId as Id<"documents">,
+	});
+	const markEdited = useMutation(api.documents.markEdited);
+	const lastEditMarkRef = useRef(0);
+	const syncDocId = `document:${documentId}`;
+	const markLiveDocumentEdited = useCallback(() => {
+		const now = Date.now();
+		if (now - lastEditMarkRef.current < 5_000) return;
+		lastEditMarkRef.current = now;
+		void markEdited({ documentId: documentId as Id<"documents"> });
+	}, [documentId, markEdited]);
+
+	useEffect(() => {
+		onScrollContainerChange?.(null);
+	}, [onScrollContainerChange]);
+
+	if (document === undefined) {
+		return (
+			<div className="flex h-full items-center justify-center [padding-block:1.5rem] [padding-inline:1.5rem]">
+				<p className="text-sm text-muted-foreground">Loading document…</p>
+			</div>
+		);
+	}
+
+	if (document === null) {
+		return (
+			<div className="flex h-full items-center justify-center [padding-block:1.5rem] [padding-inline:1.5rem]">
+				<p className="text-sm text-muted-foreground">Document not found.</p>
+			</div>
+		);
+	}
+
+	const path = document.path ?? withMarkdownExtension(document.title);
+
+	return (
+		<div className="flex h-full min-h-0 flex-col">
+			<div className="border-b border-border bg-muted/30">
+				<div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground [padding-block:0.5rem] [padding-inline:0.75rem]">
+					<div className="flex min-w-0 flex-col gap-0.5">
+						<span className="truncate font-medium text-foreground">
+							{document.title}
+						</span>
+						<span className="truncate">{path}</span>
+					</div>
+					<div className="flex min-w-0 items-center gap-3">
+						<LiveDocumentPresenceLabel
+							workspaceId={document.workspaceId}
+							docId={syncDocId}
+						/>
+						<span className="shrink-0">
+							{formatEditedMeta(document.updatedAt, document.updatedBy)}
+						</span>
+					</div>
+				</div>
+			</div>
+			<LiveDocumentEditor
+				workspaceId={document.workspaceId}
+				path={path}
+				initialMarkdown={document.markdown}
+				syncDocumentId={syncDocId}
+				onLiveDocumentEdit={markLiveDocumentEdited}
+				onOpenLocalPath={onOpenLocalPath}
+				onScrollContainerChange={onScrollContainerChange}
+			/>
+		</div>
+	);
+}
+
+function LiveDocumentPresenceLabel({
+	workspaceId,
+	docId,
+}: {
+	workspaceId: Id<"workspaces">;
+	docId: string;
+}) {
+	const heartbeat = useMutation(api.pocIdentity.heartbeat);
+	const activeUsers = useQuery(api.pocIdentity.listActive, { docId });
+	const viewer = useQuery(api.viewer.me, {});
+	const currentName = viewer?.name ?? viewer?.email ?? "You";
+
+	useEffect(() => {
+		let cancelled = false;
+		const beat = () => {
+			if (cancelled) return;
+			void heartbeat({ workspaceId, docId }).catch((error) => {
+				console.error("Presence heartbeat failed:", error);
+			});
+		};
+		beat();
+		const interval = window.setInterval(beat, 10_000);
+		return () => {
+			cancelled = true;
+			window.clearInterval(interval);
+		};
+	}, [docId, heartbeat, workspaceId]);
+
+	const collaborators = activeUsers?.map((user) =>
+		viewer?._id && user.userId === viewer._id
+			? `${user.name} (you)`
+			: user.name,
+	) ?? [`${currentName} (you)`];
+
+	return (
+		<span className="min-w-0 truncate" title={collaborators.join(", ")}>
+			{collaborators.length === 1
+				? collaborators[0]
+				: `${collaborators.length} collaborators`}
+		</span>
+	);
+}
+
+function LiveDocumentEditor({
+	workspaceId,
+	path,
+	initialMarkdown,
+	syncDocumentId,
+	onLiveDocumentEdit,
+	onOpenLocalPath,
+	onScrollContainerChange,
+}: {
+	workspaceId: Id<"workspaces">;
+	path: string;
+	initialMarkdown: string;
+	syncDocumentId: string;
+	onLiveDocumentEdit: () => void;
+	onOpenLocalPath: (path: string) => Promise<void>;
+	onScrollContainerChange?: (el: HTMLDivElement | null) => void;
+}) {
+	const workspace = useStoreValue(workspaceStore);
+	const viewer = useQuery(api.viewer.me, {});
+	const heartbeat = useMutation(api.pocIdentity.heartbeat);
+	const activeUsers = useQuery(api.pocIdentity.listActive, {
+		docId: syncDocumentId,
+	});
+	const createdDocRef = useRef<string | null>(null);
+	const lastCursorHeartbeatRef = useRef(0);
+	const initialBody = useMemo(
+		() => parseMarkdownFrontMatter(initialMarkdown).body,
+		[initialMarkdown],
+	);
+	const sync = useTiptapSync(api.prosemirror, syncDocumentId, {
+		warnOnUnsyncedClose: false,
+		onSyncError: (error: unknown) => {
+			console.error("ProseMirror sync error:", error);
+		},
+	});
+	const wikiTargets: WikiTarget[] = workspace.files.map((file) => {
+		const target = relativeWorkspacePath(file.path, workspace.workspacePath);
+		return {
+			path: file.path,
+			target,
+			title: wikiDisplayNameForTarget(target),
+		};
+	});
+	const remotePresence = useMemo<RemotePresenceCursor[]>(() => {
+		if (!activeUsers) return [];
+		return activeUsers.flatMap((user) => {
+			if (viewer?._id && user.userId === viewer._id) return [];
+			if (user.anchor === undefined || user.head === undefined) return [];
+			return [
+				{
+					userId: user.userId,
+					name: user.name,
+					anchor: user.anchor,
+					head: user.head,
+					color: user.color ?? colorForUser(user.userId),
+				},
+			];
+		});
+	}, [activeUsers, viewer?._id]);
+	const publishSelection = useCallback(
+		(selection: { anchor: number; head: number }) => {
+			const now = Date.now();
+			if (now - lastCursorHeartbeatRef.current < 250) return;
+			lastCursorHeartbeatRef.current = now;
+			void heartbeat({
+				workspaceId,
+				docId: syncDocumentId,
+				anchor: selection.anchor,
+				head: selection.head,
+			}).catch((error) => {
+				console.error("Presence heartbeat failed:", error);
+			});
+		},
+		[heartbeat, syncDocumentId, workspaceId],
+	);
+	const handleLiveDocumentChange = useCallback(() => {
+		onLiveDocumentEdit();
+	}, [onLiveDocumentEdit]);
+
+	useEffect(() => {
+		if (
+			sync.isLoading ||
+			sync.initialContent ||
+			createdDocRef.current === syncDocumentId
+		) {
+			return;
+		}
+		const createLiveDocument = "create" in sync ? sync.create : undefined;
+		if (!createLiveDocument) return;
+		createdDocRef.current = syncDocumentId;
+		void createLiveDocument(markdownToTiptapDoc(initialBody)).catch(
+			(error: unknown) => {
+				createdDocRef.current = null;
+				console.error("Failed to create ProseMirror sync document:", error);
+			},
+		);
+	}, [initialBody, sync, syncDocumentId]);
+
+	if (sync.isLoading || !sync.initialContent || !sync.extension) {
+		return (
+			<div className="flex h-full items-center justify-center [padding-block:1.5rem] [padding-inline:1.5rem]">
+				<p className="text-sm text-muted-foreground">Loading live document…</p>
+			</div>
+		);
+	}
+
+	return (
+		<EditorView
+			key={syncDocumentId}
+			path={path}
+			initialMarkdown={initialMarkdown}
+			initialContent={sync.initialContent}
+			wikiTargets={wikiTargets}
+			remotePresence={remotePresence}
+			extensions={[sync.extension, createImageExtension(path)]}
+			onPaste={(editor, event) => handleImagePaste({ editor, event })}
+			onDrop={(editor, event) => handleImageDrop({ editor, event })}
+			onSelectionChange={publishSelection}
+			persistChanges={false}
+			syncInitialMarkdownChanges={false}
+			onLocalChange={handleLiveDocumentChange}
+			onSave={() => {}}
+			onScrollContainerChange={onScrollContainerChange}
+			onOpenExternalLink={desktopApi.openExternalUrl}
+			onOpenWikiLink={(target) => {
+				const resolved = resolveWikiPath({
+					target,
+					files: workspace.files,
+					workspacePath: workspace.workspacePath,
+				});
+				void onOpenLocalPath(resolved);
+			}}
+			onMessage={(message, kind) =>
+				kind === "success" ? toast.success(message) : toast.error(message)
+			}
+		/>
+	);
+}
+
+function formatEditedMeta(updatedAt: number, updatedBy?: string) {
+	const editedAt = new Intl.DateTimeFormat(undefined, {
+		dateStyle: "medium",
+		timeStyle: "short",
+	}).format(new Date(updatedAt));
+	return updatedBy
+		? `Last edited by ${updatedBy} at ${editedAt}`
+		: `Last edited ${editedAt}`;
+}
+
+const REMOTE_CURSOR_COLORS = [
+	"#2563eb",
+	"#d97706",
+	"#059669",
+	"#dc2626",
+	"#7c3aed",
+	"#0891b2",
+];
+
+function colorForUser(userId: string): string {
+	let hash = 0;
+	for (let i = 0; i < userId.length; i += 1) {
+		hash = (hash * 31 + userId.charCodeAt(i)) >>> 0;
+	}
+	return REMOTE_CURSOR_COLORS[hash % REMOTE_CURSOR_COLORS.length] ?? "#2563eb";
 }
 
 function DocumentViewer({

@@ -41,11 +41,13 @@ import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 export function Sidebar({
 	cloudEnabled,
 	footer,
+	onOpenLiveDocument,
 	onOpenSettings,
 	onFocusedPathChange,
 }: {
 	cloudEnabled?: boolean;
 	footer?: ReactNode;
+	onOpenLiveDocument?: (documentId: string) => void;
 	onOpenSettings?: () => void;
 	onFocusedPathChange?: (path: string | null) => void;
 }) {
@@ -63,6 +65,7 @@ export function Sidebar({
 				{cloudEnabled ? (
 					<CloudSidebarSection
 						files={files}
+						onOpenLiveDocument={onOpenLiveDocument}
 						onOpenSettings={onOpenSettings}
 						className="[border-block-end:1px_solid_var(--sidebar-border)]"
 					/>
@@ -129,6 +132,7 @@ export function Sidebar({
 				cloudEnabled ? (
 					<CloudSidebarSection
 						files={files}
+						onOpenLiveDocument={onOpenLiveDocument}
 						onOpenSettings={onOpenSettings}
 						className="[border-block-end:1px_solid_var(--sidebar-border)]"
 					/>
@@ -170,10 +174,12 @@ export function Sidebar({
 
 function CloudSidebarSection({
 	files,
+	onOpenLiveDocument,
 	onOpenSettings,
 	className,
 }: {
 	files: { path: string }[];
+	onOpenLiveDocument?: (documentId: string) => void;
 	onOpenSettings?: () => void;
 	className?: string;
 }) {
@@ -189,7 +195,7 @@ function CloudSidebarSection({
 					</span>
 				</div>
 				<Authenticated>
-					<CloudSidebarCreateButton />
+					<CloudSidebarCreateButton onOpenLiveDocument={onOpenLiveDocument} />
 				</Authenticated>
 			</div>
 			<AuthLoading>
@@ -210,13 +216,20 @@ function CloudSidebarSection({
 				</div>
 			</Unauthenticated>
 			<Authenticated>
-				<AuthenticatedCloudSidebarSection files={files} />
+				<AuthenticatedCloudSidebarSection
+					files={files}
+					onOpenLiveDocument={onOpenLiveDocument}
+				/>
 			</Authenticated>
 		</div>
 	);
 }
 
-function CloudSidebarCreateButton() {
+function CloudSidebarCreateButton({
+	onOpenLiveDocument,
+}: {
+	onOpenLiveDocument?: (documentId: string) => void;
+}) {
 	const dashboard = useQuery(api.documents.dashboard, {
 		recentLimit: 1,
 		sharedLimit: 0,
@@ -231,10 +244,11 @@ function CloudSidebarCreateButton() {
 		if (!workspace || creating) return;
 		setCreating(true);
 		try {
-			await createDocument({
+			const documentId = await createDocument({
 				workspaceId: workspace._id,
 				title: "Untitled",
 			});
+			onOpenLiveDocument?.(documentId);
 			toast.success("Live Document created");
 		} catch (error) {
 			toast.error("Failed to create Live Document", {
@@ -261,8 +275,10 @@ function CloudSidebarCreateButton() {
 
 function AuthenticatedCloudSidebarSection({
 	files,
+	onOpenLiveDocument,
 }: {
 	files: { path: string }[];
+	onOpenLiveDocument?: (documentId: string) => void;
 }) {
 	const dashboard = useQuery(api.documents.dashboard, {
 		recentLimit: 5,
@@ -296,7 +312,13 @@ function AuthenticatedCloudSidebarSection({
 					type="button"
 					className="min-w-0 truncate rounded-sm text-start text-[11px] text-sidebar-foreground hover:bg-sidebar-accent [padding-block:0.25rem] [padding-inline:0.375rem]"
 					title={document.title}
-					onClick={() => openLiveDocumentProjection(document, files)}
+					onClick={() => {
+						if (onOpenLiveDocument) {
+							onOpenLiveDocument(document._id);
+							return;
+						}
+						openLiveDocumentProjection(document, files);
+					}}
 				>
 					{document.title}
 				</button>

@@ -1,5 +1,13 @@
 # Hubble v1 Release Plan — "Google Docs for markdown, with agents"
 
+> **⚑ REORDERED (2026-07-03) by the repo-brain direction.** A discovery session
+> repositioned v1: **repo-first** (not web-dashboard-first), **all-cloud / no
+> git-mirroring**, and a **Workspace ⊃ Folders ⊃ Docs** model. The feature
+> inventory below (teams, permissions, history, presence, desktop layer) is still
+> valid work, but the **web-first front door** and the "all open scope decisions
+> resolved / plan fully specified" claim are **superseded**. See
+> `REPO-BRAIN-VISION.md` and `REPO-BRAIN-RATIONALE.md` for the current framing.
+
 > **Author intent (2026-06-30).** You can start anywhere. On the **web** you land
 > on a dashboard that feels like Google Docs: your documents, your private files,
 > shared team folders. Create a doc, share it, a collaborator opens it and you see

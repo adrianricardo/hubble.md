@@ -25,11 +25,7 @@ type Ctx = {
 
 let ctx: Ctx | null = null;
 
-function createCtx(
-	url: string,
-	workspaceId: string,
-	authToken?: string,
-): Ctx {
+function createCtx(url: string, workspaceId: string, authToken?: string): Ctx {
 	return {
 		backend: createConvexBackend(url, authToken),
 		workspaceId,
@@ -119,7 +115,29 @@ export const loadWorkspaceSnapshot = latest(
 		authToken?: string,
 	): Promise<boolean> => {
 		const previousSnapshot = workspaceStore.get().snapshot;
-		if (!previousSnapshot) {
+		if (previousSnapshot?.id !== workspaceId) {
+			appStore.set((state) => ({
+				workspace: {
+					...state.workspace,
+					snapshot: null,
+					files: [],
+					assets: [],
+					filesLoaded: false,
+					status: "loading",
+					error: null,
+				},
+				viewer: {
+					currentPath: null,
+					pendingPath: null,
+					content: "",
+					savedContent: "",
+					basedOnHash: null,
+					externalChange: { kind: "none" },
+					status: "idle",
+					error: null,
+				},
+			}));
+		} else {
 			workspaceStore.set((state) => ({
 				...state,
 				status: "loading",
