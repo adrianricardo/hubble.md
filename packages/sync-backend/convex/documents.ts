@@ -924,10 +924,15 @@ export const getWithMarkdown = query({
 		const document = await ctx.db.get(documentId);
 		if (!document || document.deletedAt !== undefined) return null;
 		const projection = await projectMarkdown(ctx, documentId);
+		// Additive (RB2): role/canWrite let guest-facing UI honor viewer/commenter
+		// read-only affordances instead of offering dead edit/accept buttons.
+		const role = await documentRole(ctx, documentId);
 		return {
 			...document,
 			markdown: projection.markdown,
 			version: projection.version,
+			role,
+			canWrite: canWriteRole(role),
 		};
 	},
 });
@@ -1453,7 +1458,17 @@ export const listSharedWithMe = query({
 export const listFolderWithMarkdown = query({
 	args: { folderId: v.id("folders") },
 	handler: async (ctx, { folderId }) => {
-		const rootRole = await folderRole(ctx, folderId);
+		let rootRole = await folderRole(ctx, folderId);
+		if (!rootRole) {
+			// Workspace-membership fallback (RB3): the repo-link mount is driven by
+			// the folder's own workspace member (the dev), who has no folderShares
+			// row — same pattern as `searchFolder` below.
+			const folder = await ctx.db.get(folderId);
+			const membership = folder
+				? await workspaceRole(ctx, folder.workspaceId)
+				: null;
+			rootRole = membership ? "editor" : null;
+		}
 		if (!rootRole) throw new Error("Unauthorized");
 		const folderCache: FolderRoleCache = new Map();
 		const { root, descendants, documents } = await collectFolderSubtree(
@@ -1497,7 +1512,16 @@ export const searchFolder = query({
 		limit: v.optional(v.number()),
 	},
 	handler: async (ctx, { folderId, query, limit }) => {
-		const rootRole = await folderRole(ctx, folderId);
+		let rootRole = await folderRole(ctx, folderId);
+		if (!rootRole) {
+			// Workspace-membership fallback (RB2): a member opening a folder invite
+			// link to their own workspace has no folderShares row but may search.
+			const folder = await ctx.db.get(folderId);
+			const membership = folder
+				? await workspaceRole(ctx, folder.workspaceId)
+				: null;
+			rootRole = membership ? "editor" : null;
+		}
 		if (!rootRole) throw new Error("Unauthorized");
 		const needle = query.trim().toLowerCase();
 		if (!needle) return [];
@@ -1754,7 +1778,10 @@ export const create = mutation({
 		markdown: v.optional(v.string()),
 		actor: v.optional(v.string()),
 	},
-	handler: async (ctx, { workspaceId, folderId, title, path, markdown, actor }) => {
+	handler: async (
+		ctx,
+		{ workspaceId, folderId, title, path, markdown, actor },
+	) => {
 		let isMember = (await workspaceRole(ctx, workspaceId)) !== null;
 		if (folderId) {
 			const folder = await ctx.db.get(folderId);

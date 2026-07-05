@@ -3,7 +3,8 @@ import type {
 	LiveDocumentProjection,
 	RemoteAsset,
 	RemoteFile,
-	SharedLiveDocumentProjection,
+	SharedSubtreeDocument,
+	SharedWithMe,
 } from "./types.js";
 
 /** A workspace the signed-in user can see (from `sync.listWorkspaces`). */
@@ -87,7 +88,40 @@ export interface SyncBackend {
 	}): Promise<void>;
 
 	getLiveDocuments(workspaceId: string): Promise<LiveDocumentProjection[]>;
-	getSharedWithMe(): Promise<SharedLiveDocumentProjection[]>;
+	/**
+	 * "Shared with me" as the RB4 subtree shape: top-most shared folder nodes
+	 * (each carrying its nested folders + docs) plus legacy per-document shares.
+	 */
+	getSharedWithMe(): Promise<SharedWithMe>;
+	/**
+	 * Documents of a single folder's subtree, with markdown + relative paths
+	 * (over `documents.listFolderWithMarkdown`). Drives the desktop repo-link
+	 * mount (RB3): one engine instance materializes exactly this subtree.
+	 */
+	getFolderSubtreeDocuments(folderId: string): Promise<SharedSubtreeDocument[]>;
+	/**
+	 * Persist repo-link **display metadata** on a folder (over
+	 * `folders.setFolderRepoLink`). The local mount path is never sent — it is
+	 * per-machine desktop config (D11).
+	 */
+	setFolderRepoLink(args: {
+		folderId: string;
+		repoName?: string;
+		repoRemoteUrl?: string;
+	}): Promise<void>;
+	/**
+	 * Folder-aware create with optional initial markdown (over
+	 * `documents.create`). Returns the new `documentId`. Used by RB5's `BRAIN.md`
+	 * seeding at repo-link time.
+	 */
+	createDocument(args: {
+		workspaceId: string;
+		folderId?: string;
+		title: string;
+		path?: string;
+		markdown?: string;
+		actor?: string;
+	}): Promise<string>;
 	importLiveDocument(args: {
 		workspaceId: string;
 		path: string;

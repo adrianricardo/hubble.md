@@ -90,6 +90,13 @@ const desktopApi = {
 		ipcRenderer.invoke("desktop:live-sync:disconnect-folder"),
 	getSyncedFolderStatus: () =>
 		ipcRenderer.invoke("desktop:live-sync:status-folder"),
+	linkRepoFolder: (input) =>
+		ipcRenderer.invoke("desktop:repo-link:link", input),
+	unlinkRepoFolder: (folderId) =>
+		ipcRenderer.invoke("desktop:repo-link:unlink", folderId),
+	listRepoMounts: () => ipcRenderer.invoke("desktop:repo-link:list"),
+	reconnectRepoMounts: (input) =>
+		ipcRenderer.invoke("desktop:repo-link:reconnect", input),
 	isSyncedFolderDocument: (absPath) =>
 		ipcRenderer.invoke("desktop:live-sync:is-live-document", absPath),
 	onSyncedFolderEvent: (callback) =>

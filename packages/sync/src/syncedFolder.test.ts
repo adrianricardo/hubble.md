@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Folder, SyncBackend, Workspace } from "./backend.js";
 import { contentHash, type FileSystem } from "./fs.js";
 import { liveDocumentBaseCacheRoot, readReconcileBase } from "./reconcile.js";
-import { materializeSyncedFolder } from "./sync.js";
+import { materializeMountFolder, materializeSyncedFolder } from "./sync.js";
 import {
 	diffSyncedFolderIndex,
 	loadSyncedFolderIndex,
@@ -14,7 +14,8 @@ import {
 } from "./syncedFolderIndex.js";
 import type {
 	LiveDocumentProjection,
-	SharedLiveDocumentProjection,
+	SharedSubtreeDocument,
+	SharedWithMe,
 } from "./types.js";
 
 /** In-memory FileSystem recording read-only chmod calls. */
@@ -62,10 +63,15 @@ function createBackend(data: {
 	workspaces: Workspace[];
 	folders: Record<string, Folder[]>;
 	documents: Record<string, LiveDocumentProjection[]>;
-	shared?: SharedLiveDocumentProjection[];
+	shared?: SharedWithMe;
+	subtreeDocuments?: Record<string, SharedSubtreeDocument[]>;
 }): Pick<
 	SyncBackend,
-	"listWorkspaces" | "getFolders" | "getLiveDocuments" | "getSharedWithMe"
+	| "listWorkspaces"
+	| "getFolders"
+	| "getLiveDocuments"
+	| "getSharedWithMe"
+	| "getFolderSubtreeDocuments"
 > {
 	return {
 		async listWorkspaces() {
@@ -78,8 +84,30 @@ function createBackend(data: {
 			return data.documents[workspaceId] ?? [];
 		},
 		async getSharedWithMe() {
-			return data.shared ?? [];
+			return data.shared ?? { folders: [], documents: [] };
 		},
+		async getFolderSubtreeDocuments(folderId) {
+			return data.subtreeDocuments?.[folderId] ?? [];
+		},
+	};
+}
+
+/** Build a SharedSubtreeDocument for shared/mount fixtures. */
+function sharedDoc(
+	overrides: Partial<SharedSubtreeDocument> &
+		Pick<SharedSubtreeDocument, "_id" | "title" | "workspaceId">,
+): SharedSubtreeDocument {
+	return {
+		path: null,
+		folderId: null,
+		markdown: `# ${overrides.title}\n`,
+		version: 1,
+		role: "editor",
+		canWrite: true,
+		updatedAt: 0,
+		workspaceName: "Shared",
+		relativePath: "",
+		...overrides,
 	};
 }
 
@@ -227,20 +255,21 @@ describe("materializeSyncedFolder", () => {
 			],
 			ws_b: [doc({ _id: "d_journal", title: "Journal" })],
 		};
-		const shared: SharedLiveDocumentProjection[] = [
-			{
-				...doc({
+		const shared: SharedWithMe = {
+			folders: [],
+			documents: [
+				sharedDoc({
 					_id: "d_budget",
 					title: "Budget 2026",
 					markdown: "# Budget\n",
 					role: "commenter",
 					canWrite: false,
 					version: 7,
+					workspaceId: "ws_alice",
+					workspaceName: "Alice Finance",
 				}),
-				workspaceId: "ws_alice",
-				workspaceName: "Alice Finance",
-			},
-		];
+			],
+		};
 		return { workspaces, folders, documents, shared };
 	}
 
@@ -354,13 +383,17 @@ describe("materializeSyncedFolder", () => {
 			documents: {
 				ws_collision: [doc({ _id: "d_own", title: "Own Doc" })],
 			},
-			shared: [
-				{
-					...doc({ _id: "d_shared", title: "Shared Doc" }),
-					workspaceId: "ws_other",
-					workspaceName: "Other Team",
-				},
-			],
+			shared: {
+				folders: [],
+				documents: [
+					sharedDoc({
+						_id: "d_shared",
+						title: "Shared Doc",
+						workspaceId: "ws_other",
+						workspaceName: "Other Team",
+					}),
+				],
+			},
 		});
 
 		await materializeSyncedFolder(backend, fs, { syncRoot: SYNC_ROOT });
@@ -398,13 +431,39 @@ describe("materializeSyncedFolder", () => {
 					}),
 				],
 			},
-			shared: [
-				{
-					...doc({ _id: "d_shared_escape", title: "../Shared" }),
-					workspaceId: "ws_other",
-					workspaceName: "../Other",
-				},
-			],
+			shared: {
+				folders: [
+					{
+						folderId: "f_shared_escape",
+						name: "../Escape",
+						workspaceId: "ws_other",
+						workspaceName: "../Other",
+						parentId: null,
+						role: "editor",
+						repoName: null,
+						repoRemoteUrl: null,
+						folders: [],
+						documents: [
+							sharedDoc({
+								_id: "d_nested_escape",
+								title: "../Nested",
+								workspaceId: "ws_other",
+								workspaceName: "../Other",
+								folderId: "f_shared_escape",
+								relativePath: "../inner",
+							}),
+						],
+					},
+				],
+				documents: [
+					sharedDoc({
+						_id: "d_shared_escape",
+						title: "../Shared",
+						workspaceId: "ws_other",
+						workspaceName: "../Other",
+					}),
+				],
+			},
 		});
 
 		const result = await materializeSyncedFolder(backend, fs, {
@@ -415,7 +474,146 @@ describe("materializeSyncedFolder", () => {
 		expect(result.written).toContain(
 			`${SYNC_ROOT}/Shared with me/Other - Shared.md`,
 		);
+		expect(result.written).toContain(
+			`${SYNC_ROOT}/Shared with me/Other - Escape/inner/Nested.md`,
+		);
 		expect(result.written.some((path) => path.includes(".."))).toBe(false);
+	});
+
+	it("materializes shared folder subtrees with real nesting, chmod, and index (RB4)", async () => {
+		const fs = createMemoryFs();
+		const backend = createBackend({
+			workspaces: [],
+			folders: {},
+			documents: {},
+			shared: {
+				folders: [
+					{
+						folderId: "f_root",
+						name: "Strategy",
+						workspaceId: "ws_x",
+						workspaceName: "Acme",
+						parentId: null,
+						role: "editor",
+						repoName: "acme-app",
+						repoRemoteUrl: "git@github.com:acme/app.git",
+						folders: [
+							{
+								_id: "f_child",
+								name: "Child",
+								parentId: "f_root",
+								relativePath: "Child",
+							},
+						],
+						documents: [
+							sharedDoc({
+								_id: "sd_root",
+								title: "Overview",
+								workspaceId: "ws_x",
+								workspaceName: "Acme",
+								folderId: "f_root",
+								version: 5,
+							}),
+							sharedDoc({
+								_id: "sd_nested",
+								title: "Deep Doc",
+								workspaceId: "ws_x",
+								workspaceName: "Acme",
+								folderId: "f_child",
+								relativePath: "Child",
+								role: "viewer",
+								canWrite: false,
+							}),
+							// Sibling collision inside the subtree directory.
+							sharedDoc({
+								_id: "sd_dup",
+								title: "Overview",
+								workspaceId: "ws_x",
+								workspaceName: "Acme",
+								folderId: "f_root",
+							}),
+						],
+					},
+				],
+				documents: [],
+			},
+		});
+
+		const result = await materializeSyncedFolder(backend, fs, {
+			syncRoot: SYNC_ROOT,
+		});
+
+		const base = `${SYNC_ROOT}/Shared with me/Acme - Strategy`;
+		expect(await fs.readFile(`${base}/Overview.md`)).toBe("# Overview\n");
+		expect(await fs.readFile(`${base}/Overview (2).md`)).toBe("# Overview\n");
+		expect(await fs.readFile(`${base}/Child/Deep Doc.md`)).toBe("# Deep Doc\n");
+
+		// Index keyed by absPath → documentId/folderId (rename-stable binding).
+		const index = await loadSyncedFolderIndex(fs, SYNC_ROOT);
+		expect(index[`${base}/Overview.md`]).toMatchObject({
+			documentId: "sd_root",
+			folderId: "f_root",
+			workspaceId: "ws_x",
+		});
+		expect(index[`${base}/Child/Deep Doc.md`]).toMatchObject({
+			documentId: "sd_nested",
+			folderId: "f_child",
+			role: "viewer",
+		});
+
+		// Role chmod: viewer → read-only.
+		expect(fs.readOnly.get(`${base}/Child/Deep Doc.md`)).toBe(true);
+		expect(fs.readOnly.get(`${base}/Overview.md`)).toBe(false);
+
+		// Base cache per doc for reconcile.
+		const reconcileBase = await readReconcileBase(fs, SYNC_ROOT, "sd_root");
+		expect(reconcileBase?.metadata.revision).toBe(5);
+		expect(reconcileBase?.metadata.path).toBe(
+			"Shared with me/Acme - Strategy/Overview.md",
+		);
+		expect(result.written).toHaveLength(3);
+	});
+
+	it("a subtree doc also in a member workspace is not materialized twice", async () => {
+		const fs = createMemoryFs();
+		const backend = createBackend({
+			workspaces: [{ _id: "ws_a", name: "Team" }],
+			folders: { ws_a: [] },
+			documents: { ws_a: [doc({ _id: "d_dupe", title: "Doc" })] },
+			shared: {
+				folders: [
+					{
+						folderId: "f_s",
+						name: "Folder",
+						workspaceId: "ws_a",
+						workspaceName: "Team",
+						parentId: null,
+						role: "editor",
+						repoName: null,
+						repoRemoteUrl: null,
+						folders: [],
+						documents: [
+							sharedDoc({
+								_id: "d_dupe",
+								title: "Doc",
+								workspaceId: "ws_a",
+								workspaceName: "Team",
+							}),
+						],
+					},
+				],
+				documents: [],
+			},
+		});
+
+		const result = await materializeSyncedFolder(backend, fs, {
+			syncRoot: SYNC_ROOT,
+		});
+
+		expect(result.written).toEqual([`${SYNC_ROOT}/Team/Doc.md`]);
+		expect(
+			result.written.filter((path) => path.includes("Shared with me")),
+		).toHaveLength(0);
 	});
 
 	it("does not rewrite an unchanged projection during materialization", async () => {
@@ -443,5 +641,90 @@ describe("materializeSyncedFolder", () => {
 		const base = await readReconcileBase(fs, SYNC_ROOT, "d_roadmap");
 		expect(base?.baseMarkdown).toBe("# Roadmap\n");
 		expect(base?.metadata.revision).toBe(3);
+	});
+});
+
+describe("materializeMountFolder (RB3 repo-link mount)", () => {
+	const MOUNT_ROOT = "/repo/acme-brain";
+
+	it("materializes the folder subtree at the mount root with index + base caches", async () => {
+		const fs = createMemoryFs();
+		const backend = createBackend({
+			workspaces: [],
+			folders: {},
+			documents: {},
+			subtreeDocuments: {
+				f_link: [
+					sharedDoc({
+						_id: "m_brain",
+						title: "BRAIN",
+						workspaceId: "ws_x",
+						folderId: "f_link",
+						markdown: "# BRAIN.md\n",
+						version: 2,
+					}),
+					sharedDoc({
+						_id: "m_notes",
+						title: "Notes",
+						workspaceId: "ws_x",
+						folderId: "f_sub",
+						relativePath: "Research/2026",
+						role: "viewer",
+						canWrite: false,
+					}),
+				],
+			},
+		});
+
+		const result = await materializeMountFolder(backend, fs, {
+			syncRoot: MOUNT_ROOT,
+			folderId: "f_link",
+		});
+
+		// Subtree-relative layout directly under the mount root — no wrapper dirs.
+		expect(await fs.readFile(`${MOUNT_ROOT}/BRAIN.md`)).toBe("# BRAIN.md\n");
+		expect(await fs.readFile(`${MOUNT_ROOT}/Research/2026/Notes.md`)).toBe(
+			"# Notes\n",
+		);
+
+		const index = await loadSyncedFolderIndex(fs, MOUNT_ROOT);
+		expect(index[`${MOUNT_ROOT}/BRAIN.md`]).toMatchObject({
+			documentId: "m_brain",
+			folderId: "f_link",
+		});
+		expect(fs.readOnly.get(`${MOUNT_ROOT}/Research/2026/Notes.md`)).toBe(true);
+
+		// Base cache rooted at the mount so reconcileProjectionFile finds it.
+		const base = await readReconcileBase(fs, MOUNT_ROOT, "m_brain");
+		expect(base?.metadata.revision).toBe(2);
+		expect(base?.metadata.path).toBe("BRAIN.md");
+		expect(result.written).toHaveLength(2);
+	});
+
+	it("drops path-escape segments from cloud-controlled relative paths", async () => {
+		const fs = createMemoryFs();
+		const backend = createBackend({
+			workspaces: [],
+			folders: {},
+			documents: {},
+			subtreeDocuments: {
+				f_link: [
+					sharedDoc({
+						_id: "m_escape",
+						title: "../Evil",
+						workspaceId: "ws_x",
+						relativePath: "../../outside",
+					}),
+				],
+			},
+		});
+
+		const result = await materializeMountFolder(backend, fs, {
+			syncRoot: MOUNT_ROOT,
+			folderId: "f_link",
+		});
+
+		expect(result.written).toEqual([`${MOUNT_ROOT}/outside/Evil.md`]);
+		expect(result.written.some((path) => path.includes(".."))).toBe(false);
 	});
 });

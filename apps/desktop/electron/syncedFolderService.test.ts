@@ -13,6 +13,8 @@ import {
 	type DocumentPatchResult,
 	type FileSystem,
 	type LiveDocumentProjection,
+	type SharedSubtreeDocument,
+	type SharedWithMe,
 	type SyncBackend,
 } from "@hubble.md/sync";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -96,6 +98,10 @@ type BackendState = {
 	docs: LiveDocumentProjection[];
 	canWrite: boolean;
 	patchError?: Error | null;
+	/** RB4: subtree "Shared with me" payload (steerable to simulate revoke). */
+	shared: SharedWithMe;
+	/** RB3: per-folder subtree docs served to a mount engine instance. */
+	subtreeDocs: Record<string, SharedSubtreeDocument[]>;
 };
 
 function doc1(
@@ -133,7 +139,14 @@ function fakeBackend(calls: Calls, state: BackendState): SyncBackend {
 			return state.docs;
 		},
 		async getSharedWithMe() {
-			return [];
+			return state.shared;
+		},
+		async getFolderSubtreeDocuments(folderId) {
+			return state.subtreeDocs[folderId] ?? [];
+		},
+		async setFolderRepoLink() {},
+		async createDocument() {
+			return "d_created";
 		},
 		async renameDocument(documentId, args) {
 			calls.rename.push({ documentId, title: args.title, path: args.path });
@@ -192,12 +205,14 @@ function makeService(
 	calls: Calls,
 	events: Array<{ kind: string }>,
 	overrides: Partial<BackendState> = {},
-	options: { isOffline?: () => boolean } = {},
+	options: { isOffline?: () => boolean; mountFolderId?: string } = {},
 ) {
 	const state: BackendState = {
 		docs: overrides.docs ?? [doc1()],
 		canWrite: overrides.canWrite ?? true,
 		patchError: overrides.patchError ?? null,
+		shared: overrides.shared ?? { folders: [], documents: [] },
+		subtreeDocs: overrides.subtreeDocs ?? {},
 	};
 	const fs = memoryFs();
 	const backend = fakeBackend(calls, state);
@@ -239,6 +254,7 @@ function makeService(
 		deviceId: "device-test",
 		statInode: () => 111,
 		isOffline: options.isOffline,
+		mountFolderId: options.mountFolderId,
 		emit: (event) => events.push(event),
 		// No createWatcher → no chokidar; events are driven directly.
 	});
@@ -722,7 +738,12 @@ describe("SyncedFolderService routing", () => {
 				heartbeatAt: NOW,
 			}),
 		});
-		const backend = fakeBackend(calls, { docs: [doc1()], canWrite: true });
+		const backend = fakeBackend(calls, {
+			docs: [doc1()],
+			canWrite: true,
+			shared: { folders: [], documents: [] },
+			subtreeDocs: {},
+		});
 		const service = new SyncedFolderService({
 			createBackend: () => backend,
 			fs,
@@ -734,6 +755,215 @@ describe("SyncedFolderService routing", () => {
 		await expect(service.connect(CONNECT_INPUT)).rejects.toThrow(
 			/already syncing/i,
 		);
+	});
+
+	// ── RB4: shared-subtree materialization + revocation cleanup ──────────────
+
+	function sharedSubtreeFixture(): SharedWithMe {
+		const docs: SharedSubtreeDocument[] = [
+			{
+				_id: "sd_root",
+				workspaceId: "ws_x",
+				workspaceName: "Acme",
+				folderId: "f_root",
+				title: "Overview",
+				path: null,
+				markdown: "# Overview\n",
+				version: 1,
+				role: "editor",
+				canWrite: true,
+				updatedAt: 0,
+				relativePath: "",
+			},
+			{
+				_id: "sd_nested",
+				workspaceId: "ws_x",
+				workspaceName: "Acme",
+				folderId: "f_child",
+				title: "Deep Doc",
+				path: null,
+				markdown: "# Deep\n",
+				version: 1,
+				role: "viewer",
+				canWrite: false,
+				updatedAt: 0,
+				relativePath: "Child",
+			},
+		];
+		return {
+			folders: [
+				{
+					folderId: "f_root",
+					name: "Strategy",
+					workspaceId: "ws_x",
+					workspaceName: "Acme",
+					parentId: null,
+					role: "editor",
+					repoName: null,
+					repoRemoteUrl: null,
+					folders: [
+						{
+							_id: "f_child",
+							name: "Child",
+							parentId: "f_root",
+							relativePath: "Child",
+						},
+					],
+					documents: docs,
+				},
+			],
+			documents: [],
+		};
+	}
+
+	it("RB4: materializes a shared folder subtree with real nesting and role chmod", async () => {
+		const roCalls: Array<{ path: string; ro: boolean }> = [];
+		const { service, fs } = makeService(calls, events, {
+			shared: sharedSubtreeFixture(),
+		});
+		const origSetReadOnly = fs.setReadOnly?.bind(fs);
+		fs.setReadOnly = async (path, ro) => {
+			roCalls.push({ path, ro });
+			await origSetReadOnly?.(path, ro);
+		};
+		await service.connect(CONNECT_INPUT);
+
+		const rootDoc = `${SYNC_ROOT}/Shared with me/Acme - Strategy/Overview.md`;
+		const nestedDoc = `${SYNC_ROOT}/Shared with me/Acme - Strategy/Child/Deep Doc.md`;
+		expect(await fs.readFile(rootDoc)).toBe("# Overview\n");
+		expect(await fs.readFile(nestedDoc)).toBe("# Deep\n");
+		// Indexed by documentId with folderId retained.
+		expect(service.lookup(rootDoc)?.documentId).toBe("sd_root");
+		expect(service.lookup(nestedDoc)).toMatchObject({
+			documentId: "sd_nested",
+			folderId: "f_child",
+			role: "viewer",
+		});
+		// Role chmod: viewer → read-only, editor → writable.
+		expect(roCalls).toContainEqual({ path: nestedDoc, ro: true });
+		expect(roCalls).toContainEqual({ path: rootDoc, ro: false });
+		// Base cache exists for reconcile.
+		expect(
+			await fs.readFileOrNull(
+				`${SYNC_ROOT}/.hubble/state/live-documents/sd_root.base.md`,
+			),
+		).toBe("# Overview\n");
+	});
+
+	it("RB4: a cloud rename inside the subtree re-points the path without trashing", async () => {
+		const { service, fs, state, subscription } = makeService(calls, events, {
+			shared: sharedSubtreeFixture(),
+		});
+		await service.connect(CONNECT_INPUT);
+
+		// Rename "Deep Doc" → "Deeper Doc" in the cloud (same documentId).
+		const next = sharedSubtreeFixture();
+		const nested = next.folders[0].documents[1];
+		nested.title = "Deeper Doc";
+		state.shared = next;
+		subscription.callback?.();
+		await waitForCloudMaterialize();
+
+		const oldPath = `${SYNC_ROOT}/Shared with me/Acme - Strategy/Child/Deep Doc.md`;
+		const newPath = `${SYNC_ROOT}/Shared with me/Acme - Strategy/Child/Deeper Doc.md`;
+		expect(await fs.readFileOrNull(oldPath)).toBeNull();
+		expect(await fs.readFile(newPath)).toBe("# Deep\n");
+		expect(service.lookup(newPath)?.documentId).toBe("sd_nested");
+		// Not access loss: no trash copy, no cloud delete, no removed-access.
+		expect(findPath(fs, /\/\.hubble\/trash\/sd_nested__/)).toBeUndefined();
+		expect(calls.remove).toEqual([]);
+		expect(events).not.toContainEqual({ kind: "removed-access" });
+	});
+
+	it("RB4: revoking a shared folder trashes the whole subtree but keeps backstop files", async () => {
+		const { service, fs, state } = makeService(calls, events, {
+			shared: sharedSubtreeFixture(),
+		});
+		await service.connect(CONNECT_INPUT);
+
+		// A conflict backstop sibling (user data) sits inside the subtree.
+		const backstop = `${SYNC_ROOT}/Shared with me/Acme - Strategy/Overview.local-edit-20260703.md`;
+		await fs.writeFile(backstop, "my unsaved bytes");
+
+		// Owner revokes the folder share → subtree leaves the desired set.
+		state.shared = { folders: [], documents: [] };
+		await service.refresh();
+
+		// Whole subtree projection removed → trash, never cloud-deleted.
+		expect(
+			await fs.readFileOrNull(
+				`${SYNC_ROOT}/Shared with me/Acme - Strategy/Overview.md`,
+			),
+		).toBeNull();
+		expect(
+			await fs.readFileOrNull(
+				`${SYNC_ROOT}/Shared with me/Acme - Strategy/Child/Deep Doc.md`,
+			),
+		).toBeNull();
+		expect(
+			findPath(fs, /\/\.hubble\/trash\/sd_root__Overview\.md$/),
+		).toBeDefined();
+		expect(
+			findPath(fs, /\/\.hubble\/trash\/sd_nested__Deep Doc\.md$/),
+		).toBeDefined();
+		expect(calls.remove).toEqual([]);
+		expect(events).toContainEqual({ kind: "removed-access" });
+		// Backstop files are user data — never touched by revocation cleanup.
+		expect(await fs.readFile(backstop)).toBe("my unsaved bytes");
+	});
+
+	// ── RB3: repo-link mount (engine-instance-per-mount) ──────────────────────
+
+	it("RB3: a mount engine materializes exactly the linked folder subtree at its root", async () => {
+		const subtree: SharedSubtreeDocument[] = [
+			{
+				_id: "md_brain",
+				workspaceId: "ws_x",
+				workspaceName: "Acme",
+				folderId: "f_link",
+				title: "BRAIN",
+				path: "BRAIN.md",
+				markdown: "# BRAIN.md\n",
+				version: 1,
+				role: "owner",
+				canWrite: true,
+				updatedAt: 0,
+				relativePath: "",
+			},
+			{
+				_id: "md_nested",
+				workspaceId: "ws_x",
+				workspaceName: "Acme",
+				folderId: "f_link_sub",
+				title: "Notes",
+				path: null,
+				markdown: "# Notes\n",
+				version: 1,
+				role: "owner",
+				canWrite: true,
+				updatedAt: 0,
+				relativePath: "Research",
+			},
+		];
+		const { service, fs } = makeService(
+			calls,
+			events,
+			{ subtreeDocs: { f_link: subtree } },
+			{ mountFolderId: "f_link" },
+		);
+		await service.connect(CONNECT_INPUT);
+
+		// Docs land at their subtree-relative paths directly under the mount root
+		// (no workspace/"Shared with me" wrapper).
+		expect(await fs.readFile(`${SYNC_ROOT}/BRAIN.md`)).toBe("# BRAIN.md\n");
+		expect(await fs.readFile(`${SYNC_ROOT}/Research/Notes.md`)).toBe(
+			"# Notes\n",
+		);
+		expect(service.lookup(`${SYNC_ROOT}/BRAIN.md`)?.documentId).toBe(
+			"md_brain",
+		);
+		// The whole-workspace query path is not used by a mount engine.
+		expect(calls.getLiveDocuments).toBe(0);
 	});
 
 	it("heartbeat loss stops sync instead of overwriting a fresh foreign owner", async () => {

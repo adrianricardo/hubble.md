@@ -46,6 +46,7 @@ import {
 	HtmlAppsDialog,
 	SidebarHtmlAppsCallout,
 } from "./components/HtmlAppsCallout";
+import { RepoLinkSection } from "./components/RepoLinkSection";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { Sidebar } from "./components/Sidebar";
 import { Toolbar } from "./components/Toolbar";
@@ -532,7 +533,10 @@ function AppContent() {
 			</div>
 			<SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen}>
 				{desktopConvexUrl ? (
-					<CloudSyncSection deploymentUrl={desktopConvexUrl} />
+					<>
+						<CloudSyncSection deploymentUrl={desktopConvexUrl} />
+						<RepoLinkSection deploymentUrl={desktopConvexUrl} />
+					</>
 				) : (
 					<CloudSyncUnavailableSection />
 				)}

@@ -11,6 +11,7 @@ import {
 	type FileSystem,
 	liveDocumentBaseCacheRoot,
 	loadSyncedFolderIndex,
+	materializeMountFolder,
 	materializeSyncedFolder,
 	reconcileProjectionFile,
 	rekeySyncedFolderEntry,
@@ -65,6 +66,12 @@ export type SyncedFolderServiceOptions = {
 		syncRoot: string;
 		onEvent: (event: RawWatcherEvent) => void;
 	}) => WatcherHandle | null;
+	/**
+	 * When set, this engine instance is a repo-link **mount** (RB3): it
+	 * materializes exactly the given folder's subtree at `syncRoot` instead of the
+	 * whole-workspace mirror. Engine-instance-per-mount — the multi-root shape.
+	 */
+	mountFolderId?: string;
 };
 
 export type ConnectFolderInput = {
@@ -122,6 +129,7 @@ export class SyncedFolderService {
 	#statInode: (absPath: string) => number | null;
 	#isOffline: () => boolean;
 	#createWatcher: SyncedFolderServiceOptions["createWatcher"];
+	#mountFolderId: string | null;
 
 	#backend: SyncBackend | null = null;
 	#syncRoot: string | null = null;
@@ -164,6 +172,7 @@ export class SyncedFolderService {
 			});
 		this.#isOffline = options.isOffline ?? (() => false);
 		this.#createWatcher = options.createWatcher;
+		this.#mountFolderId = options.mountFolderId ?? null;
 	}
 
 	get connected(): boolean {
@@ -322,9 +331,14 @@ export class SyncedFolderService {
 		const syncRoot = this.#syncRoot;
 		if (!backend || !syncRoot) return;
 		const previous = this.#index;
-		const result = await materializeSyncedFolder(backend, this.#fs, {
-			syncRoot,
-		});
+		const result = this.#mountFolderId
+			? await materializeMountFolder(backend, this.#fs, {
+					syncRoot,
+					folderId: this.#mountFolderId,
+				})
+			: await materializeSyncedFolder(backend, this.#fs, {
+					syncRoot,
+				});
 		if (
 			connectionGeneration !== this.#connectionGeneration ||
 			backend !== this.#backend ||

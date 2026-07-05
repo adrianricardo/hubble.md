@@ -56,6 +56,44 @@ export type SharedLiveDocumentProjection = LiveDocumentProjection & {
 	workspaceName: string;
 };
 
+/**
+ * A document inside a shared folder subtree (RB4). Extends the flat shared
+ * projection with `relativePath` — the containing-folder path relative to the
+ * shared root ("" for a root-level or per-document share).
+ */
+export type SharedSubtreeDocument = SharedLiveDocumentProjection & {
+	relativePath: string;
+};
+
+/**
+ * A top-most folder shared directly with the signed-in user (RB4 / D12). Carries
+ * its descendant folders + documents so the desktop can materialize the whole
+ * subtree with real nesting under `Shared with me/<Workspace> - <Folder>/…`.
+ */
+export type SharedFolderNode = {
+	folderId: string;
+	name: string;
+	workspaceId: string;
+	workspaceName: string;
+	parentId: string | null;
+	role: "owner" | "editor" | "commenter" | "viewer" | null;
+	repoName: string | null;
+	repoRemoteUrl: string | null;
+	folders: Array<{
+		_id: string;
+		name: string;
+		parentId: string | null;
+		relativePath: string;
+	}>;
+	documents: SharedSubtreeDocument[];
+};
+
+/** Return shape of `documents.listSharedWithMe` (subtree, RB4). */
+export type SharedWithMe = {
+	folders: SharedFolderNode[];
+	documents: SharedSubtreeDocument[];
+};
+
 export type LiveDocumentImport = {
 	documentId: string;
 	path: string;

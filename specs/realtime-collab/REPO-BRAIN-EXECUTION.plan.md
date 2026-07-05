@@ -299,6 +299,23 @@ not a crash).
 `pnpm exec biome check` · browser smoke of the flow above (use `?test=1` only
 for bootstrap, the flow itself must run signed-in).
 
+**RB2 handoff (completed 2026-07-05):** Invite-link route is `/folder/:folderId`
+(+ `/folder/:folderId/d/:documentId` for docs), rendered by
+`apps/www/src/screens/GuestFolderScreen.tsx` — entirely from guest-safe queries
+(`folders.listSubtree`, `documents.searchFolder`), never the workspace
+snapshot. Signed-out visitors on that route keep the URL and see `SignInScreen`
+with a `banner` + `defaultMode="signUp"` prop (RB6 owns the copy; both live in
+`auth/AuthScreens.tsx` / the `SignedOutRoute` branch in `App.tsx`). Folder tree
++ `FolderShareDialog` live in `shell/Sidebar.tsx`; dashboard "Shared with me"
+folder cards come from `documents.listSharedWithMe` in
+`screens/DashboardScreen.tsx`. Backend additions (small, additive):
+`getWithMarkdown` now returns `role`/`canWrite`; `listSubtree`/`searchFolder`
+got a workspace-membership fallback so members opening their own folder link
+aren't dead-ended (RB3's session mirrored the same fallback into
+`listFolderWithMarkdown`). Revocation shows a clean access-lost screen via
+`GuestFolderErrorBoundary`. Two-account browser smoke NOT run here — steps
+listed in the RB2 session summary for RB7/manual QA.
+
 ### RB3 — Desktop repo-link mount (D11) *(premier)*
 
 **Objective:** "link a repo" = mount the brain into the repo working directory.
@@ -348,6 +365,35 @@ inside the mount propagates to web; unlink leaves the tree clean and untracked.
 **Verify:** focused `packages/sync` vitest · `pnpm typecheck` ·
 `pnpm build:desktop` · touched-file biome · the manual acceptance above on a
 scratch git repo (init one in a temp dir; include a worktree case).
+
+**RB3 handoff (completed 2026-07-05) — multi-root architecture decision:**
+**Engine-instance-per-mount**, not true multi-root. A mount = one
+`SyncedFolderService` instance (new opt `mountFolderId`) rooted at the local
+mount path, materializing via new `materializeMountFolder(backend, fs,
+{syncRoot, folderId})` (`packages/sync/src/sync.ts`) over
+`documents.listFolderWithMarkdown`. Why: every per-root invariant already
+exists per instance — single-writer lock, `.hubble` index/base-cache/queue/trash
+are all rooted at `syncRoot`, and the watcher/classifier/reconcile pipeline is
+path-relative — so N instances get correct isolation for free, while true
+multi-root would have threaded a root-dimension through the lock, queue, index,
+IPC status, and reconnect logic for zero added capability. The whole-workspace
+`~/Hubble` engine is untouched; mounts are additive, keyed by `folderId` in
+`repoMounts` (`apps/desktop/electron/main.ts`). Per-machine config
+`{folderId → mountPath/repoDir/repoName/repoRemoteUrl}` persists in
+`<userData>/repo-mounts.json` (never in the cloud, D11). IPC:
+`desktop:repo-link:{link,unlink,list,reconnect}` →
+`linkRepoFolder/unlinkRepoFolder/listRepoMounts/reconnectRepoMounts`
+(`desktopApi/types.ts`); UI is `RepoLinkSection.tsx` in Settings (renderer
+re-sends fresh JWTs via `reconnectRepoMounts`, mirroring the synced-folder
+token pattern). Git mechanics in `apps/desktop/electron/repoLink.ts`:
+gitfile/worktree `commondir` resolution, idempotent `info/exclude` append in
+the COMMON gitdir, soft-fail → manual `.gitignore` line surfaced in UI, plain
+read-only parse of `remote "origin"` → `folders.setFolderRepoLink`. Unlink
+disconnects + clears config and leaves files on disk (UI says so). Backend
+note for RB6/RB7: `listFolderWithMarkdown` gained the same workspace-membership
+fallback as `searchFolder` (the dev driving a mount is a member with no
+`folderShares` row). RB6 needs: no first-run/onboarding entry point to the
+link flow yet — it lives only in Settings → "Repo links".
 
 ### RB4 — Guest subtree materialization + revocation cleanup *(standard)*
 
@@ -507,10 +553,10 @@ RB7 (needs everything; operator-gated pieces last)
 | ID | Status | Owner/session | Last update | Notes |
 |----|--------|---------------|-------------|-------|
 | RB1 | done | opus sub-agent (orchestrator: fable) | 2026-07-03 | Gate phase. API shape locked in Handoff below. All verify commands green; 52 backend tests pass. |
-| RB2 | pending | - | - | Starts after RB1. Parallel track A. |
-| RB3 | pending | - | - | Starts after RB1. Parallel track B. |
-| RB4 | pending | - | - | Same session/track as RB3. |
-| RB5 | pending | - | - | Same session/track as RB3. |
+| RB2 | done | sonnet sub-agent (track A) | 2026-07-05 | Folder share dialog + copy-link (doc dialog too), `/folder/<id>` join route survives auth gate, guest dashboard/subtree from guest-safe queries, role-honest UI. Verify green; two-account browser smoke left for RB7 manual QA. |
+| RB3 | done | fable sub-agent (track B, carries RB3→RB4→RB5) | 2026-07-05 | Engine-instance-per-mount (see RB3 handoff); link flow + exclude + config + repo metadata shipped; scripted git acceptance (plain + worktree) green. |
+| RB4 | done | fable sub-agent (track B) | 2026-07-05 | Nested `Shared with me/<Workspace> - <Folder>/…` subtrees; revoke extends existing `.hubble/trash` access-loss path; backstops preserved; tests in syncedFolder.test.ts + syncedFolderService.test.ts. |
+| RB5 | done | fable sub-agent (track B) | 2026-07-05 | BRAIN.md template in `repoLink.ts`, seeded via RB1 `documents.create` seam from the link flow; any-case idempotent; convex-test + unit tests green. |
 | RB6 | pending | - | - | Needs RB2 + RB4. |
 | RB7 | pending | - | - | Operator-gated pieces (deploy, two-machine QA) last. |
 

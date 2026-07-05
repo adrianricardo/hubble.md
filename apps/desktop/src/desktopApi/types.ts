@@ -114,6 +114,54 @@ export type SyncedFolderStatus = {
 	telemetry: SyncedFolderTelemetry;
 };
 
+/** Link a cloud folder to a local git repo working directory (RB3 / D11). */
+export type RepoLinkInput = {
+	folderId: string;
+	folderName: string;
+	workspaceId: string;
+	/** The git repo working directory the user picked. */
+	repoDir: string;
+	/** Optional explicit mount path; defaults to `<repoDir>/<sanitized-name>/`. */
+	mountPath?: string;
+	deploymentUrl: string;
+	/** Convex Auth JWT from the renderer session. */
+	authToken: string;
+};
+
+export type RepoLinkResult = {
+	folderId: string;
+	mountPath: string;
+	isGitRepo: boolean;
+	/** True when the mount path was appended to `.git/info/exclude`. */
+	excluded: boolean;
+	/** When exclude could not be written, the manual `.gitignore` line to add. */
+	manualGitignoreLine: string | null;
+	repoName: string | null;
+	repoRemoteUrl: string | null;
+	/** True when a `BRAIN.md` was seeded (false when one already existed). */
+	brainSeeded: boolean;
+	documentCount: number;
+};
+
+/** A persisted per-machine repo-link mount (folderId → local root). */
+export type RepoMount = {
+	folderId: string;
+	folderName: string;
+	workspaceId: string;
+	mountPath: string;
+	repoDir: string;
+	repoName: string | null;
+	repoRemoteUrl: string | null;
+	/** Live engine state, present only while the app has reconnected the mount. */
+	status: LiveSyncStatusState | "disconnected";
+};
+
+/** Reconnect all persisted repo mounts after app launch / sign-in. */
+export type RepoMountReconnectInput = {
+	deploymentUrl: string;
+	authToken: string;
+};
+
 export type SyncedFolderConnectInput = {
 	/** The user-chosen sync root (bounded watch root). */
 	syncRoot: string;
@@ -249,6 +297,19 @@ export type DesktopApi = {
 	): Promise<LiveDocumentImportResult>;
 	disconnectSyncedFolder(): Promise<SyncedFolderStatus>;
 	getSyncedFolderStatus(): Promise<SyncedFolderStatus>;
+	/**
+	 * Link a cloud folder to a local git repo (RB3 / D11): materialize the
+	 * folder's subtree at the mount path, register a per-mount sync engine, append
+	 * the mount to `.git/info/exclude`, persist the per-machine mapping, publish
+	 * repo display metadata to the cloud, and seed `BRAIN.md` (RB5).
+	 */
+	linkRepoFolder(input: RepoLinkInput): Promise<RepoLinkResult>;
+	/** Deregister a repo mount and leave the materialized files on disk. */
+	unlinkRepoFolder(folderId: string): Promise<void>;
+	/** All persisted repo mounts on this machine, with live engine status. */
+	listRepoMounts(): Promise<RepoMount[]>;
+	/** Reconnect persisted mounts (post sign-in) so their engines resume syncing. */
+	reconnectRepoMounts(input: RepoMountReconnectInput): Promise<RepoMount[]>;
 	/**
 	 * True when `absPath` is a synced Live Document (present in the main-process
 	 * synced-folder reverse index). The renderer consults this to defer entirely

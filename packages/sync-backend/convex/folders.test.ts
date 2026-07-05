@@ -272,15 +272,12 @@ describe("guest create + move", () => {
 		const t = testInstance();
 		const { guestId, workspaceId, childFolderId } = await setupFolderTree(t);
 		await shareFolder(t, childFolderId, guestId, "editor");
-		const documentId = await asUser(t, guestId).mutation(
-			api.documents.create,
-			{
-				workspaceId,
-				folderId: childFolderId,
-				title: "Guest Doc",
-				markdown: "# Hello\n\nfrom the guest",
-			},
-		);
+		const documentId = await asUser(t, guestId).mutation(api.documents.create, {
+			workspaceId,
+			folderId: childFolderId,
+			title: "Guest Doc",
+			markdown: "# Hello\n\nfrom the guest",
+		});
 		expect(documentId).toBeDefined();
 		// No extra share row: the doc inherits (D12).
 		const shares = await t.run((ctx) =>
@@ -516,5 +513,50 @@ describe("guest read paths", () => {
 			query: "needle-token",
 		});
 		expect(results.map((r) => r.documentId)).toContain(seededId);
+	});
+});
+
+describe("BRAIN.md seed seam (RB5, D13/D14)", () => {
+	test("create-with-markdown seeds BRAIN.md at the folder root as a normal Live Document", async () => {
+		const t = testInstance();
+		const { ownerId, workspaceId, rootFolderId } = await setupFolderTree(t);
+
+		// The desktop link flow calls the RB1 create seam — no dedicated mutation.
+		const brainId = await asUser(t, ownerId).mutation(api.documents.create, {
+			workspaceId,
+			folderId: rootFolderId,
+			title: "BRAIN",
+			path: "BRAIN.md",
+			markdown: "# BRAIN.md\n\nThese files are live shared context.\n",
+			actor: "repo-link-seed",
+		});
+
+		// It projects like any other doc in the subtree, with its markdown.
+		const docs = await asUser(t, ownerId).query(
+			api.documents.listFolderWithMarkdown,
+			{ folderId: rootFolderId },
+		);
+		const brain = docs.find((doc) => doc._id === brainId);
+		expect(brain).toBeDefined();
+		expect(brain?.path).toBe("BRAIN.md");
+		expect(brain?.relativePath).toBe("");
+		expect(brain?.markdown).toContain("live shared context");
+
+		// Folder-scoped create adds NO extra share row — access is inherited (D12),
+		// so a folder guest sees BRAIN.md through the folder share alone.
+		const shareRows = await t.run(async (ctx) =>
+			ctx.db
+				.query("docShares")
+				.withIndex("by_document", (q) => q.eq("documentId", brainId))
+				.collect(),
+		);
+		expect(shareRows).toHaveLength(0);
+
+		// Seed-once is the caller's guard: the second-link path detects the
+		// existing BRAIN.md (any case) from this listing and skips creating —
+		// nothing here overwrites the first document.
+		expect(
+			docs.filter((doc) => doc.title.toLowerCase() === "brain"),
+		).toHaveLength(1);
 	});
 });

@@ -21,6 +21,40 @@ export type Subscriber = {
 	close(): Promise<void>;
 };
 
+type ConvexSharedSubtreeDocument = {
+	_id: Id<"documents">;
+	workspaceId: Id<"workspaces">;
+	workspaceName: string;
+	folderId: Id<"folders"> | null;
+	title: string;
+	path: string | null;
+	markdown: string;
+	version: number | null;
+	role: "owner" | "editor" | "commenter" | "viewer" | null;
+	canWrite: boolean;
+	updatedAt: number;
+	deletedAt?: number;
+	relativePath: string;
+};
+
+function mapSharedSubtreeDocument(document: ConvexSharedSubtreeDocument) {
+	return {
+		_id: document._id,
+		workspaceId: document.workspaceId,
+		workspaceName: document.workspaceName,
+		folderId: document.folderId ?? null,
+		title: document.title,
+		path: document.path ?? null,
+		markdown: document.markdown,
+		version: document.version,
+		role: document.role,
+		canWrite: document.canWrite,
+		updatedAt: document.updatedAt,
+		deletedAt: document.deletedAt,
+		relativePath: document.relativePath,
+	};
+}
+
 export function createConvexBackend(
 	url: string,
 	authToken?: string,
@@ -95,29 +129,53 @@ export function createConvexBackend(
 			}));
 		},
 		async getSharedWithMe() {
-			// RB1 changed `listSharedWithMe` to a subtree shape (top-most shared
-			// folder nodes + per-document shares). RB4 will consume the nested
-			// structure; until then the desktop mirror stays flat, so flatten every
-			// subtree document plus the per-doc shares into the existing projection.
+			// RB4: consume the nested subtree shape directly — top-most shared folder
+			// nodes (each with descendant folders + docs) plus per-document shares.
 			const shared = await client.query(api.documents.listSharedWithMe, {});
-			const documents = [
-				...shared.documents,
-				...shared.folders.flatMap((folder) => folder.documents),
-			];
-			return documents.map((document) => ({
-				_id: document._id,
-				workspaceId: document.workspaceId,
-				workspaceName: document.workspaceName,
-				path: document.path ?? null,
-				folderId: document.folderId ?? null,
-				title: document.title,
-				markdown: document.markdown,
-				version: document.version,
-				role: document.role,
-				canWrite: document.canWrite,
-				updatedAt: document.updatedAt,
-				deletedAt: document.deletedAt,
-			}));
+			return {
+				folders: shared.folders.map((folder) => ({
+					folderId: folder.folderId,
+					name: folder.name,
+					workspaceId: folder.workspaceId,
+					workspaceName: folder.workspaceName,
+					parentId: folder.parentId ?? null,
+					role: folder.role,
+					repoName: folder.repoName ?? null,
+					repoRemoteUrl: folder.repoRemoteUrl ?? null,
+					folders: folder.folders.map((child) => ({
+						_id: child._id,
+						name: child.name,
+						parentId: child.parentId ?? null,
+						relativePath: child.relativePath,
+					})),
+					documents: folder.documents.map(mapSharedSubtreeDocument),
+				})),
+				documents: shared.documents.map(mapSharedSubtreeDocument),
+			};
+		},
+		async getFolderSubtreeDocuments(folderId) {
+			const documents = await client.query(
+				api.documents.listFolderWithMarkdown,
+				{ folderId: folderId as Id<"folders"> },
+			);
+			return documents.map(mapSharedSubtreeDocument);
+		},
+		async setFolderRepoLink(args) {
+			await client.mutation(api.folders.setFolderRepoLink, {
+				folderId: args.folderId as Id<"folders">,
+				repoName: args.repoName,
+				repoRemoteUrl: args.repoRemoteUrl,
+			});
+		},
+		async createDocument(args) {
+			return client.mutation(api.documents.create, {
+				workspaceId: args.workspaceId as Id<"workspaces">,
+				folderId: args.folderId ? (args.folderId as Id<"folders">) : undefined,
+				title: args.title,
+				path: args.path,
+				markdown: args.markdown,
+				actor: args.actor,
+			});
 		},
 		async importLiveDocument(args) {
 			return client.mutation(api.documents.importMarkdown, {

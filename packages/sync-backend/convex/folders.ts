@@ -57,6 +57,25 @@ async function isWorkspaceMember(
 	return (await workspaceRole(ctx, workspaceId)) !== null;
 }
 
+/**
+ * Access role for guest-safe subtree reads (RB2): inherited `folderRole` for
+ * guests, with a workspace-membership fallback so a member who opens a
+ * `/folder/<id>` invite link to their own workspace is not dead-ended with
+ * "Unauthorized" (they have no folderShares row — membership already grants
+ * access via `documentRole`; this mirrors that for folder-level listings).
+ */
+async function subtreeReadRole(
+	ctx: AnyCtx,
+	folder: Doc<"folders">,
+): Promise<DocumentRole | null> {
+	const shared = await folderRole(ctx, folder._id);
+	if (shared) return shared;
+	const membership = await workspaceRole(ctx, folder.workspaceId);
+	if (membership === "owner" || membership === "admin") return "owner";
+	if (membership === "member") return "editor";
+	return null;
+}
+
 /** Workspace owner/admin, or an inherited folder `owner`, may manage shares. */
 async function requireFolderManage(ctx: AnyCtx, folder: Doc<"folders">) {
 	const wsRole = await workspaceRole(ctx, folder.workspaceId);
@@ -148,7 +167,11 @@ export function folderRelativePath(
 	const segments: string[] = [];
 	let current: Id<"folders"> | undefined = folderId;
 	let depth = 0;
-	while (current && current !== rootFolderId && depth < FOLDER_INHERITANCE_DEPTH_CAP) {
+	while (
+		current &&
+		current !== rootFolderId &&
+		depth < FOLDER_INHERITANCE_DEPTH_CAP
+	) {
 		const folder = folderById.get(current);
 		if (!folder) break;
 		segments.unshift(folder.name);
@@ -241,7 +264,9 @@ export const listTrash = query({
 export const listSubtree = query({
 	args: { folderId: v.id("folders") },
 	handler: async (ctx, { folderId }) => {
-		const role = await folderRole(ctx, folderId);
+		const preRoot = await ctx.db.get(folderId);
+		if (!preRoot) throw new Error("Unauthorized");
+		const role = await subtreeReadRole(ctx, preRoot);
 		if (!role) throw new Error("Unauthorized");
 		const { root, descendants, documents } = await collectFolderSubtree(
 			ctx,
@@ -380,7 +405,8 @@ export const move = mutation({
 		await requireFolderWrite(ctx, folder);
 
 		if (parentId) {
-			if (parentId === folderId) throw new Error("Cannot move a folder into itself");
+			if (parentId === folderId)
+				throw new Error("Cannot move a folder into itself");
 			const parent = await ctx.db.get(parentId);
 			if (
 				!parent ||

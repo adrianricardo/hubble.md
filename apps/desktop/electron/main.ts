@@ -30,6 +30,10 @@ import type {
 	DirectoryListing,
 	LiveSyncConnectInput,
 	LiveSyncReconcileInput,
+	RepoLinkInput,
+	RepoLinkResult,
+	RepoMount,
+	RepoMountReconnectInput,
 	SyncedFolderConnectInput,
 	SyncedFolderImportInput,
 	WorkspaceConfig,
@@ -41,6 +45,16 @@ import {
 	withMarkdownExtension,
 } from "../src/lib/filePath";
 import { LiveSyncService } from "./liveSync";
+import {
+	BRAIN_DOC_FILENAME,
+	buildBrainMarkdown,
+	excludeMountFromGit,
+	hasBrainDocument,
+	parseGitOriginUrl,
+	repoNameFrom,
+	resolveGitRepo,
+	sanitizeMountSegment,
+} from "./repoLink";
 import {
 	classifySyncedFolderRoot,
 	SYNCED_FOLDER_INDEX_REL,
@@ -147,42 +161,62 @@ const liveSync = new LiveSyncService();
 // Synced-folder watcher engine (Phase 3b): bounded chokidar watch over the sync
 // root → classify → reconcile/rename/move/create back to the cloud. The watcher
 // factory is injected here so the engine itself stays headless/unit-tested.
+function createSyncedFolderWatcher({
+	syncRoot,
+	onEvent,
+}: {
+	syncRoot: string;
+	onEvent: (event: {
+		type: "add" | "change" | "unlink";
+		absPath: string;
+		inode: number | null;
+		hash: string | null;
+		at: number;
+	}) => void;
+}) {
+	const watcher = chokidar.watch(syncRoot, {
+		ignoreInitial: true,
+		ignored: (candidate: string) =>
+			shouldIgnoreForWatch(path.resolve(candidate), syncRoot),
+	});
+	const emit = async (
+		type: "add" | "change" | "unlink",
+		changedPath: string,
+	) => {
+		const absPath = path.resolve(changedPath);
+		let inode: number | null = null;
+		let hash: string | null = null;
+		if (type !== "unlink") {
+			try {
+				inode = fsSync.statSync(absPath).ino;
+				hash = await contentHash(fsSync.readFileSync(absPath, "utf-8"));
+			} catch {
+				// File vanished between event and stat; correlation falls back to
+				// the held entry's stored inode/hash.
+			}
+		}
+		onEvent({ type, absPath, inode, hash, at: Date.now() });
+	};
+	watcher.on("add", (p) => void emit("add", p));
+	watcher.on("change", (p) => void emit("change", p));
+	watcher.on("unlink", (p) => void emit("unlink", p));
+	watcher.on("error", (error) =>
+		console.error("Synced-folder watcher failed:", error),
+	);
+	return { close: () => watcher.close() };
+}
+
 const syncedFolder = new SyncedFolderService({
 	emit: (event) => sendToRenderer("desktop:live-sync:event", event),
 	deviceId: os.hostname(),
-	createWatcher: ({ syncRoot, onEvent }) => {
-		const watcher = chokidar.watch(syncRoot, {
-			ignoreInitial: true,
-			ignored: (candidate: string) =>
-				shouldIgnoreForWatch(path.resolve(candidate), syncRoot),
-		});
-		const emit = async (
-			type: "add" | "change" | "unlink",
-			changedPath: string,
-		) => {
-			const absPath = path.resolve(changedPath);
-			let inode: number | null = null;
-			let hash: string | null = null;
-			if (type !== "unlink") {
-				try {
-					inode = fsSync.statSync(absPath).ino;
-					hash = await contentHash(fsSync.readFileSync(absPath, "utf-8"));
-				} catch {
-					// File vanished between event and stat; correlation falls back to
-					// the held entry's stored inode/hash.
-				}
-			}
-			onEvent({ type, absPath, inode, hash, at: Date.now() });
-		};
-		watcher.on("add", (p) => void emit("add", p));
-		watcher.on("change", (p) => void emit("change", p));
-		watcher.on("unlink", (p) => void emit("unlink", p));
-		watcher.on("error", (error) =>
-			console.error("Synced-folder watcher failed:", error),
-		);
-		return { close: () => watcher.close() };
-	},
+	createWatcher: createSyncedFolderWatcher,
 });
+
+// ── Repo-link mounts (RB3 / D11): engine-instance-per-mount ────────────────────
+// Each linked cloud folder gets its own SyncedFolderService rooted at the local
+// mount path inside the user's git repo. The whole-workspace `syncedFolder`
+// above is unchanged; mounts are additive. Keyed by folderId.
+const repoMounts = new Map<string, SyncedFolderService>();
 const grantedFiles = new Set<string>();
 const grantedRoots = new Set<string>();
 let grantsLoaded = false;
@@ -235,6 +269,19 @@ const syncedFolderImportSchema = z.object({
 	syncRoot: z.string().min(1),
 	deploymentUrl: convexDeploymentUrlSchema,
 	workspaceId: z.string().min(1),
+	authToken: authTokenSchema,
+});
+const repoLinkSchema = z.object({
+	folderId: z.string().min(1),
+	folderName: z.string().min(1),
+	workspaceId: z.string().min(1),
+	repoDir: z.string().min(1),
+	mountPath: z.string().min(1).optional(),
+	deploymentUrl: convexDeploymentUrlSchema,
+	authToken: authTokenSchema,
+});
+const repoMountReconnectSchema = z.object({
+	deploymentUrl: convexDeploymentUrlSchema,
 	authToken: authTokenSchema,
 });
 const defaultWindowState: WindowState = { width: 920, height: 720 };
@@ -329,6 +376,99 @@ async function saveGrants() {
 			2,
 		),
 	);
+}
+
+// ── Repo-link mount config (RB3 / D11): per-machine {folderId → localRoot} ──────
+type StoredRepoMount = {
+	folderId: string;
+	folderName: string;
+	workspaceId: string;
+	mountPath: string;
+	repoDir: string;
+	repoName: string | null;
+	repoRemoteUrl: string | null;
+};
+const storedRepoMountSchema = z.object({
+	folderId: z.string().min(1),
+	folderName: z.string(),
+	workspaceId: z.string().min(1),
+	mountPath: z.string().min(1),
+	repoDir: z.string().min(1),
+	repoName: z.string().nullable(),
+	repoRemoteUrl: z.string().nullable(),
+});
+const repoMountConfigSchema = z.object({
+	mounts: z.array(storedRepoMountSchema),
+});
+
+function repoMountsPath(): string {
+	return path.join(app.getPath("userData"), "repo-mounts.json");
+}
+
+async function loadRepoMountConfig(): Promise<StoredRepoMount[]> {
+	try {
+		const raw = await fs.readFile(repoMountsPath(), "utf8");
+		return repoMountConfigSchema.parse(JSON.parse(raw)).mounts.map((mount) => ({
+			...mount,
+			repoName: mount.repoName ?? null,
+			repoRemoteUrl: mount.repoRemoteUrl ?? null,
+		}));
+	} catch {
+		return [];
+	}
+}
+
+async function saveRepoMountConfig(mounts: StoredRepoMount[]): Promise<void> {
+	await fs.mkdir(path.dirname(repoMountsPath()), { recursive: true });
+	await fs.writeFile(repoMountsPath(), JSON.stringify({ mounts }, null, 2));
+}
+
+async function upsertRepoMountConfig(mount: StoredRepoMount): Promise<void> {
+	const mounts = (await loadRepoMountConfig()).filter(
+		(entry) => entry.folderId !== mount.folderId,
+	);
+	mounts.push(mount);
+	await saveRepoMountConfig(mounts);
+}
+
+async function removeRepoMountConfig(folderId: string): Promise<void> {
+	const mounts = (await loadRepoMountConfig()).filter(
+		(entry) => entry.folderId !== folderId,
+	);
+	await saveRepoMountConfig(mounts);
+}
+
+function repoMountStatus(stored: StoredRepoMount): RepoMount {
+	const service = repoMounts.get(stored.folderId);
+	return {
+		folderId: stored.folderId,
+		folderName: stored.folderName,
+		workspaceId: stored.workspaceId,
+		mountPath: stored.mountPath,
+		repoDir: stored.repoDir,
+		repoName: stored.repoName,
+		repoRemoteUrl: stored.repoRemoteUrl,
+		status: service ? service.getStatus().state : "disconnected",
+	};
+}
+
+/** Connect a per-mount sync engine rooted at `mountPath` for `folderId`. */
+async function connectRepoMountEngine(
+	folderId: string,
+	mountPath: string,
+	deploymentUrl: string,
+	authToken: string,
+): Promise<void> {
+	const existing = repoMounts.get(folderId);
+	if (existing) await existing.disconnect();
+	const service = new SyncedFolderService({
+		emit: (event) => sendToRenderer("desktop:live-sync:event", event),
+		deviceId: os.hostname(),
+		createWatcher: createSyncedFolderWatcher,
+		mountFolderId: folderId,
+	});
+	repoMounts.set(folderId, service);
+	await service.connect({ syncRoot: mountPath, deploymentUrl, authToken });
 }
 
 async function loadWindowState(): Promise<WindowState> {
@@ -1552,6 +1692,154 @@ function registerIpc() {
 
 	ipcMain.handle("desktop:live-sync:status-folder", () =>
 		syncedFolder.getStatus(),
+	);
+
+	ipcMain.handle(
+		"desktop:repo-link:link",
+		async (_event, input: RepoLinkInput): Promise<RepoLinkResult> => {
+			const parsed = repoLinkSchema.parse(input);
+			const repoDir = resolvePath(parsed.repoDir);
+			grantRoot(repoDir);
+
+			const repo = await resolveGitRepo(repoDir);
+			const mountPath = parsed.mountPath
+				? resolvePath(parsed.mountPath)
+				: path.join(repoDir, sanitizeMountSegment(parsed.folderName));
+			grantRoot(mountPath);
+			await fs.mkdir(mountPath, { recursive: true });
+
+			const backend = createConvexBackend(
+				parsed.deploymentUrl,
+				parsed.authToken,
+			);
+
+			// Read-only best-effort origin parse → cloud display metadata (D11).
+			const repoRemoteUrl = repo
+				? await parseGitOriginUrl(repo.commonGitDir)
+				: null;
+			const repoName = repoNameFrom(repoDir, repoRemoteUrl);
+			await backend.setFolderRepoLink({
+				folderId: parsed.folderId,
+				repoName,
+				repoRemoteUrl: repoRemoteUrl ?? undefined,
+			});
+
+			// RB5: seed BRAIN.md once (idempotent, any-case).
+			let brainSeeded = false;
+			const subtreeDocs = await backend.getFolderSubtreeDocuments(
+				parsed.folderId,
+			);
+			const hasBrain = hasBrainDocument(subtreeDocs);
+			if (!hasBrain) {
+				const markdown = buildBrainMarkdown({
+					folderName: parsed.folderName,
+					repoName,
+					repoRemoteUrl,
+					documentIndex: subtreeDocs.map((doc) => ({
+						title: doc.title,
+						relativePath: doc.relativePath,
+					})),
+				});
+				await backend.createDocument({
+					workspaceId: parsed.workspaceId,
+					folderId: parsed.folderId,
+					title: "BRAIN",
+					path: BRAIN_DOC_FILENAME,
+					markdown,
+					actor: "repo-link-seed",
+				});
+				brainSeeded = true;
+			}
+
+			// Materialize the subtree at the mount + start the per-mount engine.
+			await connectRepoMountEngine(
+				parsed.folderId,
+				mountPath,
+				parsed.deploymentUrl,
+				parsed.authToken,
+			);
+			setBackgroundActive(true);
+
+			// Keep the mount invisible to git (never edits tracked files).
+			let excluded = false;
+			let manualGitignoreLine: string | null = null;
+			if (repo) {
+				const result = await excludeMountFromGit(repo, mountPath);
+				excluded = result.ok;
+				manualGitignoreLine = result.ok ? null : result.pattern;
+			}
+
+			await upsertRepoMountConfig({
+				folderId: parsed.folderId,
+				folderName: parsed.folderName,
+				workspaceId: parsed.workspaceId,
+				mountPath,
+				repoDir,
+				repoName,
+				repoRemoteUrl,
+			});
+
+			return {
+				folderId: parsed.folderId,
+				mountPath,
+				isGitRepo: repo !== null,
+				excluded,
+				manualGitignoreLine,
+				repoName,
+				repoRemoteUrl,
+				brainSeeded,
+				documentCount:
+					repoMounts.get(parsed.folderId)?.getStatus().documentCount ?? 0,
+			};
+		},
+	);
+
+	ipcMain.handle(
+		"desktop:repo-link:unlink",
+		async (_event, folderId: string) => {
+			// Deregister the mount; the materialized files are left on disk.
+			const service = repoMounts.get(folderId);
+			if (service) {
+				await service.disconnect();
+				repoMounts.delete(folderId);
+			}
+			await removeRepoMountConfig(folderId);
+			if (repoMounts.size === 0 && !syncedFolder.connected) {
+				setBackgroundActive(false);
+			}
+		},
+	);
+
+	ipcMain.handle("desktop:repo-link:list", async (): Promise<RepoMount[]> => {
+		const mounts = await loadRepoMountConfig();
+		return mounts.map(repoMountStatus);
+	});
+
+	ipcMain.handle(
+		"desktop:repo-link:reconnect",
+		async (_event, input: RepoMountReconnectInput): Promise<RepoMount[]> => {
+			const parsed = repoMountReconnectSchema.parse(input);
+			const mounts = await loadRepoMountConfig();
+			for (const mount of mounts) {
+				if (repoMounts.has(mount.folderId)) continue;
+				try {
+					grantRoot(mount.mountPath);
+					await connectRepoMountEngine(
+						mount.folderId,
+						mount.mountPath,
+						parsed.deploymentUrl,
+						parsed.authToken,
+					);
+				} catch (error) {
+					console.error(
+						`Failed to reconnect repo mount ${mount.folderId}:`,
+						error,
+					);
+				}
+			}
+			if (repoMounts.size > 0) setBackgroundActive(true);
+			return mounts.map(repoMountStatus);
+		},
 	);
 
 	ipcMain.handle(
