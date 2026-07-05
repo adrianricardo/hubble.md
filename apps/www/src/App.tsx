@@ -18,6 +18,7 @@ import {
 import { AuthStatus, SignInScreen } from "./auth/AuthScreens";
 import { clearWorkspace, saveWorkspace } from "./connection/connection";
 import { DashboardScreen } from "./screens/DashboardScreen";
+import { GuestFolderScreen } from "./screens/GuestFolderScreen";
 import { AppShell } from "./shell/AppShell";
 
 export type TestIdentity = {
@@ -84,8 +85,28 @@ function AppRoutes() {
 	);
 }
 
+// Invite-link (RB2) folder join route: `/folder/<folderId>` and its document
+// sub-route. Signed-out visitors must NOT be redirected away from this path —
+// unlike every other non-root route, it needs to survive the auth gate so a
+// guest who opens the link, then signs in/up, lands right back on the folder
+// they were invited to (the URL bar already carries the destination, so no
+// separate "restore" step is needed once we stop discarding it here).
+const JOIN_ROUTE_PATTERN = /^\/folder\/[^/]+/;
+
+function isJoinRoute(pathname: string): boolean {
+	return JOIN_ROUTE_PATTERN.test(pathname);
+}
+
 function SignedOutRoute() {
 	const location = useLocation();
+	if (isJoinRoute(location.pathname)) {
+		return (
+			<SignInScreen
+				defaultMode="signUp"
+				banner="You've been invited to a shared folder on Hubble. Sign in or create an account to open it."
+			/>
+		);
+	}
 	if (location.pathname !== "/") {
 		// Avoid carrying a stale workspace/document route into the next account.
 		clearWorkspace();
@@ -111,6 +132,9 @@ function RoutedApp({ testIdentity }: { testIdentity: TestIdentity | null }) {
 								withTestSearch(workspaceDocumentRoute(workspaceId, documentId)),
 							);
 						}}
+						onOpenFolder={(folderId) => {
+							navigate(`/folder/${encodeURIComponent(folderId)}`);
+						}}
 					/>
 				}
 			/>
@@ -126,8 +150,29 @@ function RoutedApp({ testIdentity }: { testIdentity: TestIdentity | null }) {
 				path="/w/:workspaceId/d/:documentId"
 				element={<WorkspaceRoute testIdentity={testIdentity} filePath={null} />}
 			/>
+			<Route path="/folder/:folderId" element={<GuestFolderRoute />} />
+			<Route
+				path="/folder/:folderId/d/:documentId"
+				element={<GuestFolderRoute />}
+			/>
 			<Route path="*" element={<Navigate to="/" replace />} />
 		</Routes>
+	);
+}
+
+function GuestFolderRoute() {
+	const params = useParams();
+	const navigate = useNavigate();
+	const folderId = params.folderId;
+	const documentId = params.documentId ?? null;
+	if (!folderId) return <Navigate to="/" replace />;
+
+	return (
+		<GuestFolderScreen
+			folderId={folderId}
+			documentId={documentId}
+			onSelectDocument={(id) => navigate(`/folder/${folderId}/d/${id}`)}
+		/>
 	);
 }
 
@@ -135,10 +180,12 @@ function HomeRoute({
 	testIdentity,
 	onSelected,
 	onOpenDocument,
+	onOpenFolder,
 }: {
 	testIdentity: TestIdentity | null;
 	onSelected: (workspaceId: string) => void;
 	onOpenDocument: (workspaceId: string, documentId: string) => void;
+	onOpenFolder: (folderId: string) => void;
 }) {
 	// Test bootstrap jumps straight to the configured workspace.
 	if (testIdentity) {
@@ -154,6 +201,7 @@ function HomeRoute({
 		<DashboardScreen
 			onOpenDocument={onOpenDocument}
 			onOpenWorkspace={onSelected}
+			onOpenFolder={onOpenFolder}
 		/>
 	);
 }

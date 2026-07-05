@@ -62,7 +62,7 @@ type LiveDocumentErrorBoundaryState = {
 	error: Error | null;
 };
 
-class LiveDocumentErrorBoundary extends Component<
+export class LiveDocumentErrorBoundary extends Component<
 	LiveDocumentErrorBoundaryProps,
 	LiveDocumentErrorBoundaryState
 > {
@@ -478,7 +478,7 @@ function CurrentUserBadge({
 	return <UserBadge user={viewer} />;
 }
 
-function LiveDocumentAccessError({ error }: { error: Error }) {
+export function LiveDocumentAccessError({ error }: { error: Error }) {
 	const message = error.message.toLowerCase();
 	const isUnauthorized = message.includes("unauthorized");
 	return (
@@ -499,7 +499,7 @@ function LiveDocumentAccessError({ error }: { error: Error }) {
 	);
 }
 
-function LiveDocumentView({
+export function LiveDocumentView({
 	workspaceId,
 	documentId,
 	testIdentity,
@@ -514,6 +514,16 @@ function LiveDocumentView({
 	const suggestions = useQuery(api.documents.listSuggestions, {
 		documentId: documentId as Id<"documents">,
 	});
+	// Role-honest UI (RB2): test-bootstrap identities are always full editors;
+	// real sessions honor the server-resolved role (owner/editor write, viewer
+	// read-only, commenter read-only-but-can-comment) instead of showing dead
+	// edit controls. `document.canWrite` folds in inherited folder role too.
+	const canWrite = testIdentity ? true : (document?.canWrite ?? false);
+	const canComment =
+		testIdentity !== null ||
+		document?.role === "owner" ||
+		document?.role === "editor" ||
+		document?.role === "commenter";
 	const currentViewer = useQuery(api.viewer.me, testIdentity ? "skip" : {});
 	const markEdited = useMutation(api.documents.markEdited);
 	const lastEditMarkRef = useRef(0);
@@ -577,18 +587,25 @@ function LiveDocumentView({
 						<VersionHistoryButton
 							documentId={documentId}
 							testIdentity={testIdentity}
+							canWrite={canWrite}
 						/>
 						<CommentsButton
 							documentId={documentId}
 							testIdentity={testIdentity}
+							canComment={canComment}
 							getSelection={() => selectionRef.current}
 						/>
 						<ActivityButton documentId={documentId} />
-						{pendingSuggestions.length > 0 && (
+						{canWrite && pendingSuggestions.length > 0 && (
 							<SuggestionsReviewButton
 								documentTitle={document.title}
 								suggestions={pendingSuggestions}
 							/>
+						)}
+						{!canWrite && (
+							<span className="rounded-sm border border-border [padding-block:0.125rem] [padding-inline:0.375rem]">
+								{canComment ? "Can comment" : "View only"}
+							</span>
 						)}
 						<span>
 							{formatEditedMeta(document.updatedAt, document.updatedBy)}
@@ -602,6 +619,7 @@ function LiveDocumentView({
 				initialMarkdown={document.markdown}
 				syncDocumentId={syncDocId}
 				testIdentity={testIdentity}
+				canWrite={canWrite}
 				onLiveDocumentEdit={markLiveDocumentEdited}
 				onSelectionChange={handleSelectionChange}
 			/>
@@ -722,9 +740,11 @@ function describeSuggestionIntent(intent: unknown): string {
 function VersionHistoryButton({
 	documentId,
 	testIdentity,
+	canWrite = true,
 }: {
 	documentId: string;
 	testIdentity: TestIdentity | null;
+	canWrite?: boolean;
 }) {
 	const [open, setOpen] = useState(false);
 	const revisions = useQuery(api.documents.listRevisions, {
@@ -788,14 +808,16 @@ function VersionHistoryButton({
 											{" · "}rev {revision.revision}
 										</p>
 									</div>
-									<button
-										type="button"
-										disabled={busyId !== null}
-										className="rounded-sm bg-primary text-xs font-medium text-primary-foreground disabled:opacity-50 [padding-block:0.375rem] [padding-inline:0.625rem]"
-										onClick={() => void handleRestore(revision._id)}
-									>
-										{busyId === revision._id ? "Restoring…" : "Restore"}
-									</button>
+									{canWrite && (
+										<button
+											type="button"
+											disabled={busyId !== null}
+											className="rounded-sm bg-primary text-xs font-medium text-primary-foreground disabled:opacity-50 [padding-block:0.375rem] [padding-inline:0.625rem]"
+											onClick={() => void handleRestore(revision._id)}
+										>
+											{busyId === revision._id ? "Restoring…" : "Restore"}
+										</button>
+									)}
 								</div>
 								{revision.markdown.length > 0 && (
 									<pre className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap rounded-sm bg-muted text-[11px] text-muted-foreground [padding-block:0.5rem] [padding-inline:0.5rem]">
@@ -824,10 +846,12 @@ function formatRevisionDate(ms: number): string {
 function CommentsButton({
 	documentId,
 	testIdentity,
+	canComment = true,
 	getSelection,
 }: {
 	documentId: string;
 	testIdentity: TestIdentity | null;
+	canComment?: boolean;
 	getSelection: () => { anchor: number; head: number };
 }) {
 	const [open, setOpen] = useState(false);
@@ -916,32 +940,34 @@ function CommentsButton({
 				className="max-w-lg"
 			>
 				<div className="flex flex-col gap-3">
-					{/* New comment composer */}
-					<div className="rounded-sm border border-border bg-background [padding-block:0.75rem] [padding-inline:0.75rem]">
-						<p className="m-0 mb-1 text-xs font-medium text-foreground">
-							New comment
-						</p>
-						<textarea
-							value={newBody}
-							onChange={(e) => setNewBody(e.target.value)}
-							placeholder="Add a comment… (@name to mention)"
-							rows={2}
-							className="w-full resize-none rounded-sm border border-border bg-muted/30 text-xs text-foreground outline-none focus:border-ring [padding-block:0.375rem] [padding-inline:0.5rem]"
-						/>
-						<MentionPicker
-							value={newBody}
-							onChange={setNewBody}
-							candidates={mentionCandidates}
-						/>
-						<button
-							type="button"
-							disabled={busy || !newBody.trim()}
-							onClick={() => void handleCreateThread()}
-							className="mt-1 rounded-sm bg-primary text-xs font-medium text-primary-foreground disabled:opacity-50 [padding-block:0.375rem] [padding-inline:0.625rem]"
-						>
-							Comment
-						</button>
-					</div>
+					{/* New comment composer — hidden for viewer-only guests (role-honest UI) */}
+					{canComment && (
+						<div className="rounded-sm border border-border bg-background [padding-block:0.75rem] [padding-inline:0.75rem]">
+							<p className="m-0 mb-1 text-xs font-medium text-foreground">
+								New comment
+							</p>
+							<textarea
+								value={newBody}
+								onChange={(e) => setNewBody(e.target.value)}
+								placeholder="Add a comment… (@name to mention)"
+								rows={2}
+								className="w-full resize-none rounded-sm border border-border bg-muted/30 text-xs text-foreground outline-none focus:border-ring [padding-block:0.375rem] [padding-inline:0.5rem]"
+							/>
+							<MentionPicker
+								value={newBody}
+								onChange={setNewBody}
+								candidates={mentionCandidates}
+							/>
+							<button
+								type="button"
+								disabled={busy || !newBody.trim()}
+								onClick={() => void handleCreateThread()}
+								className="mt-1 rounded-sm bg-primary text-xs font-medium text-primary-foreground disabled:opacity-50 [padding-block:0.375rem] [padding-inline:0.625rem]"
+							>
+								Comment
+							</button>
+						</div>
+					)}
 
 					{/* Active threads */}
 					{threads === undefined ? (
@@ -970,53 +996,55 @@ function CommentsButton({
 									</p>
 								</div>
 							))}
-							<div className="mt-2 flex gap-1 border-t border-border [padding-block-start:0.5rem]">
-								<input
-									type="text"
-									value={replyBodies[thread._id] ?? ""}
-									onChange={(e) =>
-										setReplyBodies((prev) => ({
-											...prev,
-											[thread._id]: e.target.value,
-										}))
-									}
-									placeholder="Reply…"
-									className="min-w-0 flex-1 rounded-sm border border-border bg-muted/30 text-xs text-foreground outline-none focus:border-ring [padding-block:0.25rem] [padding-inline:0.375rem]"
-									onKeyDown={(e) => {
-										if (e.key === "Enter" && !e.shiftKey) {
-											e.preventDefault();
-											void handleReply(thread._id);
+							{canComment && (
+								<div className="mt-2 flex gap-1 border-t border-border [padding-block-start:0.5rem]">
+									<input
+										type="text"
+										value={replyBodies[thread._id] ?? ""}
+										onChange={(e) =>
+											setReplyBodies((prev) => ({
+												...prev,
+												[thread._id]: e.target.value,
+											}))
 										}
-									}}
-								/>
-								<MentionPicker
-									value={replyBodies[thread._id] ?? ""}
-									onChange={(nextValue) =>
-										setReplyBodies((prev) => ({
-											...prev,
-											[thread._id]: nextValue,
-										}))
-									}
-									candidates={mentionCandidates}
-									compact
-								/>
-								<button
-									type="button"
-									disabled={busy || !(replyBodies[thread._id] ?? "").trim()}
-									onClick={() => void handleReply(thread._id)}
-									className="rounded-sm bg-muted text-xs text-foreground hover:bg-accent disabled:opacity-50 [padding-block:0.25rem] [padding-inline:0.375rem]"
-								>
-									Reply
-								</button>
-								<button
-									type="button"
-									disabled={busy}
-									onClick={() => void handleResolve(thread._id)}
-									className="rounded-sm text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50 [padding-block:0.25rem] [padding-inline:0.375rem]"
-								>
-									Resolve
-								</button>
-							</div>
+										placeholder="Reply…"
+										className="min-w-0 flex-1 rounded-sm border border-border bg-muted/30 text-xs text-foreground outline-none focus:border-ring [padding-block:0.25rem] [padding-inline:0.375rem]"
+										onKeyDown={(e) => {
+											if (e.key === "Enter" && !e.shiftKey) {
+												e.preventDefault();
+												void handleReply(thread._id);
+											}
+										}}
+									/>
+									<MentionPicker
+										value={replyBodies[thread._id] ?? ""}
+										onChange={(nextValue) =>
+											setReplyBodies((prev) => ({
+												...prev,
+												[thread._id]: nextValue,
+											}))
+										}
+										candidates={mentionCandidates}
+										compact
+									/>
+									<button
+										type="button"
+										disabled={busy || !(replyBodies[thread._id] ?? "").trim()}
+										onClick={() => void handleReply(thread._id)}
+										className="rounded-sm bg-muted text-xs text-foreground hover:bg-accent disabled:opacity-50 [padding-block:0.25rem] [padding-inline:0.375rem]"
+									>
+										Reply
+									</button>
+									<button
+										type="button"
+										disabled={busy}
+										onClick={() => void handleResolve(thread._id)}
+										className="rounded-sm text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50 [padding-block:0.25rem] [padding-inline:0.375rem]"
+									>
+										Resolve
+									</button>
+								</div>
+							)}
 						</div>
 					))}
 

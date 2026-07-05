@@ -4,9 +4,17 @@ import { categorizeError, describeError } from "../connection/convex-error";
 
 // Root-level auth surface. Lifted out of AppShell (P2/A1b) so the auth gate can
 // live at the router root instead of inside a per-workspace shell.
-export function SignInScreen() {
+export function SignInScreen({
+	banner,
+	defaultMode = "signIn",
+}: {
+	// Shown above the form. Used by the invite-link join route (RB2) so a
+	// signed-out visitor understands why they landed here before signing in/up.
+	banner?: string;
+	defaultMode?: "signIn" | "signUp";
+}) {
 	const { signIn } = useAuthActions();
-	const [mode, setMode] = useState<"signIn" | "signUp">("signIn");
+	const [mode, setMode] = useState<"signIn" | "signUp">(defaultMode);
 	const [error, setError] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
 
@@ -31,6 +39,11 @@ export function SignInScreen() {
 				onSubmit={submit}
 				className="w-full max-w-sm rounded-sm border border-border bg-card [padding-block:1rem] [padding-inline:1rem]"
 			>
+				{banner && (
+					<p className="mb-3 rounded-sm bg-muted/60 text-sm text-foreground [padding-block:0.625rem] [padding-inline:0.75rem]">
+						{banner}
+					</p>
+				)}
 				<h1 className="text-base font-semibold text-foreground">
 					{mode === "signIn" ? "Sign in to Hubble" : "Create your account"}
 				</h1>

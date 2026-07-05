@@ -4,6 +4,7 @@ import { useMutation, useQuery } from "convex/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import MingcuteAddLine from "~icons/mingcute/add-line";
 import MingcuteArrowRightLine from "~icons/mingcute/arrow-right-line";
+import MingcuteFolderLine from "~icons/mingcute/folder-line";
 import MingcuteSearchLine from "~icons/mingcute/search-line";
 import { SignOutButton } from "../auth/AuthScreens";
 import { categorizeError, describeError } from "../connection/convex-error";
@@ -13,13 +14,21 @@ const LOADING_ROW_KEYS = ["one", "two", "three", "four"];
 type Props = {
 	onOpenDocument: (workspaceId: string, documentId: string) => void;
 	onOpenWorkspace: (workspaceId: string) => void;
+	onOpenFolder: (folderId: string) => void;
 };
 
-export function DashboardScreen({ onOpenDocument, onOpenWorkspace }: Props) {
+export function DashboardScreen({
+	onOpenDocument,
+	onOpenWorkspace,
+	onOpenFolder,
+}: Props) {
 	const dashboard = useQuery(api.documents.dashboard, {
 		recentLimit: 8,
 		sharedLimit: 6,
 	});
+	// Subtree "Shared with me" (RB2/D12): top-most shared folders come from the
+	// guest-safe listSharedWithMe query, not the member-gated workspace lists.
+	const sharedWithMe = useQuery(api.documents.listSharedWithMe, {});
 	const createDocument = useMutation(api.documents.create);
 	const [creating, setCreating] = useState(false);
 	const [searchInput, setSearchInput] = useState("");
@@ -190,14 +199,33 @@ export function DashboardScreen({ onOpenDocument, onOpenWorkspace }: Props) {
 
 							<section className="flex flex-col gap-3">
 								<SectionHeader title="Shared with me" />
-								{dashboard === undefined ? (
+								{sharedWithMe === undefined ? (
 									<LoadingRows compact />
-								) : dashboard.sharedWithMe.length > 0 ? (
+								) : sharedWithMe.folders.length > 0 ||
+									sharedWithMe.documents.length > 0 ? (
 									<div className="grid gap-2">
-										{dashboard.sharedWithMe.map((document) => (
+										{sharedWithMe.folders.map((folder) => (
+											<SharedFolderCard
+												key={folder.folderId}
+												name={folder.name}
+												workspaceName={folder.workspaceName}
+												role={folder.role}
+												documentCount={folder.documents.length}
+												onOpen={() => onOpenFolder(folder.folderId)}
+											/>
+										))}
+										{sharedWithMe.documents.map((document) => (
 											<DocumentRow
 												key={document._id}
-												document={document}
+												document={{
+													_id: document._id,
+													workspaceId: document.workspaceId,
+													title: document.title,
+													path: document.path ?? undefined,
+													workspaceName: document.workspaceName,
+													updatedAt: document.updatedAt,
+													role: document.role ?? "viewer",
+												}}
 												compact
 												onOpen={() =>
 													onOpenDocument(document.workspaceId, document._id)
@@ -208,7 +236,7 @@ export function DashboardScreen({ onOpenDocument, onOpenWorkspace }: Props) {
 								) : (
 									<EmptyState
 										title="Nothing shared yet."
-										body="Direct document shares appear here when collaborators invite you."
+										body="Folders and documents collaborators share with you appear here."
 									/>
 								)}
 							</section>
@@ -273,6 +301,40 @@ function DocumentRow({
 					{document.updatedBy ? <span>{document.updatedBy}</span> : null}
 				</div>
 			)}
+		</button>
+	);
+}
+
+function SharedFolderCard({
+	name,
+	workspaceName,
+	role,
+	documentCount,
+	onOpen,
+}: {
+	name: string;
+	workspaceName: string;
+	role: string;
+	documentCount: number;
+	onOpen: () => void;
+}) {
+	return (
+		<button
+			type="button"
+			onClick={onOpen}
+			className="group flex w-full items-center justify-between gap-3 rounded-md border border-border bg-sidebar text-start transition hover:border-ring hover:bg-sidebar-accent [padding-block:0.875rem] [padding-inline:1rem]"
+		>
+			<span className="flex min-w-0 items-center gap-2.5">
+				<MingcuteFolderLine className="size-4 shrink-0 text-muted-foreground" />
+				<span className="min-w-0">
+					<span className="block truncate text-sm font-semibold">{name}</span>
+					<span className="block truncate text-xs text-muted-foreground">
+						{workspaceName} · <span className="capitalize">{role}</span> ·{" "}
+						{documentCount} doc{documentCount === 1 ? "" : "s"}
+					</span>
+				</span>
+			</span>
+			<MingcuteArrowRightLine className="size-4 shrink-0 text-muted-foreground transition group-hover:translate-x-0.5 group-hover:text-foreground" />
 		</button>
 	);
 }

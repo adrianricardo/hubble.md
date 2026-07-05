@@ -49,6 +49,10 @@ type Props = {
 	initialMarkdown: string;
 	syncDocumentId?: string;
 	testIdentity: TestIdentity | null;
+	// Role-honest UI (RB2): viewers/commenters get a read-only ProseMirror view
+	// instead of a dead-looking editor that silently drops their edits.
+	// Defaults to true so existing owner/editor call sites are unaffected.
+	canWrite?: boolean;
 	onLiveDocumentEdit?: () => void;
 	onSelectionChange?: (selection: { anchor: number; head: number }) => void;
 };
@@ -127,6 +131,7 @@ function LiveEditorView({
 	initialMarkdown,
 	syncDocumentId,
 	testIdentity,
+	canWrite = true,
 	onLiveDocumentEdit,
 	onSelectionChange: onExternalSelectionChange,
 	docId,
@@ -262,6 +267,7 @@ function LiveEditorView({
 			initialContent={sync.initialContent}
 			wikiTargets={wikiTargets}
 			remotePresence={remotePresence}
+			editorProps={{ editable: () => canWrite }}
 			extensions={[
 				sync.extension,
 				createWebImageExtension(),

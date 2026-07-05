@@ -9,6 +9,8 @@ import MingcuteAddLine from "~icons/mingcute/add-line";
 import MingcuteCheckLine from "~icons/mingcute/check-line";
 import MingcuteDeleteLine from "~icons/mingcute/delete-line";
 import MingcuteEditLine from "~icons/mingcute/edit-line";
+import MingcuteFolderLine from "~icons/mingcute/folder-line";
+import MingcuteRightLine from "~icons/mingcute/right-line";
 import MingcuteShareForwardLine from "~icons/mingcute/share-forward-line";
 import {
 	currentPathStore,
@@ -66,11 +68,18 @@ export function Sidebar({
 				/>
 			}
 			footer={
-				<LiveDocumentsSection
-					workspaceId={workspaceId}
-					selectedDocumentId={selectedDocumentId}
-					onSelectDocument={onSelectDocument}
-				/>
+				<>
+					<FoldersSection
+						workspaceId={workspaceId}
+						selectedDocumentId={selectedDocumentId}
+						onSelectDocument={onSelectDocument}
+					/>
+					<LiveDocumentsSection
+						workspaceId={workspaceId}
+						selectedDocumentId={selectedDocumentId}
+						onSelectDocument={onSelectDocument}
+					/>
+				</>
 			}
 			onSortModeChange={setSortMode}
 			onSelectFile={onSelectFile}
@@ -87,6 +96,480 @@ export function Sidebar({
 
 type ShareRole = "owner" | "editor" | "commenter" | "viewer";
 type LinkAccess = "off" | "viewer" | "commenter" | "editor";
+
+// ── Folders (RB2): folder tree, folder-scoped doc create, folder share dialog ──
+
+function FoldersSection({
+	workspaceId,
+	selectedDocumentId,
+	onSelectDocument,
+}: {
+	workspaceId: string;
+	selectedDocumentId: string | null;
+	onSelectDocument: (documentId: string) => void;
+}) {
+	const convexWorkspaceId = workspaceId as Id<"workspaces">;
+	const folders = useQuery(api.folders.list, {
+		workspaceId: convexWorkspaceId,
+	});
+	const documents = useQuery(api.documents.list, {
+		workspaceId: convexWorkspaceId,
+	});
+	const createFolder = useMutation(api.folders.create);
+	const renameFolder = useMutation(api.folders.rename);
+	const removeFolder = useMutation(api.folders.remove);
+	const createDocument = useMutation(api.documents.create);
+
+	const [expanded, setExpanded] = useState<Set<string>>(new Set());
+	const [shareFolderId, setShareFolderId] = useState<Id<"folders"> | null>(
+		null,
+	);
+
+	const rootFolders = folders?.filter((folder) => !folder.parentId) ?? [];
+
+	const toggle = (id: string) => {
+		setExpanded((prev) => {
+			const next = new Set(prev);
+			if (next.has(id)) next.delete(id);
+			else next.add(id);
+			return next;
+		});
+	};
+
+	const handleCreateFolder = async (parentId?: Id<"folders">) => {
+		const name = window.prompt("Folder name")?.trim();
+		if (!name) return;
+		await createFolder({ workspaceId: convexWorkspaceId, parentId, name });
+		if (parentId) {
+			setExpanded((prev) => {
+				const next = new Set(prev);
+				next.add(parentId);
+				return next;
+			});
+		}
+	};
+
+	const handleRenameFolder = async (folder: Doc<"folders">) => {
+		const name = window.prompt("Rename folder", folder.name)?.trim();
+		if (!name || name === folder.name) return;
+		await renameFolder({ folderId: folder._id, name });
+	};
+
+	const handleRemoveFolder = async (folder: Doc<"folders">) => {
+		if (
+			!window.confirm(
+				`Delete folder "${folder.name}"? Its contents move to trash too.`,
+			)
+		) {
+			return;
+		}
+		await removeFolder({ folderId: folder._id });
+	};
+
+	const handleCreateDocumentInFolder = async (folderId: Id<"folders">) => {
+		const documentId = await createDocument({
+			workspaceId: convexWorkspaceId,
+			folderId,
+			title: "Untitled",
+		});
+		onSelectDocument(documentId);
+	};
+
+	const shareFolder = folders?.find((folder) => folder._id === shareFolderId);
+
+	return (
+		<section className="border-t border-sidebar-border [padding-block:0.5rem] [padding-inline:0.5rem]">
+			<div className="flex items-center justify-between gap-2 [padding-block-end:0.25rem] [padding-inline:0.25rem]">
+				<h2 className="m-0 text-[10px] font-medium uppercase text-muted-foreground">
+					Folders
+				</h2>
+				<button
+					type="button"
+					className="inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
+					aria-label="New folder"
+					title="New folder"
+					onClick={() => void handleCreateFolder()}
+				>
+					<MingcuteAddLine className="size-3.5" />
+				</button>
+			</div>
+			{folders !== undefined && rootFolders.length === 0 ? (
+				<p className="m-0 text-xs text-muted-foreground [padding-block:0.375rem] [padding-inline:0.25rem]">
+					No folders yet.
+				</p>
+			) : (
+				<div className="flex max-h-56 flex-col overflow-auto">
+					{rootFolders.map((folder) => (
+						<FolderRow
+							key={folder._id}
+							folder={folder}
+							depth={0}
+							folders={folders ?? []}
+							documents={documents ?? []}
+							expanded={expanded}
+							selectedDocumentId={selectedDocumentId}
+							onToggle={toggle}
+							onSelectDocument={onSelectDocument}
+							onCreateSubfolder={handleCreateFolder}
+							onCreateDocument={handleCreateDocumentInFolder}
+							onRename={handleRenameFolder}
+							onRemove={handleRemoveFolder}
+							onShare={setShareFolderId}
+						/>
+					))}
+				</div>
+			)}
+			{shareFolder && (
+				<FolderShareDialog
+					folderId={shareFolder._id}
+					folderName={shareFolder.name}
+					open={shareFolderId !== null}
+					onOpenChange={(open) => {
+						if (!open) setShareFolderId(null);
+					}}
+				/>
+			)}
+		</section>
+	);
+}
+
+function FolderRow({
+	folder,
+	depth,
+	folders,
+	documents,
+	expanded,
+	selectedDocumentId,
+	onToggle,
+	onSelectDocument,
+	onCreateSubfolder,
+	onCreateDocument,
+	onRename,
+	onRemove,
+	onShare,
+}: {
+	folder: Doc<"folders">;
+	depth: number;
+	folders: Doc<"folders">[];
+	documents: Doc<"documents">[];
+	expanded: Set<string>;
+	selectedDocumentId: string | null;
+	onToggle: (id: string) => void;
+	onSelectDocument: (documentId: string) => void;
+	onCreateSubfolder: (parentId: Id<"folders">) => void | Promise<void>;
+	onCreateDocument: (folderId: Id<"folders">) => void | Promise<void>;
+	onRename: (folder: Doc<"folders">) => void | Promise<void>;
+	onRemove: (folder: Doc<"folders">) => void | Promise<void>;
+	onShare: (folderId: Id<"folders">) => void;
+}) {
+	const isOpen = expanded.has(folder._id);
+	const childFolders = folders.filter((f) => f.parentId === folder._id);
+	const childDocuments = documents.filter((d) => d.folderId === folder._id);
+	const indent = `${0.5 + depth * 0.75}rem`;
+	const docIndent = `${1.25 + depth * 0.75}rem`;
+
+	return (
+		<div>
+			<div className="group flex items-center rounded-sm text-sidebar-foreground hover:bg-accent">
+				<button
+					type="button"
+					className="flex min-w-0 flex-1 items-center gap-1 bg-transparent text-start [padding-block:0.375rem]"
+					style={{ paddingInlineStart: indent }}
+					onClick={() => onToggle(folder._id)}
+				>
+					<MingcuteRightLine
+						className={`size-3 shrink-0 text-muted-foreground transition-transform ${isOpen ? "rotate-90" : ""}`}
+					/>
+					<MingcuteFolderLine className="size-3.5 shrink-0 text-muted-foreground" />
+					<span className="truncate text-[length:var(--font-size-sidebar)]">
+						{folder.name}
+					</span>
+				</button>
+				<div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [padding-inline-end:0.25rem]">
+					<button
+						type="button"
+						className="inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
+						aria-label={`New document in ${folder.name}`}
+						title="New document"
+						onClick={() => void onCreateDocument(folder._id)}
+					>
+						<MingcuteAddLine className="size-3.5" />
+					</button>
+					<button
+						type="button"
+						className="inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
+						aria-label={`New subfolder in ${folder.name}`}
+						title="New subfolder"
+						onClick={() => void onCreateSubfolder(folder._id)}
+					>
+						<MingcuteFolderLine className="size-3.5" />
+					</button>
+					<button
+						type="button"
+						className="inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
+						aria-label={`Share ${folder.name}`}
+						title="Share"
+						onClick={() => onShare(folder._id)}
+					>
+						<MingcuteShareForwardLine className="size-3.5" />
+					</button>
+					<button
+						type="button"
+						className="inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
+						aria-label={`Rename ${folder.name}`}
+						title="Rename"
+						onClick={() => void onRename(folder)}
+					>
+						<MingcuteEditLine className="size-3.5" />
+					</button>
+					<button
+						type="button"
+						className="inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:text-destructive"
+						aria-label={`Delete ${folder.name}`}
+						title="Delete"
+						onClick={() => void onRemove(folder)}
+					>
+						<MingcuteDeleteLine className="size-3.5" />
+					</button>
+				</div>
+			</div>
+			{isOpen && (
+				<div>
+					{childFolders.map((child) => (
+						<FolderRow
+							key={child._id}
+							folder={child}
+							depth={depth + 1}
+							folders={folders}
+							documents={documents}
+							expanded={expanded}
+							selectedDocumentId={selectedDocumentId}
+							onToggle={onToggle}
+							onSelectDocument={onSelectDocument}
+							onCreateSubfolder={onCreateSubfolder}
+							onCreateDocument={onCreateDocument}
+							onRename={onRename}
+							onRemove={onRemove}
+							onShare={onShare}
+						/>
+					))}
+					{childDocuments.map((document) => (
+						<button
+							key={document._id}
+							type="button"
+							className={`block w-full truncate rounded-sm text-start text-[length:var(--font-size-sidebar)] text-sidebar-foreground [padding-block:0.25rem] ${
+								document._id === selectedDocumentId
+									? "bg-sidebar-accent font-medium"
+									: "hover:bg-accent"
+							}`}
+							style={{ paddingInlineStart: docIndent }}
+							onClick={() => onSelectDocument(document._id)}
+						>
+							{document.title}
+						</button>
+					))}
+				</div>
+			)}
+		</div>
+	);
+}
+
+function FolderShareDialog({
+	folderId,
+	folderName,
+	open,
+	onOpenChange,
+}: {
+	folderId: Id<"folders">;
+	folderName: string;
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+}) {
+	const shares = useQuery(
+		api.folders.listFolderShares,
+		open ? { folderId } : "skip",
+	);
+	const setUserShareByEmail = useMutation(
+		api.folders.setFolderUserShareByEmail,
+	);
+	const removeUserShare = useMutation(api.folders.removeFolderUserShare);
+	const setLinkShare = useMutation(api.folders.setFolderLinkShare);
+	const clearLinkShare = useMutation(api.folders.clearFolderLinkShare);
+	const [email, setEmail] = useState("");
+	const [role, setRole] = useState<ShareRole>("editor");
+	const [pending, setPending] = useState(false);
+	const [message, setMessage] = useState<string | null>(null);
+	const [copied, setCopied] = useState(false);
+	const publicShare = shares?.find((share) => share.linkScope === "public");
+	const linkAccess = (publicShare?.role ?? "off") as LinkAccess;
+	const userShares = shares?.filter((share) => share.userId) ?? [];
+	const folderLink = `${window.location.origin}/folder/${folderId}`;
+
+	const inviteUser = async (event: React.FormEvent) => {
+		event.preventDefault();
+		const trimmed = email.trim();
+		if (!trimmed) return;
+		setPending(true);
+		setMessage(null);
+		try {
+			const result = await setUserShareByEmail({
+				folderId,
+				email: trimmed,
+				role,
+			});
+			setEmail("");
+			setMessage(
+				result.status === "invited"
+					? "No account yet — they'll get access as soon as they sign up with this email."
+					: "Access updated.",
+			);
+		} catch (err) {
+			setMessage(
+				err instanceof Error ? err.message : "Could not update access.",
+			);
+		} finally {
+			setPending(false);
+		}
+	};
+
+	const updateLinkAccess = async (next: LinkAccess) => {
+		setMessage(null);
+		if (next === "off") {
+			await clearLinkShare({ folderId });
+			return;
+		}
+		await setLinkShare({ folderId, role: next });
+	};
+
+	const copyLink = async () => {
+		await navigator.clipboard.writeText(folderLink);
+		setCopied(true);
+		setTimeout(() => setCopied(false), 2000);
+	};
+
+	return (
+		<Modal
+			open={open}
+			onOpenChange={onOpenChange}
+			title={`Share "${folderName}"`}
+			description="People and link access apply to every document and subfolder inside this folder."
+		>
+			<div className="flex flex-col gap-4">
+				<form onSubmit={inviteUser} className="flex flex-col gap-2">
+					<label
+						htmlFor={`folder-share-email-${folderId}`}
+						className="text-xs font-medium text-foreground"
+					>
+						Invite by email
+					</label>
+					<div className="flex gap-2">
+						<input
+							id={`folder-share-email-${folderId}`}
+							type="email"
+							value={email}
+							onChange={(event) => setEmail(event.target.value)}
+							placeholder="teammate@example.com"
+							className="min-w-0 flex-1 rounded-sm border border-border bg-background text-sm outline-none focus:border-ring [padding-block:0.5rem] [padding-inline:0.625rem]"
+						/>
+						<RoleSelect value={role} onChange={setRole} includeOwner />
+					</div>
+					<button
+						type="submit"
+						disabled={pending || !email.trim()}
+						className="self-start rounded-sm bg-primary text-xs font-medium text-primary-foreground disabled:opacity-50 [padding-block:0.375rem] [padding-inline:0.75rem]"
+					>
+						{pending ? "Sharing..." : "Share"}
+					</button>
+				</form>
+
+				<div className="flex flex-col gap-2 border-t border-border [padding-block-start:0.75rem]">
+					<div className="flex items-center justify-between gap-3">
+						<div className="min-w-0">
+							<p className="m-0 text-xs font-medium text-foreground">
+								{linkAccess === "off"
+									? "Link sharing off"
+									: `Anyone with the link can ${linkAccess}`}
+							</p>
+							<p className="m-0 mt-1 text-[11px] text-muted-foreground">
+								Anyone with this folder's link gets this role (never owner).
+							</p>
+						</div>
+						<LinkAccessSelect value={linkAccess} onChange={updateLinkAccess} />
+					</div>
+					{linkAccess !== "off" && (
+						<div className="flex items-center gap-2 rounded-sm bg-muted/40 [padding-block:0.375rem] [padding-inline:0.5rem]">
+							<input
+								type="text"
+								readOnly
+								value={folderLink}
+								onFocus={(event) => event.currentTarget.select()}
+								className="min-w-0 flex-1 truncate bg-transparent text-[11px] text-muted-foreground outline-none"
+							/>
+							<button
+								type="button"
+								onClick={() => void copyLink()}
+								className="shrink-0 rounded-sm border border-border bg-background text-[11px] font-medium text-foreground hover:bg-accent [padding-block:0.25rem] [padding-inline:0.5rem]"
+							>
+								{copied ? "Copied!" : "Copy link"}
+							</button>
+						</div>
+					)}
+				</div>
+
+				<div className="border-t border-border [padding-block-start:0.75rem]">
+					<p className="m-0 text-xs font-medium text-foreground">People</p>
+					<div className="mt-2 flex max-h-44 flex-col gap-1 overflow-auto">
+						{shares === undefined && (
+							<p className="m-0 text-xs text-muted-foreground">Loading...</p>
+						)}
+						{shares !== undefined && userShares.length === 0 && (
+							<p className="m-0 text-xs text-muted-foreground">
+								No direct shares yet.
+							</p>
+						)}
+						{userShares.map((share) => (
+							<div
+								key={share._id}
+								className="flex items-center justify-between gap-2 rounded-sm bg-muted/40 [padding-block:0.375rem] [padding-inline:0.5rem]"
+							>
+								<div className="min-w-0">
+									<p className="m-0 truncate text-xs text-foreground">
+										{share.user?.name ?? share.user?.email ?? "Unknown user"}
+									</p>
+									<p className="m-0 truncate text-[11px] text-muted-foreground">
+										{share.user?.email ?? share.role}
+									</p>
+								</div>
+								<div className="flex items-center gap-1">
+									<span className="text-[11px] capitalize text-muted-foreground">
+										{share.role}
+									</span>
+									{share.userId && (
+										<button
+											type="button"
+											className="rounded-sm text-[11px] text-muted-foreground hover:bg-accent hover:text-destructive [padding-block:0.25rem] [padding-inline:0.375rem]"
+											onClick={() =>
+												void removeUserShare({
+													folderId,
+													userId: share.userId as Id<"users">,
+												})
+											}
+										>
+											Remove
+										</button>
+									)}
+								</div>
+							</div>
+						))}
+					</div>
+				</div>
+				{message && (
+					<p className="m-0 text-xs text-muted-foreground">{message}</p>
+				)}
+			</div>
+		</Modal>
+	);
+}
 
 function LiveDocumentsSection({
 	workspaceId,
@@ -146,6 +629,9 @@ function LiveDocumentsSection({
 	};
 
 	const isSearching = debouncedQuery.trim().length > 0;
+	// Folder-scoped docs render under FoldersSection above; this list stays
+	// workspace-root-only so a doc never appears twice in the sidebar.
+	const rootDocuments = documents?.filter((document) => !document.folderId);
 
 	return (
 		<section className="border-t border-sidebar-border [padding-block:0.5rem] [padding-inline:0.5rem]">
@@ -215,12 +701,12 @@ function LiveDocumentsSection({
 							Loading…
 						</p>
 					)}
-					{documents?.length === 0 && (
+					{rootDocuments?.length === 0 && (
 						<p className="m-0 text-xs text-muted-foreground [padding-block:0.375rem] [padding-inline:0.25rem]">
 							No live documents yet.
 						</p>
 					)}
-					{documents?.map((document) => (
+					{rootDocuments?.map((document) => (
 						<LiveDocumentRow
 							key={document._id}
 							document={document}
@@ -331,9 +817,11 @@ function ShareDocumentDialog({
 	const [role, setRole] = useState<ShareRole>("editor");
 	const [pending, setPending] = useState(false);
 	const [message, setMessage] = useState<string | null>(null);
+	const [copied, setCopied] = useState(false);
 	const publicShare = shares?.find((share) => share.linkScope === "public");
 	const linkAccess = (publicShare?.role ?? "off") as LinkAccess;
 	const userShares = shares?.filter((share) => share.userId) ?? [];
+	const documentLink = `${window.location.origin}/w/${document.workspaceId}/d/${document._id}`;
 
 	const inviteUser = async (event: React.FormEvent) => {
 		event.preventDefault();
@@ -371,6 +859,12 @@ function ShareDocumentDialog({
 		});
 	};
 
+	const copyLink = async () => {
+		await navigator.clipboard.writeText(documentLink);
+		setCopied(true);
+		setTimeout(() => setCopied(false), 2000);
+	};
+
 	return (
 		<Modal
 			open={open}
@@ -406,16 +900,38 @@ function ShareDocumentDialog({
 					</button>
 				</form>
 
-				<div className="flex items-center justify-between gap-3 border-t border-border [padding-block-start:0.75rem]">
-					<div className="min-w-0">
-						<p className="m-0 text-xs font-medium text-foreground">
-							Public link
-						</p>
-						<p className="m-0 mt-1 text-[11px] text-muted-foreground">
-							Anyone with the document link gets this role.
-						</p>
+				<div className="flex flex-col gap-2 border-t border-border [padding-block-start:0.75rem]">
+					<div className="flex items-center justify-between gap-3">
+						<div className="min-w-0">
+							<p className="m-0 text-xs font-medium text-foreground">
+								{linkAccess === "off"
+									? "Link sharing off"
+									: `Anyone with the link can ${linkAccess}`}
+							</p>
+							<p className="m-0 mt-1 text-[11px] text-muted-foreground">
+								Anyone with the document link gets this role.
+							</p>
+						</div>
+						<LinkAccessSelect value={linkAccess} onChange={updateLinkAccess} />
 					</div>
-					<LinkAccessSelect value={linkAccess} onChange={updateLinkAccess} />
+					{linkAccess !== "off" && (
+						<div className="flex items-center gap-2 rounded-sm bg-muted/40 [padding-block:0.375rem] [padding-inline:0.5rem]">
+							<input
+								type="text"
+								readOnly
+								value={documentLink}
+								onFocus={(event) => event.currentTarget.select()}
+								className="min-w-0 flex-1 truncate bg-transparent text-[11px] text-muted-foreground outline-none"
+							/>
+							<button
+								type="button"
+								onClick={() => void copyLink()}
+								className="shrink-0 rounded-sm border border-border bg-background text-[11px] font-medium text-foreground hover:bg-accent [padding-block:0.25rem] [padding-inline:0.5rem]"
+							>
+								{copied ? "Copied!" : "Copy link"}
+							</button>
+						</div>
+					)}
 				</div>
 
 				<div className="border-t border-border [padding-block-start:0.75rem]">
