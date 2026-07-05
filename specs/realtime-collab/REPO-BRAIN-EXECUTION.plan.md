@@ -539,6 +539,36 @@ standard/economy session can execute.
 **Acceptance:** the VISION "v1 happy path" (7 steps) executes end-to-end on
 production infrastructure by two humans on two machines.
 
+**RB7 handoff (automatable portion completed 2026-07-05):** Items 1–3 done in
+code/docs; items 4–5 are operator gates. Regression audit: RB1's inherited-role
+suite in `documents.test.ts` already covered prosemirror read/write, comments,
+and trash; **genuine gaps found + filled** — inherited-role **history/restore**
+(`listRevisions`/`restoreRevision`) and **mentions** (`listMentionCandidates`),
+added to the existing "inherited folder roles across surfaces" suite (no
+duplication). Whole backend set green: **55** backend tests, **32** sync tests;
+`pnpm typecheck`, `pnpm --filter @hubble.md/www build`, `pnpm build:desktop` all
+green (`pnpm check` known-red, not a gate). QA runbook: the single human
+checklist now lives in `TEST-RUNBOOK.md` under `# RB7` (two-machine repo-first
+guest scenario A–D, folded RB2/RB3/RB6 smokes, owed browser-smoke list) +
+`# LAUNCH-CHECKLIST`. Browser smokes **not run** (no browser automation / no
+live stack in this pass) — marked owed with exact steps; builds green as the
+boot substitute. Copy audit: no overstated-revocability wording; one release
+artifact flag (download URL owner, see step 4 below). **No files committed; no
+deploy.**
+
+**What the human operator must do, in order** (detail in `TEST-RUNBOOK.md`):
+1. Run **RB7.1** two-machine repo-first guest scenario (A link+seed → B web join
+   → C desktop agent round-trip → D revoke) on real hardware, two accounts.
+2. Pay the **RB7.3** owed browser smokes (dashboard, presence, mentions, history
+   restore, member mgmt, `?test=1`, RB2 guest flow) against a live signed-in stack.
+3. **D3** deploy production Convex (greenfield) + configure Convex Auth.
+4. **D4** wire prod `VITE_CONVEX_URL`, build + deploy `apps/www/dist`; **C3**
+   notarize the desktop `.dmg`, cut the release tag, and **fix the guest
+   download URL** (`GuestFolderScreen.tsx` → real releases page; currently
+   `bholmesdev/hubble.md`, repo is `adrianricardo/hubble.md`).
+5. **D5** choose + wire the external ops/alert sink (status-shape alerts, no PII).
+6. **D7** verify the 100/day signup cap is live on prod; final launch-copy check.
+
 ---
 
 ## Sequencing & parallelism
@@ -582,7 +612,7 @@ RB7 (needs everything; operator-gated pieces last)
 | RB4 | done | fable sub-agent (track B) | 2026-07-05 | Nested `Shared with me/<Workspace> - <Folder>/…` subtrees; revoke extends existing `.hubble/trash` access-loss path; backstops preserved; tests in syncedFolder.test.ts + syncedFolderService.test.ts. |
 | RB5 | done | fable sub-agent (track B) | 2026-07-05 | BRAIN.md template in `repoLink.ts`, seeded via RB1 `documents.create` seam from the link flow; any-case idempotent; convex-test + unit tests green. |
 | RB6 | done | sonnet sub-agent | 2026-07-05 | Join-screen + doc-create copy sell context not tool; web "bring your agent" callout on `GuestFolderScreen`; desktop first-run detects guest-only accounts (folder shares, zero own docs) via `listSharedWithMe` and skips the workspace-creation detour; revoked-while-viewing vs never-had-access now distinct copy; no absolute-revocability language found or introduced. Verify green; two-account + guest desktop browser smoke left for RB7 manual QA (see handoff). |
-| RB7 | pending | - | - | Operator-gated pieces (deploy, two-machine QA) last. |
+| RB7 | done-pending-operator | opus sub-agent (items 1–3) + operator | 2026-07-05 | Automatable portion complete: filled 2 inherited-role regression gaps (history/restore, mentions) in `documents.test.ts`; backend 55 / sync 32 green; typecheck + www + desktop builds green. Runbook now has the two-machine repo-first guest scenario + folded RB2/RB3/RB6 smokes + owed browser-smoke list + `# LAUNCH-CHECKLIST`. Copy audit clean (no revocability overstatement). Remaining = operator gates D3/D4/D5/C3/D7 + the owed browser smokes + two-machine pass — see RB7 handoff. No deploy performed. |
 
 Status values: pending, in-progress, blocked, done.
 

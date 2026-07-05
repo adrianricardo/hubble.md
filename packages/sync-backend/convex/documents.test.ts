@@ -589,4 +589,105 @@ describe("inherited folder roles across surfaces", () => {
 		});
 		expect(guestTrash.map((d) => d._id)).toEqual([documentId]);
 	});
+
+	test("history: inherited viewer can list revisions but cannot restore; inherited editor can restore", async () => {
+		const t = testInstance();
+		const viewer = await setupInherited(t, "viewer");
+		const revisionId = await t.run((ctx) =>
+			ctx.db.insert("revisions", {
+				documentId: viewer.documentId,
+				createdAt: 1,
+				actor: "Owner",
+				label: "Snapshot",
+				pmDoc: null,
+				markdown: "# Nested Doc\n\noriginal body",
+				revision: 0,
+			}),
+		);
+		// Read is inherited: a viewer sees the document history.
+		await expect(
+			asUser(t, viewer.guestId).query(api.documents.listRevisions, {
+				documentId: viewer.documentId,
+			}),
+		).resolves.toHaveLength(1);
+		// Restore is write-gated: an inherited viewer is denied.
+		await expect(
+			asUser(t, viewer.guestId).mutation(api.documents.restoreRevision, {
+				revisionId,
+			}),
+		).rejects.toThrow(/Unauthorized/);
+
+		// An inherited editor can restore a revision. Build the document through
+		// the real create seam so it has a prosemirror snapshot to restore into,
+		// then snapshot a revision via the write-gated materialize path.
+		const editor = await t.run(async (ctx) => {
+			const ownerId = await ctx.db.insert("users", {
+				email: "owner2@example.com",
+				name: "Owner",
+			});
+			const guestId = await ctx.db.insert("users", {
+				email: "guest2@example.com",
+				name: "Guest",
+			});
+			const workspaceId = await ctx.db.insert("workspaces", {
+				name: "Team",
+				ownerId,
+				createdAt: 1,
+			});
+			const rootFolderId = await ctx.db.insert("folders", {
+				workspaceId,
+				name: "Root",
+				createdAt: 1,
+				updatedAt: 1,
+			});
+			await ctx.db.insert("folderShares", {
+				folderId: rootFolderId,
+				userId: guestId,
+				role: "editor",
+				createdAt: 1,
+				updatedAt: 1,
+			});
+			return { ownerId, guestId, workspaceId, rootFolderId };
+		});
+		const editorDocId = await asUser(t, editor.ownerId).mutation(
+			api.documents.create,
+			{
+				workspaceId: editor.workspaceId,
+				folderId: editor.rootFolderId,
+				title: "Nested Doc",
+				markdown: "# Nested Doc\n\noriginal body",
+			},
+		);
+		const editorRevisionId = await asUser(t, editor.ownerId).mutation(
+			api.documents.materializeRevision,
+			{ documentId: editorDocId, label: "Snapshot" },
+		);
+		await expect(
+			asUser(t, editor.guestId).mutation(api.documents.restoreRevision, {
+				revisionId: editorRevisionId,
+			}),
+		).resolves.toMatchObject({ documentId: editorDocId });
+	});
+
+	test("mentions: inherited commenter can list candidates; inherited viewer cannot", async () => {
+		const t = testInstance();
+		const commenter = await setupInherited(t, "commenter");
+		// listMentionCandidates is comment-gated; the inherited commenter passes.
+		await expect(
+			asUser(t, commenter.guestId).query(api.documents.listMentionCandidates, {
+				documentId: commenter.documentId,
+			}),
+		).resolves.toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ userId: commenter.ownerId }),
+			]),
+		);
+
+		const viewer = await setupInherited(t, "viewer");
+		await expect(
+			asUser(t, viewer.guestId).query(api.documents.listMentionCandidates, {
+				documentId: viewer.documentId,
+			}),
+		).rejects.toThrow(/Unauthorized/);
+	});
 });
