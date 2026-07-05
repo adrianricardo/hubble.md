@@ -33,14 +33,25 @@ type Props = {
 type Subtree = NonNullable<FunctionReturnType<typeof api.folders.listSubtree>>;
 
 export function GuestFolderScreen(props: Props) {
+	// Once the subtree has loaded successfully, a later "Unauthorized" thrown by
+	// the live subscription (caught by GuestFolderErrorBoundary below) means
+	// access was just revoked while viewing — distinct copy from "never had
+	// access" (RB6 empty/error-state pass). Lifted above the boundary so the
+	// fallback can read it.
+	const hasLoadedRef = useRef(false);
 	return (
-		<GuestFolderErrorBoundary key={props.folderId}>
-			<GuestFolderContent {...props} />
+		<GuestFolderErrorBoundary key={props.folderId} hasLoadedRef={hasLoadedRef}>
+			<GuestFolderContent {...props} hasLoadedRef={hasLoadedRef} />
 		</GuestFolderErrorBoundary>
 	);
 }
 
-function GuestFolderContent({ folderId, documentId, onSelectDocument }: Props) {
+function GuestFolderContent({
+	folderId,
+	documentId,
+	onSelectDocument,
+	hasLoadedRef,
+}: Props & { hasLoadedRef: { current: boolean } }) {
 	const convexFolderId = folderId as Id<"folders">;
 	const subtree = useQuery(api.folders.listSubtree, {
 		folderId: convexFolderId,
@@ -48,6 +59,9 @@ function GuestFolderContent({ folderId, documentId, onSelectDocument }: Props) {
 	const viewer = useQuery(api.viewer.me, {});
 	const createDocument = useMutation(api.documents.create);
 	const [creatingIn, setCreatingIn] = useState<string | null>(null);
+	useEffect(() => {
+		if (subtree) hasLoadedRef.current = true;
+	}, [subtree, hasLoadedRef]);
 
 	const handleCreateDocument = async (targetFolderId: Id<"folders">) => {
 		if (!subtree || creatingIn) return;
@@ -75,8 +89,8 @@ function GuestFolderContent({ folderId, documentId, onSelectDocument }: Props) {
 	if (subtree === null) {
 		return (
 			<GuestFolderNotice
-				title="This folder is no longer available."
-				body="It may have been deleted by its owner."
+				title="This folder isn't there anymore."
+				body="Its owner may have deleted it, or the link points somewhere that no longer exists. Ask whoever shared it with you to send a fresh link."
 			/>
 		);
 	}
@@ -84,26 +98,31 @@ function GuestFolderContent({ folderId, documentId, onSelectDocument }: Props) {
 	return (
 		<AppShellFrame
 			toolbar={
-				<div className="flex items-center justify-between gap-3 border-b border-border bg-background [padding-block:0.5rem] [padding-inline:0.75rem]">
-					<div className="flex min-w-0 items-center gap-2">
-						<Link
-							to="/"
-							className="shrink-0 rounded-sm text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-foreground [padding-block:0.25rem] [padding-inline:0.5rem]"
-						>
-							← Home
-						</Link>
-						<span className="truncate text-sm font-medium text-foreground">
-							{subtree.folder.name}
-						</span>
-						<span className="shrink-0 rounded-sm border border-border text-[11px] capitalize text-muted-foreground [padding-block:0.125rem] [padding-inline:0.375rem]">
-							{subtree.canWrite ? subtree.role : `${subtree.role} · read-only`}
-						</span>
+				<>
+					<div className="flex items-center justify-between gap-3 border-b border-border bg-background [padding-block:0.5rem] [padding-inline:0.75rem]">
+						<div className="flex min-w-0 items-center gap-2">
+							<Link
+								to="/"
+								className="shrink-0 rounded-sm text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-foreground [padding-block:0.25rem] [padding-inline:0.5rem]"
+							>
+								← Home
+							</Link>
+							<span className="truncate text-sm font-medium text-foreground">
+								{subtree.folder.name}
+							</span>
+							<span className="shrink-0 rounded-sm border border-border text-[11px] capitalize text-muted-foreground [padding-block:0.125rem] [padding-inline:0.375rem]">
+								{subtree.canWrite
+									? subtree.role
+									: `${subtree.role} · read-only`}
+							</span>
+						</div>
+						<div className="flex items-center gap-1">
+							{viewer ? <UserBadge user={viewer} /> : null}
+							<SignOutButton />
+						</div>
 					</div>
-					<div className="flex items-center gap-1">
-						{viewer ? <UserBadge user={viewer} /> : null}
-						<SignOutButton />
-					</div>
-				</div>
+					<BringYourAgentBanner folderId={subtree.folder._id} />
+				</>
 			}
 			sidebar={
 				<GuestFolderSidebar
@@ -131,7 +150,7 @@ function GuestFolderContent({ folderId, documentId, onSelectDocument }: Props) {
 								? "Select a document from the sidebar."
 								: subtree.canWrite
 									? "This folder is empty. Create the first document with +."
-									: "This folder has no documents yet."}
+									: "Nothing's been added here yet — check back once your team starts writing."}
 						</p>
 						{subtree.canWrite && subtree.documents.length === 0 && (
 							<button
@@ -402,9 +421,12 @@ function GuestFolderNotice({ title, body }: { title: string; body: string }) {
 // Revocation is the expected failure mode here (owner removes the share while
 // the guest has the folder open): the live `listSubtree` subscription errors
 // with "Unauthorized" and convex-react rethrows it during render. Catch it and
-// show a clean access-lost state instead of a crash.
+// show a clean access-lost state instead of a crash — distinguishing "you were
+// just removed" (revoked-while-viewing) from "you never had access" (dead/wrong
+// link, or signed in on the wrong account) since they call for different next
+// steps (RB6).
 class GuestFolderErrorBoundary extends Component<
-	{ children: ReactNode },
+	{ children: ReactNode; hasLoadedRef: { current: boolean } },
 	{ error: Error | null }
 > {
 	state: { error: Error | null } = { error: null };
@@ -421,21 +443,75 @@ class GuestFolderErrorBoundary extends Component<
 		if (this.state.error) {
 			const message = this.state.error.message.toLowerCase();
 			const isUnauthorized = message.includes("unauthorized");
+			const wasRevokedWhileViewing =
+				isUnauthorized && this.props.hasLoadedRef.current;
 			return (
 				<GuestFolderNotice
 					title={
-						isUnauthorized
-							? "You don't have access to this folder."
-							: "This folder failed to load."
+						wasRevokedWhileViewing
+							? "Your access to this folder was just removed."
+							: isUnauthorized
+								? "You don't have access to this folder."
+								: "This folder failed to load."
 					}
 					body={
-						isUnauthorized
-							? "Your access may have been removed, or the invite link may be wrong. Ask the person who shared it to re-invite you."
-							: this.state.error.message
+						wasRevokedWhileViewing
+							? "The person who shared it removed your access — this doesn't undo edits you already made, but you can no longer view or edit here. Ask them to re-share it if that was a mistake."
+							: isUnauthorized
+								? "Either the invite link is wrong, your access was removed before you arrived, or you're signed in on the wrong account. Ask the person who shared it to re-invite you."
+								: this.state.error.message
 					}
 				/>
 			);
 		}
 		return this.props.children;
 	}
+}
+
+// "Bring your agent" prompt (RB6, VISION happy-path step 5–6): the web view is
+// zero-install human editing; to point a local agent (Cowork, Claude Code) at
+// these same docs, the guest installs the desktop app, signs in with this same
+// account, and their shared folders appear as files — no clone, no git. One
+// dismissal per folder (not global) since a guest may have several shares.
+const AGENT_BANNER_DISMISSED_PREFIX = "hubble:agent-banner-dismissed:";
+const DESKTOP_DOWNLOAD_URL =
+	"https://github.com/bholmesdev/hubble.md/releases/latest";
+
+function BringYourAgentBanner({ folderId }: { folderId: string }) {
+	const storageKey = `${AGENT_BANNER_DISMISSED_PREFIX}${folderId}`;
+	const [dismissed, setDismissed] = useState(
+		() => localStorage.getItem(storageKey) === "1",
+	);
+	if (dismissed) return null;
+
+	return (
+		<div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/40 [padding-block:0.5rem] [padding-inline:0.75rem]">
+			<p className="m-0 min-w-0 flex-1 text-xs text-foreground">
+				<span className="font-medium">Want your agent working here too?</span>{" "}
+				Install the Hubble desktop app and sign in with this same account — your
+				shared folders show up as real files, ready to point Cowork or Claude
+				Code at.
+			</p>
+			<div className="flex shrink-0 items-center gap-2">
+				<a
+					href={DESKTOP_DOWNLOAD_URL}
+					target="_blank"
+					rel="noopener noreferrer"
+					className="rounded-sm bg-primary text-xs font-medium text-primary-foreground [padding-block:0.3125rem] [padding-inline:0.625rem]"
+				>
+					Get the desktop app
+				</a>
+				<button
+					type="button"
+					onClick={() => {
+						localStorage.setItem(storageKey, "1");
+						setDismissed(true);
+					}}
+					className="rounded-sm text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-foreground [padding-block:0.3125rem] [padding-inline:0.5rem]"
+				>
+					Dismiss
+				</button>
+			</div>
+		</div>
+	);
 }

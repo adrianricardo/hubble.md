@@ -6,11 +6,16 @@ import { categorizeError, describeError } from "../connection/convex-error";
 // live at the router root instead of inside a per-workspace shell.
 export function SignInScreen({
 	banner,
+	heading,
 	defaultMode = "signIn",
 }: {
-	// Shown above the form. Used by the invite-link join route (RB2) so a
+	// Shown above the form. Used by the invite-link join route (RB2/RB6) so a
 	// signed-out visitor understands why they landed here before signing in/up.
 	banner?: string;
+	// Overrides the default "Sign in to Hubble" / "Create your account" heading —
+	// the invite-link join route (RB6) uses this to sell the destination
+	// ("Open your shared folder"), not the product.
+	heading?: string;
 	defaultMode?: "signIn" | "signUp";
 }) {
 	const { signIn } = useAuthActions();
@@ -45,7 +50,8 @@ export function SignInScreen({
 					</p>
 				)}
 				<h1 className="text-base font-semibold text-foreground">
-					{mode === "signIn" ? "Sign in to Hubble" : "Create your account"}
+					{heading ??
+						(mode === "signIn" ? "Sign in to Hubble" : "Create your account")}
 				</h1>
 				<label
 					htmlFor="auth-email"

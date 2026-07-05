@@ -103,7 +103,8 @@ function SignedOutRoute() {
 		return (
 			<SignInScreen
 				defaultMode="signUp"
-				banner="You've been invited to a shared folder on Hubble. Sign in or create an account to open it."
+				heading="Open your shared folder"
+				banner="Someone on your team shared a folder of living docs with you — the same context they (and their agents) work from every day. No code, no install required to read or edit here."
 			/>
 		);
 	}

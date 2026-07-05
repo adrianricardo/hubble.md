@@ -725,6 +725,13 @@ function AuthenticatedCloudWorkspaceHome({
 		recentLimit: 5,
 		sharedLimit: 3,
 	});
+	// Guest-only accounts (RB6): the desktop dashboard query only surfaces
+	// direct doc shares, not folder shares (D12), so a guest whose only access
+	// is an inherited folder share would otherwise land on an empty "create a
+	// Live Document" prompt. Check the same guest-safe query the web dashboard
+	// uses to detect that case and steer to the synced-folder connect flow
+	// instead of a workspace-creation detour.
+	const sharedWithMe = useQuery(api.documents.listSharedWithMe, {});
 	const createDocument = useMutation(api.documents.create);
 	const [creating, setCreating] = useState(false);
 	const workspace =
@@ -733,6 +740,14 @@ function AuthenticatedCloudWorkspaceHome({
 	const documents = dashboard
 		? [...dashboard.recents, ...dashboard.sharedWithMe].slice(0, 5)
 		: [];
+	const hasOwnDocuments =
+		dashboard !== undefined && dashboard.recents.length > 0;
+	const sharedFolders = sharedWithMe?.folders ?? [];
+	const isGuestOnly =
+		dashboard !== undefined &&
+		sharedWithMe !== undefined &&
+		!hasOwnDocuments &&
+		(sharedFolders.length > 0 || sharedWithMe.documents.length > 0);
 
 	const createLiveDocument = async () => {
 		if (!workspace || creating) return;
@@ -752,6 +767,62 @@ function AuthenticatedCloudWorkspaceHome({
 			setCreating(false);
 		}
 	};
+
+	if (isGuestOnly) {
+		return (
+			<div className="flex w-full max-w-2xl flex-col gap-5 [padding-inline:1rem]">
+				<div className="flex flex-col items-center gap-2 text-center">
+					<p className="text-xs font-medium uppercase text-muted-foreground">
+						Shared with you
+					</p>
+					<h2 className="font-rounded text-3xl font-medium tracking-normal">
+						Bring your agent in
+					</h2>
+					<p className="max-w-md text-sm text-muted-foreground">
+						Connect a synced folder to get{" "}
+						{sharedFolders.length === 1
+							? `"${sharedFolders[0].name}"`
+							: `your ${sharedFolders.length} shared folders`}{" "}
+						as real files on this computer, then point Cowork or Claude Code at
+						them — saves sync live to everyone, no clone, no git.
+					</p>
+				</div>
+				<div className="flex flex-wrap justify-center gap-2">
+					<Button onClick={onOpenSettings}>Connect synced folder</Button>
+				</div>
+				{sharedFolders.length > 0 && (
+					<div className="grid gap-2 rounded-sm border border-border bg-card/40 [padding-block:0.75rem] [padding-inline:0.75rem]">
+						<p className="text-sm font-medium">Shared with you</p>
+						<ul className="grid gap-1">
+							{sharedFolders.map((folder) => (
+								<li
+									key={folder.folderId}
+									className="flex items-center justify-between gap-3 rounded-sm bg-background/70 [padding-block:0.5rem] [padding-inline:0.625rem]"
+								>
+									<span className="min-w-0 truncate text-sm">
+										{folder.name}
+									</span>
+									<span className="shrink-0 text-xs capitalize text-muted-foreground">
+										{folder.role}
+									</span>
+								</li>
+							))}
+						</ul>
+					</div>
+				)}
+				<div className="flex flex-wrap justify-center gap-2 text-xs text-muted-foreground">
+					<Button
+						variant="ghost"
+						size="sm"
+						onClick={() => void createLiveDocument()}
+						disabled={!workspace || creating}
+					>
+						{creating ? "Creating…" : "New Live Document instead"}
+					</Button>
+				</div>
+			</div>
+		);
+	}
 
 	return (
 		<div className="flex w-full max-w-2xl flex-col gap-5 [padding-inline:1rem]">

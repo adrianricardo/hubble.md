@@ -486,6 +486,30 @@ machine (or clean user profile).
 **Verify:** `pnpm typecheck` · `pnpm --filter @hubble.md/www build` ·
 `pnpm build:desktop` · manual walkthrough of the full path.
 
+**RB6 handoff (completed 2026-07-05):** Files touched:
+`apps/www/src/App.tsx` (join-route banner copy), `auth/AuthScreens.tsx` (new
+optional `heading` prop, unrelated to shape RB2 locked), `screens/
+GuestFolderScreen.tsx` (new `BringYourAgentBanner` — dismissible per folder via
+`localStorage`, links to the GitHub releases/latest `.dmg`; error boundary now
+takes a `hasLoadedRef` to tell "access revoked while viewing" apart from "never
+had access"; null-subtree and empty-subtree copy tightened),
+`apps/desktop/src/App.tsx` (`AuthenticatedCloudWorkspaceHome` now also queries
+`api.documents.listSharedWithMe` — the guest-only branch triggers when
+`dashboard.recents` is empty but shared folders/docs exist, and its primary CTA
+is "Connect synced folder" into Settings rather than "New Live Document"),
+`apps/desktop/src/components/CloudSyncSection.tsx` (copy only — dropped
+internal "fork deployment" phrasing, added agent-pointing sentence). No new
+backend mutations; reused RB1's `documents.listSharedWithMe` verbatim on both
+web and desktop. Copy audit found no "absolute revocability" language anywhere
+pre-existing; new copy follows "no git permanence, access is revocable"
+throughout. **Not done — left for RB7 manual QA:** browser smoke of the join
+banner + agent callout, and a real guest-only desktop profile (fresh account,
+folder share only, no local workspace) confirming the guest-only branch renders
+instead of the default create-doc prompt — this branch was verified by
+typecheck/build only, not by hand against a live guest account. The Cowork
+"Work in Cowork" launch button (VISION open Q1) was left out per the dispatch
+brief's explicit scope note.
+
 ### RB7 — Launch gate *(mixed tier + operator-gated)*
 
 **Objective:** one repo-first launch, absorbing the deferred V1-EXECUTION P7
@@ -557,7 +581,7 @@ RB7 (needs everything; operator-gated pieces last)
 | RB3 | done | fable sub-agent (track B, carries RB3→RB4→RB5) | 2026-07-05 | Engine-instance-per-mount (see RB3 handoff); link flow + exclude + config + repo metadata shipped; scripted git acceptance (plain + worktree) green. |
 | RB4 | done | fable sub-agent (track B) | 2026-07-05 | Nested `Shared with me/<Workspace> - <Folder>/…` subtrees; revoke extends existing `.hubble/trash` access-loss path; backstops preserved; tests in syncedFolder.test.ts + syncedFolderService.test.ts. |
 | RB5 | done | fable sub-agent (track B) | 2026-07-05 | BRAIN.md template in `repoLink.ts`, seeded via RB1 `documents.create` seam from the link flow; any-case idempotent; convex-test + unit tests green. |
-| RB6 | pending | - | - | Needs RB2 + RB4. |
+| RB6 | done | sonnet sub-agent | 2026-07-05 | Join-screen + doc-create copy sell context not tool; web "bring your agent" callout on `GuestFolderScreen`; desktop first-run detects guest-only accounts (folder shares, zero own docs) via `listSharedWithMe` and skips the workspace-creation detour; revoked-while-viewing vs never-had-access now distinct copy; no absolute-revocability language found or introduced. Verify green; two-account + guest desktop browser smoke left for RB7 manual QA (see handoff). |
 | RB7 | pending | - | - | Operator-gated pieces (deploy, two-machine QA) last. |
 
 Status values: pending, in-progress, blocked, done.

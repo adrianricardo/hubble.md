@@ -29,7 +29,7 @@ export function CloudSyncSection({ deploymentUrl }: { deploymentUrl: string }) {
 	return (
 		<SettingsSection
 			title="Cloud sync"
-			description="Sign in to the fork deployment before connecting a synced folder."
+			description="Sign in, then connect a folder to get your Live Documents — including anything shared with you — as real files on this computer."
 		>
 			<AuthLoading>
 				<p className="text-xs text-muted-foreground">Checking session…</p>
@@ -439,7 +439,8 @@ function SignedInCloudSync({ deploymentUrl }: { deploymentUrl: string }) {
 			<div className="grid gap-2">
 				<p className="text-muted-foreground">
 					Connect an empty folder, or reconnect a folder that already has
-					Hubble's sync index.
+					Hubble's sync index. Once connected, point your agent (Cowork, Claude
+					Code, or any local tool) at it — files sync live, no git involved.
 				</p>
 				<div className="flex flex-wrap gap-2">
 					<Button
