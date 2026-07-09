@@ -2,6 +2,15 @@
 
 Newest first. Cite sources; keep entries short.
 
+## 2026-07-09 — Track C gate 1 SATISFIED: triage logic approved
+**Decision:** Adrian declared the init triage logic good after three dry runs — gate 1
+of the dogfood is closed. With the no-data-loss gate already verified, **apply-mode
+work is unblocked**, in this order: apply-mode against a scratch workspace first, then
+the real `brain/` split (pre-move commit + version-history restore demo required).
+Also decided: no handoff docs between sessions — the roadmap's NEXT STEP block is the
+handoff (dogfooding the progress contract).
+**Source:** Adrian in the 2026-07-09 init-iteration session.
+
 ## 2026-07-09 — Generalization-run defaults (third dry run, foreign repo: 567 brain)
 **Decision:** four more init defaults: (7) **external-consumer check** — init detects
 cross-repo consumers of a brain (the 567 iOS repo symlinks it) and apply-mode re-points

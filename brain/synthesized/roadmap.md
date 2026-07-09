@@ -1,5 +1,23 @@
 # Roadmap / Current State
 
+## ➤ NEXT STEP (updated 2026-07-09)
+
+**Both Track C gates are satisfied — apply-mode is unblocked.** The next session
+should design and build **hubble-init apply-mode against a scratch workspace** (NOT
+real content yet; that's the step after):
+
+1. Read `/specs/hubble-init/DESIGN.md` (esp. §Flow step 3, §Safety gate, §Progress
+   contract, §Gaps #1–7 — the gaps are the work queue: CLI auth, headless repo-link,
+   desktop detect/deep-link, folder-create CLI, multi-repo mount, asset links) and
+   `.claude/skills/hubble-init/SKILL.md` (twelve learned rules; dry-run guard gets an
+   apply mode added, gated on a pre-move git commit).
+2. Sequence per decision log: apply-mode on a **scratch workspace + throwaway corpus**
+   first; the real dogfood (splitting this repo's `brain/`) only after that feels good,
+   with a pre-move commit and a Hubble version-history restore demo first.
+3. Known prerequisite friction: `packages/cli` is unauthenticated; mount/BRAIN.md
+   seeding is Electron-only (DESIGN.md §Gaps #1–2) — decide CLI-vs-desktop split for
+   apply (open design question in DESIGN.md).
+
 ## Where the build actually is (2026-07-09)
 
 - Branch `v1-release`. RB1–RB7 repo-brain code phases are **committed** (folder shares,
@@ -20,13 +38,10 @@
    in-repo via dogfood runs (records in `/specs/hubble-init/runs/`).
 3. **Track C — Dogfood the split.** Target state: this brain splits — mechanics/build
    docs stay in git, strategy/vision moves to Hubble cloud — driven by the interactive
-   init flow on `brain/` as the first corpus. **Two gates:** (1) triage logic feels good
-   (dry-runs) — in progress, close: three dry runs done 2026-07-09 (`brain/`, the
-   archive stress corpus, and the foreign 567-platform brain), twelve learned defaults
-   in the skill, contested ratio 50% → ~18%, and the third run's misses were all new
-   policy rather than classification errors. Next step: Adrian decides whether gate 1
-   is satisfied, then apply-mode design against a scratch workspace (platform gaps
-   #1–7 in `/specs/hubble-init/DESIGN.md` become the work queue); (2) no-data-loss — **✅ verified 2026-07-09** live on dev
+   init flow on `brain/` as the first corpus. **Two gates:** (1) triage logic —
+   **✅ satisfied 2026-07-09 by Adrian** after three dry runs (`brain/`, archive
+   stress corpus, foreign 567-platform brain; twelve learned defaults, contested
+   ratio 50% → ~18%, run records in `/specs/hubble-init/runs/`); (2) no-data-loss — **✅ verified 2026-07-09** live on dev
    (every agent/file write snapshots first; wipe, restore, and trash all recover;
    nothing prunes history). Caveats: ~60s live-typing granularity, prod re-run pending,
    pre-move commit still required. Evidence:
