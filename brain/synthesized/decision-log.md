@@ -2,6 +2,17 @@
 
 Newest first. Cite sources; keep entries short.
 
+## 2026-07-09 — Archive triage defaults (second dry run, stress corpus)
+**Decision:** three more init defaults from the archive run: (4) **no archive
+exemption** — archived/executed docs follow the same content split rules; "archive"
+is an organizational property the destination preserves, never a triage input, and
+mixed docs split even when dead; (5) **the cloud brain holds strategy history** —
+superseded vision/strategy and candid critiques move (engineering history stays
+git-side); (6) **relocate-within-git is a valid triage verb** for misfiled-but-live
+docs. Contested ratio fell 50% → ~19% with run-1 defaults active.
+**Source:** `sources/2026-07-09-archive-stress-run-answers.md`; run record
+`/specs/hubble-init/runs/2026-07-09-archive-stress-run.md`.
+
 ## 2026-07-09 — Init-triage defaults set by first dry run (skill v1 drafted)
 **Decision:** the hubble-init skill exists (`.claude/skills/hubble-init/SKILL.md`,
 dry-run only) and its opening-proposal defaults are now: (1) **mixed strategy+build

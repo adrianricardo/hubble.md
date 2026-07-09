@@ -11,6 +11,13 @@
   Adrian's triage answers, folded three new defaults back into the skill. Run record:
   `specs/hubble-init/runs/2026-07-09-brain-first-dry-run.md`; decision-log entry added;
   source: `sources/2026-07-09-first-init-dry-run-triage-answers.md`.
+- 2026-07-09 — Second hubble-init dry run (archive stress corpus, 35 files). Three
+  new defaults folded into the skill (no archive exemption; cloud holds strategy
+  history; relocate-within-git verb). Run record:
+  `specs/hubble-init/runs/2026-07-09-archive-stress-run.md`; decision-log entry;
+  source: `sources/2026-07-09-archive-stress-run-answers.md`. Flagged for later:
+  ORCHESTRATION-NOTES.md is misfiled in the archive (un-archive decided, applies at
+  apply-mode time or earlier by hand).
 - 2026-07-09 — Version-history verification run (code audit + live dev-deployment
   test): no-data-loss gate for the split dogfood is now ✅ with caveats. Wrote
   specs/hubble-init/VERIFICATION-version-history.md; updated roadmap + open-questions.
