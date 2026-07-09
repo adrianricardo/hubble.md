@@ -10,9 +10,11 @@
 - **Eventual product name.** Resolved that "huddle" was a typo and hubble stands *for
   now* — but Adrian intends to rename eventually (2026-07-09). What's the name, and
   when? Avoid baking "hubble" into expensive-to-change surfaces meanwhile.
-- **Version-history trust (gates the split dogfood).** Does Hubble's cloud version
-  history + restore actually protect against data loss well enough to move real
-  strategy docs out of git? Needs a verification pass (see DESIGN.md §Safety gate).
+- ~~**Version-history trust (gates the split dogfood).**~~ **Resolved 2026-07-09: yes,
+  safe to move data** for agent/file paths — verified live (snapshot-before-every-patch,
+  restore, soft-delete trash, no pruning). Remaining caveats tracked in
+  `/specs/hubble-init/VERIFICATION-version-history.md`: ~60s live-typing revision
+  granularity; re-verify on prod once deployed.
 - **Headless/authenticated repo-link path.** The CLI is unauthenticated and mount logic
   lives only in the Electron main process — required for init (see DESIGN.md §Gaps).
 - **Should the Hubble product ship a brain-keeper maintenance agent** (post-init upkeep

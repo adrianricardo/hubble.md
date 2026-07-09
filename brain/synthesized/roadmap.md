@@ -19,9 +19,12 @@
    skill iteratively *in this repo* so it can be modified as we go; dry-run first.
 3. **Track C — Dogfood the split.** Target state: this brain splits — mechanics/build
    docs stay in git, strategy/vision moves to Hubble cloud — driven by the interactive
-   init flow on `brain/` as the first corpus. **Two gates:** triage logic feels good
-   (dry-runs), and no-data-loss verified (cloud version history + restore demoed;
-   pre-move commit as backup). See decision log 2026-07-09.
+   init flow on `brain/` as the first corpus. **Two gates:** (1) triage logic feels good
+   (dry-runs) — still open; (2) no-data-loss — **✅ verified 2026-07-09** live on dev
+   (every agent/file write snapshots first; wipe, restore, and trash all recover;
+   nothing prunes history). Caveats: ~60s live-typing granularity, prod re-run pending,
+   pre-move commit still required. Evidence:
+   `/specs/hubble-init/VERIFICATION-version-history.md`.
 4. **Track D — Vision extraction (Adrian-gated).** InterviewMe session when ready; then
    revise `current-vision.md` and re-derive UX priorities. Blocks "app matches my
    vision/UX" work at scale.
