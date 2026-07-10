@@ -87,6 +87,10 @@ function blockToMarkdown(node: JSONContent): string {
 			return `<iframe src="${escapeHtmlAttr(src)}"></iframe>`;
 		}
 
+		case "table": {
+			return tableToMarkdown(node);
+		}
+
 		default:
 			return "";
 	}
@@ -176,13 +180,81 @@ function listItemToMarkdown(item: JSONContent, number?: number): string {
 	return `${prefix} ${content}`;
 }
 
-function inlineToMarkdown(nodes: JSONContent[]): string {
+function tableToMarkdown(table: JSONContent): string {
+	const rows = (table.content ?? []).filter((row) => row.type === "tableRow");
+	if (rows.length === 0) return "";
+
+	const columnCount = rows.reduce(
+		(max, row) => Math.max(max, row.content?.length ?? 0),
+		0,
+	);
+	if (columnCount === 0) return "";
+
+	const headerCells = rows[0].content ?? [];
+	const header = serializeTableRow(headerCells, columnCount);
+	const separator = Array.from({ length: columnCount }, (_, index) =>
+		tableAlignSeparator(headerCells[index]?.attrs?.align),
+	);
+	const body = rows
+		.slice(1)
+		.map((row) => serializeTableRow(row.content ?? [], columnCount));
+
+	return [header, separator, ...body]
+		.map((cells) => `| ${cells.join(" | ")} |`)
+		.join("\n");
+}
+
+function serializeTableRow(
+	cells: JSONContent[],
+	columnCount: number,
+): string[] {
+	return Array.from({ length: columnCount }, (_, index) =>
+		tableCellToMarkdown(cells[index]),
+	);
+}
+
+function tableCellToMarkdown(cell: JSONContent | undefined): string {
+	if (!cell) return "";
+	const blocks = cell.content ?? [];
+	return blocks.map(tableCellBlockToMarkdown).filter(Boolean).join(" ");
+}
+
+function tableCellBlockToMarkdown(node: JSONContent): string {
+	if (node.type === "paragraph") {
+		return escapeTableCellPipes(
+			inlineToMarkdown(node.content ?? [], { hardBreak: "space" }),
+		);
+	}
+	return escapeTableCellPipes(blockToMarkdown(node).replace(/\s*\n+\s*/g, " "));
+}
+
+function tableAlignSeparator(align: unknown) {
+	switch (align) {
+		case "left":
+			return ":---";
+		case "center":
+			return ":---:";
+		case "right":
+			return "---:";
+		default:
+			return "---";
+	}
+}
+
+function escapeTableCellPipes(value: string) {
+	return value.replace(/(?<!\\)\|/g, "\\|");
+}
+
+function inlineToMarkdown(
+	nodes: JSONContent[],
+	options: { hardBreak?: "markdown" | "space" } = {},
+): string {
 	let result = "";
 	for (let i = 0; i < nodes.length; ) {
 		const attrs = getLinkAttrs(nodes[i]);
 		const key = linkKey(attrs);
 		if (!attrs || !key) {
-			result += nodeToMarkdown(nodes[i]);
+			result += nodeToMarkdown(nodes[i], options);
 			i += 1;
 			continue;
 		}
@@ -193,7 +265,7 @@ function inlineToMarkdown(nodes: JSONContent[]): string {
 			grouped.push(removeLinkMark(nodes[j]));
 			j += 1;
 		}
-		const text = grouped.map(nodeToMarkdown).join("");
+		const text = grouped.map((node) => nodeToMarkdown(node, options)).join("");
 		if (attrs.kind === "wiki") {
 			const target = attrs.target || attrs.href;
 			const defaultText = wikiDisplayNameForTarget(target);
@@ -213,7 +285,10 @@ function escapeWikiAlias(alias: string) {
 	return alias.split("|").join("\\|");
 }
 
-function nodeToMarkdown(node: JSONContent): string {
+function nodeToMarkdown(
+	node: JSONContent,
+	options: { hardBreak?: "markdown" | "space" } = {},
+): string {
 	if (!node.type) return "";
 
 	switch (node.type) {
@@ -246,6 +321,7 @@ function nodeToMarkdown(node: JSONContent): string {
 		}
 
 		case "hardBreak": {
+			if (options.hardBreak === "space") return " ";
 			return "  \n"; // Two spaces + newline creates a line break in Markdown
 		}
 

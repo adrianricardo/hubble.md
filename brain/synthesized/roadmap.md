@@ -23,6 +23,9 @@ real content yet; that's the step after):
 - Branch `v1-release`. RB1–RB7 repo-brain code phases are **committed** (folder shares,
   guest web experience, desktop repo-link mount + BRAIN.md seeding, guest onboarding,
   launch-gate prep) — see git log 2026-07-03..05.
+- Uncommitted 2026-07-09 editor work adds basic GFM table support: shared Tiptap table
+  schema, markdown round-trip conversion, slash-command insertion, floating table
+  controls, and editor table styling. It is not committed.
 - **Uncommitted work in the tree** (not yet described by any doc): `SpaceSwitcher.tsx`,
   `packages/cloud-ui/`, edits across desktop + www shells, members backend. Needs a
   fact-check/documentation pass before it drifts.

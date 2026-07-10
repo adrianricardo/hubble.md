@@ -1,5 +1,9 @@
 # Brain Activity Log
 
+- 2026-07-09 — Added uncommitted build-state note for GFM table support in
+  `brain/synthesized/roadmap.md`: shared editor schema + markdown round-trip,
+  slash-command insertion, table controls, and editor styling. No roadmap priority
+  change; apply-mode remains the next step.
 - 2026-07-09 — Brain established. Created `brain/` (README, RESOLVER, BRAINKEEPER,
   synthesized/{current-vision, decision-log, open-questions, roadmap}, sources/, admin/).
   Archived 17 executed/superseded docs + `tasks/` to `/specs/realtime-collab/archive/`.
