@@ -89,3 +89,29 @@ Verified fidelity classes across 42 docs (final):
   its creds were not kept.
 - Desktop repo-link/watch of the shared folder was NOT exercised (projection is
   a one-shot CLI export). That's the next milestone.
+
+## Addendum — handoff failure and redo (same day)
+
+The folder-share handoff failed in practice: the desktop sidebar renders only
+per-document shares and the repo-link picker lists member workspaces only, so
+Adrian (signed in correctly, right deployment) could not see the folder at all
+(DESIGN.md gap #10). Worse, the run creds had been deleted per the then-current
+skill policy, so the original workspace `mn75enwbcm…` could not be re-shared or
+fixed — it is now orphaned junk on dev (also orphaned: two smoke accounts, the
+"hubble-init-cli-smoke" workspace, and a folder+workspace share noise on Adrian's
+account).
+
+Redo: new throwaway (`hubble-init-run2-…`), workspace **"567 Product Brain"**
+`mn707vx0fhbecyjvvgh915gh6h8a8vs6` (name "567 Brain" was taken — workspace names
+are globally unique), top folder "567 Brain" `kx7bgt6h7acs862t67ygnhd0rd8a82wb`,
+43 docs re-uploaded from the verified mount, export-diff re-verified, and Adrian
+added via `members:inviteWorkspaceMember` role **owner** (status "added"). Mount
+re-materialized from workspace 2; 567-platform README/AGENTS updated (`6787174`).
+
+New finding while re-verifying: the emphasis serializer is **divergent** — each
+import/export cycle adds 4 asterisks to nested emphasis (5 → 9 observed). Gap #8
+upgraded from "non-canonical" to "must be idempotent".
+
+Policy fixes folded into SKILL.md: handoff = workspace owner membership (not
+folder share); keep throwaway creds until the user confirms visibility in their
+UI; creds for this run retained pending Adrian's confirmation.

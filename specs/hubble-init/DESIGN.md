@@ -109,12 +109,20 @@ it runs in:
    rewrites or flags asset links in moved docs. No binary hosting required for v1.
 8. **Markdown fidelity** (found by the first apply run's export-diff): Live Documents
    silently dropped GFM tables — fixed (`65c21c6`, editor schema + round-trip). Still
-   open: lone `~` doubles into `~~` (strikethrough serializer), YAML frontmatter
-   flattens to text, bare URLs/emails get autolinked. Apply-mode's verify-before-delete
+   open, and **divergent under repeated round-trips**: nested emphasis gains 4
+   asterisks per import/export cycle (`*x*` → `*****x*****` → `*********x*********`),
+   lone `~` doubles into `~~`, YAML frontmatter flattens to text, bare URLs/emails get
+   autolinked. The serializer must become idempotent. Apply-mode's verify-before-delete
    diff is the permanent guard.
-9. **Workspace ownership transfer.** Init's throwaway account owns the workspace it
-   creates; the user only gets folder-editor access via email share. Need a claim /
-   ownership-transfer path (or `hubble login`, which obsoletes the throwaway).
+9. **Workspace ownership transfer.** Mitigated: `members:inviteWorkspaceMember` with
+   role `owner` gives the user full co-ownership (used by the apply run's handoff).
+   Still needed: `hubble login` so init creates the workspace as the user directly,
+   and single-ownership transfer/claim semantics.
+10. **Folder shares are invisible in the desktop app.** The sidebar's shared-with-me
+    section renders only legacy per-document shares (`Sidebar.tsx` uses
+    `sharedWithMe.documents`, ignores `.folders`), and RepoLinkSection's workspace
+    picker lists member workspaces only — a folder-shared user can neither see nor
+    mount the folder. Found during the apply run's handoff.
 
 ## Open design questions
 

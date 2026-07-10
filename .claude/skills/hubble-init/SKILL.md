@@ -44,12 +44,22 @@ passes. If the preflight fails, fall back to dry-run and report what blocked it.
 ### Auth for headless runs (until `hubble login` exists)
 
 Convex-auth JWTs live ~1 hour. Mint a throwaway password-auth account at the start
-of the run (`auth:signIn` with `flow: "signUp"`), keep the credentials only for the
-run (re-mint with `flow: "signIn"` if the token expires mid-run), pass the JWT via
-`--auth-token`/`HUBBLE_AUTH_TOKEN`, and hand the folder to the user with
-`folders:setFolderUserShareByEmail` — that lands it in their desktop app's
-shared-with-me. Delete the credentials when the run ends. CLI stdout can carry
-backend WARN lines before ids — parse ids from the last line, never the first.
+of the run (`auth:signIn` with `flow: "signUp"`; re-mint with `flow: "signIn"` if the
+token expires mid-run) and pass the JWT via `--auth-token`/`HUBBLE_AUTH_TOKEN`.
+
+**Handoff = workspace membership, not a folder share.** Invite the user as a
+workspace member with role **owner** (`members:inviteWorkspaceMember`) — that puts
+the workspace in their workspace switcher and repo-link picker. A folder share alone
+(`folders:setFolderUserShareByEmail`) is invisible in the desktop app today: the
+sidebar's shared-with-me renders only legacy per-document shares, and the repo-link
+picker lists member workspaces only (learned the hard way, 2026-07-09 second run).
+Also note: workspace names are globally unique per deployment.
+
+**Keep the throwaway credentials until the user confirms they can see the workspace
+in their own UI** — deleting them earlier orphans the workspace with no way to
+re-share or fix anything (that mistake forced a full re-upload). Delete them only
+after confirmed handoff. CLI stdout can carry backend WARN lines before ids — parse
+ids from the last line, never the first.
 
 ## Apply-mode steps
 
