@@ -108,12 +108,17 @@ it runs in:
 7. **Asset-link handling**: binary assets stay in git (decided 2026-07-09); apply-mode
    rewrites or flags asset links in moved docs. No binary hosting required for v1.
 8. **Markdown fidelity** (found by the first apply run's export-diff): Live Documents
-   silently dropped GFM tables — fixed (`65c21c6`, editor schema + round-trip). Still
-   open, and **divergent under repeated round-trips**: nested emphasis gains 4
-   asterisks per import/export cycle (`*x*` → `*****x*****` → `*********x*********`),
-   lone `~` doubles into `~~`, YAML frontmatter flattens to text, bare URLs/emails get
-   autolinked. The serializer must become idempotent. Apply-mode's verify-before-delete
-   diff is the permanent guard.
+   silently dropped GFM tables — fixed (`65c21c6`, editor schema + round-trip).
+   *Closed 2026-07-10:* serializer is now idempotent — nested-emphasis divergence
+   (mark-run serialization replaces per-text-node wrapping), lone `~` doubling
+   (`singleTilde: false`), YAML frontmatter round-trips verbatim (opaque
+   `frontMatter` node; frozen decision: no structured editing v1), bare
+   URLs/emails keep their source style. `packages/editor/src/roundTrip.test.ts`
+   is the regression corpus. Residual: four app call sites pre-strip frontmatter
+   and should adopt the new path (`packages/ui` EditorView ×2, desktop
+   `App.tsx`, www EditorView); escaping normalizes some equivalent syntax
+   (`_x_` → `*x*`) — idempotent but not byte-identical on first cycle.
+   Apply-mode's verify-before-delete diff remains the permanent guard.
 9. **Workspace ownership transfer.** Mitigated: `members:inviteWorkspaceMember` with
    role `owner` gives the user full co-ownership (used by the apply run's handoff).
    Still needed: `hubble login` so init creates the workspace as the user directly,

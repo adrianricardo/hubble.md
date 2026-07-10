@@ -15,9 +15,14 @@ Next session, in order:
    repo-link metadata set): verify it appears in shared-with-me, mount it over
    `567-platform/brain/cloud/`, and confirm live watch replaces the one-shot CLI
    export. This exercises the RB3 desktop path against an init-created folder.
-2. Fix serializer bugs found by the run (DESIGN.md §Gap #8): lone `~` → `~~`
-   doubling; decide on frontmatter handling. Gap #9 (workspace ownership
-   transfer / `hubble login`) is the auth follow-up.
+2. ~~Fix serializer bugs (DESIGN.md §Gap #8)~~ **✅ done 2026-07-10** (working
+   tree, uncommitted): all four bugs fixed in `packages/editor` — nested-emphasis
+   divergence, lone `~` doubling, verbatim frontmatter round-trip (frozen
+   decision: opaque block, no structured editing), bare-URL/autolink
+   preservation. `roundTrip.test.ts` is the idempotency guard. Follow-up: four
+   call sites pre-strip frontmatter and should adopt the new path
+   (`packages/ui` EditorView ×2, desktop `App.tsx`, www EditorView). Gap #9
+   (workspace ownership transfer / `hubble login`) is the auth follow-up.
 3. Then the real dogfood target 2: split THIS repo's `brain/` (pre-move commit +
    version-history restore demo first, per Track C).
 

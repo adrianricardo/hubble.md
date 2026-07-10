@@ -1,5 +1,13 @@
 # Brain Activity Log
 
+- 2026-07-10 — Serializer idempotency fixed (DESIGN.md gap #8, all four bugs):
+  nested-emphasis divergence (root cause: per-text-node mark wrapping; now
+  mark-run serialization), lone `~` doubling (`singleTilde: false`), verbatim
+  frontmatter round-trip (opaque `frontMatter` node), bare-URL/autolink style
+  preservation. New `roundTrip.test.ts` idempotency corpus; 49/49 editor tests
+  green, desktop tsc clean. Implemented via Codex delegation, Claude-reviewed.
+  In working tree, uncommitted. Roadmap NEXT STEP item 2 done; item 3 (brain
+  split) unblocked.
 - 2026-07-09 — Added uncommitted build-state note for GFM table support in
   `brain/synthesized/roadmap.md`: shared editor schema + markdown round-trip,
   slash-command insertion, table controls, and editor styling. No roadmap priority
