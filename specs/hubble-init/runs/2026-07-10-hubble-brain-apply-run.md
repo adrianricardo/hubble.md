@@ -38,8 +38,8 @@ before any destruction. Move commit: `fa26cc4`.
 - 10 docs + seeded BRAIN.md `kn77988rx3a8shmhrndj1nqygh8aah14` (doc ids in run
   scratch). Adrian invited owner member (status "added",
   user `mh7bw1v5nzb3my247f8kf0817989cz28`).
-- Run creds: `~/.hubble-init-run3-creds` — **delete only after Adrian confirms the
-  workspace in his UI.**
+- Run creds: **deleted 2026-07-11** after Adrian confirmed the workspace + folder
+  tree in his desktop UI (handoff complete; he holds owner membership).
 
 ## Verification (rule 13 gate)
 
