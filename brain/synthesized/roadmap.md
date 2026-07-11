@@ -40,17 +40,21 @@ Next session, in order:
    RESOLVER+BRAINKEEPER consolidated into one governance doc. Run record:
    `/specs/hubble-init/runs/2026-07-10-hubble-brain-apply-run.md`.
 
-## ➤ NEXT STEP (updated 2026-07-10, post-split)
+## ➤ NEXT STEP (updated 2026-07-11)
 
-1. **Adrian: desktop repo-link the "Hubble Brain" folder** → mount path
-   `<repo>/brain/cloud` (repo root = this repo) to activate live watch; the current
-   projection is a one-shot CLI export. Confirm workspace visibility so the run
-   creds can be deleted (`~/.hubble-init-run3-creds`).
-2. Serializer quality follow-up (non-blocking): list-item continuation lines lose
-   their indentation on re-serialization (whitespace-only, stable, but ugly) — add
-   continuation-indent preservation to `packages/editor`.
-3. Then per track strategy (cloud `synthesized/track-strategy.md`): Track D vision
-   extraction when Adrian is ready; production deploy/QA gates remain not run.
+**Execute `/specs/hubble-init/MAGIC-FLOW-PLAN.md`, Phases 1 + 2** (use /codex-first):
+`hubble login` device-flow auth + zero-click live link. Written 2026-07-11 from
+Adrian's decisions after the split run: static export must never be an end state;
+the init flow must feel like magic (approve login once, grant install permission,
+nothing else manual). Phase 3 = ensure-desktop install magic; Phase 4 = repo-link
+form fixes. Context: split done 2026-07-10 (see below); handoff confirmed
+2026-07-11, run creds deleted; `brain/cloud/` here is still a static projection —
+Phase 2's migration step makes it live.
+
+Backlog (non-blocking): serializer continuation-indent preservation
+(`packages/editor`, whitespace-only normalization from the split run); frontmatter
+call-site adoption (4 sites); Track D vision extraction (Adrian-gated); production
+deploy/QA gates still not run.
 
 ## Where the build actually is (2026-07-09)
 
