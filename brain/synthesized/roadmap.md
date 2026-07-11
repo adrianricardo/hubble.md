@@ -1,5 +1,9 @@
 # Roadmap / Current State
 
+Build-state half of the roadmap. Track strategy/sequencing moved to the cloud brain
+(`brain/cloud/synthesized/track-strategy.md` when mounted) — split 2026-07-10 by the
+hubble-init apply run.
+
 ## ➤ NEXT STEP (updated 2026-07-09, post-apply-run)
 
 **Apply-mode is built and has run for real once**: `567-platform/brain` was split into
@@ -28,8 +32,25 @@ Next session, in order:
    call sites pre-strip frontmatter and should adopt the new path
    (`packages/ui` EditorView ×2, desktop `App.tsx`, www EditorView). Gap #9
    (workspace ownership transfer / `hubble login`) is the auth follow-up.
-3. Then the real dogfood target 2: split THIS repo's `brain/` (pre-move commit +
-   version-history restore demo first, per Track C).
+3. ~~Split THIS repo's `brain/`~~ **✅ done 2026-07-10** — Track C target 2 executed
+   by the hubble-init apply run: 10 docs (8 whole + cloud halves of decision-log and
+   roadmap) → "Hubble Brain" folder, workspace "Hubble Product Brain" (dev), Adrian
+   owner member. Export-diff gate passed (whitespace normalization + one mark-order
+   canonicalization; zero content loss; all exports are round-trip fixed points).
+   RESOLVER+BRAINKEEPER consolidated into one governance doc. Run record:
+   `/specs/hubble-init/runs/2026-07-10-hubble-brain-apply-run.md`.
+
+## ➤ NEXT STEP (updated 2026-07-10, post-split)
+
+1. **Adrian: desktop repo-link the "Hubble Brain" folder** → mount path
+   `<repo>/brain/cloud` (repo root = this repo) to activate live watch; the current
+   projection is a one-shot CLI export. Confirm workspace visibility so the run
+   creds can be deleted (`~/.hubble-init-run3-creds`).
+2. Serializer quality follow-up (non-blocking): list-item continuation lines lose
+   their indentation on re-serialization (whitespace-only, stable, but ugly) — add
+   continuation-indent preservation to `packages/editor`.
+3. Then per track strategy (cloud `synthesized/track-strategy.md`): Track D vision
+   extraction when Adrian is ready; production deploy/QA gates remain not run.
 
 ## Where the build actually is (2026-07-09)
 
@@ -45,30 +66,3 @@ Next session, in order:
   fact-check/documentation pass before it drifts.
 - Production deploy/QA gates were deferred by the pivot (one repo-first launch) and
   remain not run. QA runbook: `/specs/realtime-collab/TEST-RUNBOOK.md`.
-
-## Parallel tracks (agreed 2026-07-09)
-
-1. **Track A — Brain/doc system** ✅ in place (this directory). Ongoing: file new
-   material per `RESOLVER.md`; keep `current-vision.md` honest.
-2. **Track B — hubble-init skill.** Design in `/specs/hubble-init/DESIGN.md`. Skill
-   drafted 2026-07-09; **apply-mode added and executed for real the same day**
-   (567-platform split — see NEXT STEP). Iterate in-repo via dogfood runs (records
-   in `/specs/hubble-init/runs/`).
-3. **Track C — Dogfood the split.** Target state: this brain splits — mechanics/build
-   docs stay in git, strategy/vision moves to Hubble cloud — driven by the interactive
-   init flow on `brain/` as the first corpus. **Two gates:** (1) triage logic —
-   **✅ satisfied 2026-07-09 by Adrian** after three dry runs (`brain/`, archive
-   stress corpus, foreign 567-platform brain; twelve learned defaults, contested
-   ratio 50% → ~18%, run records in `/specs/hubble-init/runs/`); (2) no-data-loss — **✅ verified 2026-07-09** live on dev
-   (every agent/file write snapshots first; wipe, restore, and trash all recover;
-   nothing prunes history). Caveats: ~60s live-typing granularity, prod re-run pending,
-   pre-move commit still required. Evidence:
-   `/specs/hubble-init/VERIFICATION-version-history.md`.
-4. **Track D — Vision extraction (Adrian-gated).** InterviewMe session when ready; then
-   revise `current-vision.md` and re-derive UX priorities. Blocks "app matches my
-   vision/UX" work at scale.
-
-## Sequence note
-
-A→B→C is the mechanical order; D can land anytime and reshapes C's corpus and the
-product priorities. Don't start large app-UX rework before D.

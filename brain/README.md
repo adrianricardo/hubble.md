@@ -1,36 +1,36 @@
 # Hubble Product Brain
 
 **Read this first in any fresh session doing product/vision/planning work on hubble.md.**
-This directory is the durable product brain for Hubble — vision, decisions, open
-questions, roadmap — kept separate from feature specs (`/specs/`) and code docs.
+The brain was **split 2026-07-10** by the hubble-init apply run (Track C dogfood):
+mechanics/build docs stay here in git; strategy/vision lives in the Hubble cloud folder
+"Hubble Brain" (workspace "Hubble Product Brain", dev deployment), which mounts into
+this repo at `brain/cloud/` via the desktop app's repo-link.
 
-It is deliberately structured like the 567-platform brain (`~/Code/567-platform/brain`),
-whose brain-keeper pattern we adopted on 2026-07-09 (see decision log). It is also the
-**dogfood corpus**: when the `hubble-init` extraction skill is ready, this directory is
-what we run it on (see `/specs/hubble-init/DESIGN.md`).
+## Git half (this directory)
 
-## ⚠ Status: PENDING EXTRACTION
+- `synthesized/decision-log.md` — engineering/build decisions (product decisions moved
+  to cloud `synthesized/product-decisions.md`)
+- `synthesized/roadmap.md` — **where the build is + what's next** (the progress
+  contract's single source; track strategy moved to cloud `synthesized/track-strategy.md`)
+- `BRAINKEEPER.md` — the one governance doc: filing rules (resolver), maintenance
+  non-negotiables, session wrap-up. Governs both halves.
+- `cloud/` — the mounted cloud half (git-excluded; absent until the desktop repo-link
+  mount is set up on this machine).
 
-Adrian has **significantly more vision and UX direction in his head than is written
-here** (stated 2026-07-09). `synthesized/current-vision.md` is the best current written
-approximation, not the full vision. Do not treat gaps as decisions. Before large
-product/UX build-outs, prompt Adrian for an extraction session (InterviewMe-style).
-Tracking: `admin/pending-extraction.md`.
+## Cloud half (`brain/cloud/` when mounted)
 
-## Layout
+`BRAIN.md` (index + **PENDING EXTRACTION** status), `synthesized/current-vision.md`,
+`synthesized/product-decisions.md`, `synthesized/track-strategy.md`,
+`synthesized/open-questions.md`, `admin/activity-log.md`, `admin/pending-extraction.md`,
+`sources/` (append-only session captures).
 
-- `synthesized/` — derived truth. Update these; preserve prior state in each file's Timeline section.
-  - `current-vision.md` — the product vision as currently understood (start here)
-  - `decision-log.md` — dated decisions with rationale
-  - `open-questions.md` — unresolved items
-  - `roadmap.md` — current state of the build + what's next, incl. the parallel tracks
-- `sources/` — raw, append-only captures (session notes, transcripts, fragments). Never rewrite; file as `YYYY-MM-DD-description.md`.
-- `admin/` — brain bookkeeping: `activity-log.md`, `pending-extraction.md`.
-- `RESOLVER.md` — where new information belongs (filing decision tree).
-- `BRAINKEEPER.md` — the maintenance role and its non-negotiables.
+**No mount on this machine?** The pre-split state of every moved doc is reachable in
+git history (pre-move commit noted in the move commit message), and the cloud is
+canonical going forward. The **PENDING EXTRACTION** caveat still applies: Adrian has
+more vision in his head than is written; don't treat gaps as decisions.
 
 ## Relationship to /specs
 
 - `/specs/realtime-collab/` — engineering specs for the realtime-collab/repo-brain build (TECH, SYNCED-FOLDER, runbooks) + `archive/` of executed/superseded plans.
-- `/specs/hubble-init/` — design for the agent-run init/extraction skill (the new front door).
-- Vision lives **here**, not in specs. Specs describe how; the brain describes what and why.
+- `/specs/hubble-init/` — design for the agent-run init/extraction skill (the new front door); run records in `runs/`.
+- Vision lives in the **cloud half**, not in specs. Specs describe how; the brain describes what and why.

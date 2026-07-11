@@ -14,10 +14,12 @@ Convex agent skills for common tasks can be installed by running
 
 ## Orientation — product brain
 
-For any product/vision/planning work, **read `brain/README.md` first**. The `brain/`
-directory is the durable product brain (vision, decision log, open questions, roadmap),
-maintained per `brain/BRAINKEEPER.md` + `brain/RESOLVER.md`. Note the **PENDING
-EXTRACTION** status there before making vision-level assumptions. Engineering specs:
+For any product/vision/planning work, **read `brain/README.md` first**. The brain is
+**split** (2026-07-10): build state + engineering decisions stay in git under `brain/`;
+strategy/vision lives in the Hubble cloud folder mounted at `brain/cloud/` (absent
+without the desktop repo-link mount). Governance: `brain/BRAINKEEPER.md` (single doc,
+governs both halves). Note the **PENDING EXTRACTION** status before making
+vision-level assumptions. Engineering specs:
 `specs/realtime-collab/` (current) and `specs/hubble-init/` (agent-init front door);
 executed/superseded plans are in `specs/realtime-collab/archive/`.
 
@@ -25,7 +27,7 @@ executed/superseded plans are in `specs/realtime-collab/archive/`.
 
 `brain/synthesized/roadmap.md` is the single source of **where the build is and what
 the next step is**. Read it when starting work; **before ending any session that
-changed the build or direction, update it** and log the pass per `brain/RESOLVER.md`.
+changed the build or direction, update it** and log the pass per `brain/BRAINKEEPER.md`.
 There is no separate progress command — this convention is the mechanism. (Do not use
 `specs/realtime-collab/archive/PROGRESS.md`; it is a historical record of the web-first
 era.)
