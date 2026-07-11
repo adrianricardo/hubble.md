@@ -37,29 +37,19 @@ passes. If the preflight fails, fall back to dry-run and report what blocked it.
 2. **A confirmed triage exists** — either a prior run record with the user's final
    calls for this corpus, or a fresh interactive triage completed in this session.
    Never apply an unconfirmed opening proposal.
-3. **Workspace target is explicit.** The user has named the workspace (or approved
-   creating a scratch one) and knows whether it's owned by their account or by a
-   throwaway run account with the folder shared to them by email.
+3. **Workspace target is explicit.** The user has named the workspace or approved
+   creating one in their own account.
 
-### Auth for headless runs (until `hubble login` exists)
+### Auth for headless runs
 
-Convex-auth JWTs live ~1 hour. Mint a throwaway password-auth account at the start
-of the run (`auth:signIn` with `flow: "signUp"`; re-mint with `flow: "signIn"` if the
-token expires mid-run) and pass the JWT via `--auth-token`/`HUBBLE_AUTH_TOKEN`.
+Preflight checks that the local CLI is logged in as the user. If
+`~/.hubble/credentials.json` is missing or a cloud command reports that the saved login
+expired or was revoked, stop and prompt the user to run `hubble login` for the target
+deployment. Do not mint throwaway accounts for apply-mode runs.
 
-**Handoff = workspace membership, not a folder share.** Invite the user as a
-workspace member with role **owner** (`members:inviteWorkspaceMember`) — that puts
-the workspace in their workspace switcher and repo-link picker. A folder share alone
-(`folders:setFolderUserShareByEmail`) is invisible in the desktop app today: the
-sidebar's shared-with-me renders only legacy per-document shares, and the repo-link
-picker lists member workspaces only (learned the hard way, 2026-07-09 second run).
-Also note: workspace names are globally unique per deployment.
-
-**Keep the throwaway credentials until the user confirms they can see the workspace
-in their own UI** — deleting them earlier orphans the workspace with no way to
-re-share or fix anything (that mistake forced a full re-upload). Delete them only
-after confirmed handoff. CLI stdout can carry backend WARN lines before ids — parse
-ids from the last line, never the first.
+Workspaces and folders are created as the logged-in user from the first API call.
+Workspace names are globally unique per deployment. CLI stdout can carry backend WARN
+lines before ids — parse ids from the last line, never the first.
 
 ## Apply-mode steps
 
@@ -67,7 +57,9 @@ Uploads first, destruction last — the working tree is not touched until every 
 doc is verified in the cloud.
 
 1. **Create the destination**: `hubble cloud create`/`connect` (workspace), then
-   `hubble cloud folder create` mirroring the corpus's directory structure.
+   `hubble cloud folder create` mirroring the corpus's directory structure. These
+   calls must use the saved `hubble login` identity unless the user explicitly
+   supplied a stronger auth override.
 2. **Upload the move set**: `hubble cloud document create --title … --file … --folder
    … --path …` for every moved doc, preserving relative paths.
 3. **Execute splits** (rule 1 docs): write the git-side half in place, upload the
@@ -79,14 +71,15 @@ doc is verified in the cloud.
 5. **The move commit**: remove moved originals, update indexes that enumerated them
    (rule 7), rewrite/flag asset links (rule 11), then commit — the commit message
    names the workspace/folder ids and states the honest-scope rule. Push it.
-6. **Mount the projection**: create the mount dir, append the anchored pattern to
-   `.git/info/exclude` (never `.gitignore`), materialize with `hubble cloud folder
-   export --folder … --out <mount>`. Live watch stays a desktop-app job (gap #2).
+6. **Mount the live folder**: run `hubble mount --workspace … --folder …
+   --folder-name … --repo <repo> [--path <mount>]`. This hands the link to the
+   desktop app, starts the watched mount with zero clicks, and must not be treated as
+   complete until the CLI proves the mount is live.
 7. **Seed BRAIN.md** via `hubble cloud document create` — only if the folder has no
    BRAIN.md/brain-titled doc already (seed-once, never regenerate).
-8. **Hand off to the user** via workspace **owner membership**
-   (`members:inviteWorkspaceMember`, role owner) — never a folder share alone (see
-   Auth section; folder shares are invisible in the desktop app today).
+8. **Confirm ownership**: because the workspace was created as the logged-in user,
+   verify the workspace appears for that account before proceeding to mount/link
+   steps.
 9. **Progress contract** (rule 8): CLAUDE.md pointer block; AGENTS.md → symlink to
    CLAUDE.md after merging any unique content; roadmap doc seeded if missing.
 10. **Re-point external consumers** (rule 9): update sibling-repo symlinks/references

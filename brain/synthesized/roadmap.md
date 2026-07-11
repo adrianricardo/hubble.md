@@ -40,16 +40,27 @@ Next session, in order:
    RESOLVER+BRAINKEEPER consolidated into one governance doc. Run record:
    `/specs/hubble-init/runs/2026-07-10-hubble-brain-apply-run.md`.
 
-## ➤ NEXT STEP (updated 2026-07-11)
+## ➤ NEXT STEP (updated 2026-07-11, Phase 2 implemented)
 
-**Execute `/specs/hubble-init/MAGIC-FLOW-PLAN.md`, Phases 1 + 2** (use /codex-first):
-`hubble login` device-flow auth + zero-click live link. Written 2026-07-11 from
-Adrian's decisions after the split run: static export must never be an end state;
-the init flow must feel like magic (approve login once, grant install permission,
-nothing else manual). Phase 3 = ensure-desktop install magic; Phase 4 = repo-link
-form fixes. Context: split done 2026-07-10 (see below); handoff confirmed
-2026-07-11, run creds deleted; `brain/cloud/` here is still a static projection —
-Phase 2's migration step makes it live.
+**Phase 1 of `/specs/hubble-init/MAGIC-FLOW-PLAN.md` is implemented in the working
+tree**: `hubble login` device-flow auth now creates one-time device requests,
+approves them through `/device`, stores a Convex Auth refresh token in
+`~/.hubble/credentials.json`, and refreshes CLI JWTs through `auth:signIn`.
+Apply-mode guidance now assumes workspaces are created as the logged-in user instead
+of through throwaway accounts.
+
+**Phase 2 of `/specs/hubble-init/MAGIC-FLOW-PLAN.md` is implemented in the working
+tree**: the desktop app registers `hubble://`, exposes a 0600 Unix CLI socket,
+accepts `status` + `link-repo`, runs socket mounts through the same repo-link helper
+as the settings UI, deletes stale `.hubble-export.json` markers, pushes an undo toast,
+tracks `lastReconcileAt`, and exposes clean-undo removal based on the sync index.
+`hubble mount` now launches/contacts the app, guards deployment/account mismatch,
+links the repo, and exits only after the app reports a live connected mount with the
+sync index present. `hubble cloud folder export` now writes `.hubble-export.json` so a
+static projection cannot masquerade as live.
+
+Next build step: dogfood Phase 2 by relinking `brain/cloud/` live, then Phase 3 =
+ensure-desktop install magic; Phase 4 = repo-link form fixes.
 
 Backlog (non-blocking): serializer continuation-indent preservation
 (`packages/editor`, whitespace-only normalization from the split run); frontmatter

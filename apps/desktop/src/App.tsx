@@ -403,6 +403,42 @@ function AppContent() {
 	}, []);
 
 	useEffect(() => {
+		if (!cloudEnabled) return;
+		return desktopApi.onRepoLinkLinked((event) => {
+			const relativeMount = relativeChildPath(event.repoDir, event.mountPath);
+			const toastId = toast(`${event.folderName} mounted at ${relativeMount}`, {
+				duration: Infinity,
+				action: {
+					label: "Undo",
+					onClick: () => {
+						void desktopApi
+							.undoRepoLink({ folderId: event.folderId })
+							.then((result) => {
+								toast.dismiss(toastId);
+								if (result.removedFiles) {
+									toast("Repo unlinked", {
+										description: `Removed ${result.mountPath}.`,
+									});
+								} else {
+									toast("Repo unlinked", {
+										description: `Local edits kept at ${result.mountPath}.`,
+										duration: 12_000,
+									});
+								}
+							})
+							.catch((error) => {
+								toast.error("Failed to undo repo mount", {
+									description:
+										error instanceof Error ? error.message : String(error),
+								});
+							});
+					},
+				},
+			});
+		});
+	}, [cloudEnabled]);
+
+	useEffect(() => {
 		let active = true;
 		const init = async () => {
 			const launchPath = await desktopApi.getLaunchFilePath();
@@ -534,6 +570,9 @@ function AppContent() {
 					)}
 				</section>
 			</div>
+			{desktopConvexUrl ? (
+				<DesktopAuthStateBridge deploymentUrl={desktopConvexUrl} />
+			) : null}
 			<SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen}>
 				{desktopConvexUrl ? (
 					<>
@@ -603,6 +642,62 @@ function CloudCreateButton({
 			</Authenticated>
 		</>
 	);
+}
+
+function DesktopAuthStateBridge({ deploymentUrl }: { deploymentUrl: string }) {
+	return (
+		<>
+			<AuthLoading>{null}</AuthLoading>
+			<Unauthenticated>
+				<UnauthenticatedDesktopAuthStateBridge />
+			</Unauthenticated>
+			<Authenticated>
+				<AuthenticatedDesktopAuthStateBridge deploymentUrl={deploymentUrl} />
+			</Authenticated>
+		</>
+	);
+}
+
+function UnauthenticatedDesktopAuthStateBridge() {
+	useEffect(() => {
+		void desktopApi.setAuthState(null);
+	}, []);
+	return null;
+}
+
+function AuthenticatedDesktopAuthStateBridge({
+	deploymentUrl,
+}: {
+	deploymentUrl: string;
+}) {
+	const viewer = useQuery(api.viewer.me, {});
+	useEffect(() => {
+		if (viewer === undefined) return;
+		void desktopApi.setAuthState(
+			viewer
+				? {
+						deploymentUrl,
+						email: viewer.email ?? undefined,
+						name: viewer.name ?? undefined,
+					}
+				: null,
+		);
+	}, [deploymentUrl, viewer]);
+	return null;
+}
+
+function relativeChildPath(parent: string, child: string): string {
+	const normalizedParent = trimTrailingSlashes(parent);
+	const normalizedChild = trimTrailingSlashes(child);
+	if (normalizedChild === normalizedParent) return ".";
+	if (normalizedChild.startsWith(`${normalizedParent}/`)) {
+		return normalizedChild.slice(normalizedParent.length + 1);
+	}
+	return child;
+}
+
+function trimTrailingSlashes(value: string): string {
+	return value.replace(/\/+$/g, "");
 }
 
 function DesktopUserBadge() {

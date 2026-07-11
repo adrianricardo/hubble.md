@@ -27,6 +27,17 @@ export function RepoLinkSection({ deploymentUrl }: { deploymentUrl: string }) {
 	);
 }
 
+function formatRelativeTime(timestamp: number, now: number) {
+	const seconds = Math.max(0, Math.floor((now - timestamp) / 1000));
+	if (seconds < 60) return `${seconds}s ago`;
+	const minutes = Math.floor(seconds / 60);
+	if (minutes < 60) return `${minutes}m ago`;
+	const hours = Math.floor(minutes / 60);
+	if (hours < 24) return `${hours}h ago`;
+	const days = Math.floor(hours / 24);
+	return `${days}d ago`;
+}
+
 /** Renderer-side copy of the main process's mount-segment sanitizer (preview only). */
 function sanitizeMountSegment(name: string): string {
 	const cleaned = name
@@ -52,6 +63,7 @@ function RepoLinkManager({ deploymentUrl }: { deploymentUrl: string }) {
 	const [pending, setPending] = useState<"link" | "unlink" | null>(null);
 	const [mounts, setMounts] = useState<RepoMount[]>([]);
 	const [lastResult, setLastResult] = useState<RepoLinkResult | null>(null);
+	const [now, setNow] = useState(() => Date.now());
 	const reconnectedForToken = useRef<string | null>(null);
 
 	const refreshMounts = useCallback(async () => {
@@ -61,6 +73,11 @@ function RepoLinkManager({ deploymentUrl }: { deploymentUrl: string }) {
 	useEffect(() => {
 		void refreshMounts();
 	}, [refreshMounts]);
+
+	useEffect(() => {
+		const timer = window.setInterval(() => setNow(Date.now()), 15_000);
+		return () => window.clearInterval(timer);
+	}, []);
 
 	// Reconnect persisted mounts once per fresh JWT (mirrors the synced-folder
 	// renderer-driven token refresh pattern).
@@ -185,6 +202,12 @@ function RepoLinkManager({ deploymentUrl }: { deploymentUrl: string }) {
 										{mount.status === "disconnected"
 											? "Not syncing (sign in to reconnect)"
 											: `Sync: ${mount.status}`}
+									</p>
+									<p className="text-muted-foreground">
+										Last sync:{" "}
+										{mount.lastReconcileAt
+											? formatRelativeTime(mount.lastReconcileAt, now)
+											: "Not yet"}
 									</p>
 								</div>
 								<Button

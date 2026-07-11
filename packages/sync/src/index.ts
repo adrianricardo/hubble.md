@@ -62,6 +62,7 @@ export {
 	diffSyncedFolderIndex,
 	loadSyncedFolderIndex,
 	rekeySyncedFolderEntry,
+	SYNCED_FOLDER_INDEX_REL,
 	saveSyncedFolderIndex,
 	syncedFolderIndexPath,
 } from "./syncedFolderIndex.js";

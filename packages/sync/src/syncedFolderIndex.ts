@@ -42,9 +42,11 @@ export type SyncedFolderIndexDiff = {
 	}>;
 };
 
+export const SYNCED_FOLDER_INDEX_REL = ".hubble/index/synced-folder.json";
+
 /** Where the reverse index lives within a sync root. */
 export function syncedFolderIndexPath(syncRoot: string): string {
-	return `${syncRoot}/.hubble/index/synced-folder.json`;
+	return `${syncRoot}/${SYNCED_FOLDER_INDEX_REL}`;
 }
 
 /** Load the reverse index, returning `{}` when it has not been written yet. */

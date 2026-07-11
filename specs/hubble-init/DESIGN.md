@@ -7,8 +7,10 @@ Vision: `/brain/synthesized/current-vision.md`. Visual: the v1.1 storyboard, sce
 
 **Status: apply-mode built and executed once for real** — first apply run split
 `567-platform/brain` into the "567 Brain" workspace on dev (2026-07-09, run record
-`runs/2026-07-09-567-brain-apply-run.md`). Desktop repo-link/watch handoff and
-`hubble login` remain open.
+`runs/2026-07-09-567-brain-apply-run.md`). Magic-flow Phases 1+2 landed 2026-07-11:
+`hubble login` device-flow auth and the zero-click live link (`hubble mount` →
+desktop CLI socket). Live-machine acceptance (browser approve, toast, `brain/cloud/`
+relink) pending; Phases 3–4 open.
 
 ## Flow
 
@@ -85,19 +87,26 @@ it runs in:
 
 ## Gaps in the platform this needs (verified against code 2026-07-09)
 
-1. **Authenticated headless path.** *Partially closed 2026-07-09:* the CLI accepts
-   `--auth-token` / `HUBBLE_AUTH_TOKEN` / `CONVEX_AUTH_TOKEN` on every command.
-   Working pattern: mint a throwaway password account (`auth:signIn`, flow signUp,
-   JWTs live ~1h), apply, then `folders:setFolderUserShareByEmail` to land the folder
-   in the user's account. Still needed: real `hubble login` (device flow).
-2. **Headless repo-link.** Mount + `.git/info/exclude` + BRAIN.md seeding live only in
-   the Electron main process (`desktopApi.linkRepoFolder`). Extract into a shared
-   package (most sync machinery is already in `packages/sync`) or expose via the desktop
-   app itself (deep-link/IPC), so the skill can invoke it.
+1. **Authenticated headless path.** *Closed 2026-07-11:* the CLI keeps the existing
+   `--auth-token` / `HUBBLE_AUTH_TOKEN` / `CONVEX_AUTH_TOKEN` override path, and now
+   supports `hubble login` device-flow auth. The CLI stores a Convex Auth refresh
+   token in `~/.hubble/credentials.json`, exchanges it through `auth:signIn` for fresh
+   JWTs, and rotates the refresh token on each command. Apply-mode creates workspaces
+   as the user instead of minting temporary accounts.
+2. **Headless repo-link.** *Closed 2026-07-11 (magic-flow Phase 2):* the desktop app
+   exposes a 0600 Unix command socket (`<userData>/cli.sock`, NDJSON `status` +
+   `link-repo`) that runs the same repo-link path as the settings form, and `hubble
+   mount` drives it end-to-end — auto-launching the app, guarding
+   deployment/account mismatch, and exiting 0 only after the app reports the mount
+   connected and the sync index is materialized. `hubble cloud folder export` now
+   writes a `.hubble-export.json` marker so a static projection can never
+   masquerade as a live mount; the link flow deletes the marker on takeover.
 3. **Desktop detection + install.** Platform check for the app bundle; install path
    (download URL / brew cask TBD); first-run sign-in handoff.
-4. **Deep link.** `hubble://` protocol registration in the desktop app, routing to a
-   folder view.
+4. **Deep link.** *Registration closed 2026-07-11:* the desktop app registers
+   `hubble://` (electron-builder protocols entry + `open-url`/second-instance
+   routing into `handleProtocolUrl`). Routing to a folder view remains open — the
+   dispatcher currently focuses the window and logs unrecognized routes.
 5. **Folder create API from CLI** — *closed 2026-07-09:* `hubble cloud folder
    create/list/export` and `cloud document create` shipped.
 6. **Multi-repo mount of one brain** (from the 567 dry run 2026-07-09): a brain can
@@ -119,10 +128,10 @@ it runs in:
    `App.tsx`, www EditorView); escaping normalizes some equivalent syntax
    (`_x_` → `*x*`) — idempotent but not byte-identical on first cycle.
    Apply-mode's verify-before-delete diff remains the permanent guard.
-9. **Workspace ownership transfer.** Mitigated: `members:inviteWorkspaceMember` with
-   role `owner` gives the user full co-ownership (used by the apply run's handoff).
-   Still needed: `hubble login` so init creates the workspace as the user directly,
-   and single-ownership transfer/claim semantics.
+9. **Workspace ownership transfer.** *Closed for init 2026-07-11:* `hubble login`
+   lets init create the workspace as the user directly, so the apply flow no longer
+   needs temporary-account handoff. Single-ownership transfer/claim semantics remain a
+   broader account-management question, not an init blocker.
 10. **Folder shares are invisible in the desktop app.** The sidebar's shared-with-me
     section renders only legacy per-document shares (`Sidebar.tsx` uses
     `sharedWithMe.documents`, ignores `.folders`), and RepoLinkSection's workspace

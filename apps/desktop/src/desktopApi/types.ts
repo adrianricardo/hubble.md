@@ -109,6 +109,8 @@ export type SyncedFolderStatus = {
 	syncRoot: string | null;
 	/** Number of indexed Live Documents in the mirror. */
 	documentCount: number;
+	/** Last successful cloud-to-disk materialize/reconcile pass. */
+	lastReconcileAt: number | null;
 	lastEventAt: number | null;
 	lastError: string | null;
 	telemetry: SyncedFolderTelemetry;
@@ -154,6 +156,26 @@ export type RepoMount = {
 	repoRemoteUrl: string | null;
 	/** Live engine state, present only while the app has reconnected the mount. */
 	status: LiveSyncStatusState | "disconnected";
+	lastReconcileAt: number | null;
+};
+
+export type DesktopAuthState = {
+	deploymentUrl: string;
+	email?: string;
+	name?: string;
+} | null;
+
+export type RepoLinkLinkedEvent = {
+	folderId: string;
+	folderName: string;
+	mountPath: string;
+	repoDir: string;
+};
+
+export type RepoLinkUndoResult = {
+	folderId: string;
+	mountPath: string;
+	removedFiles: boolean;
 };
 
 /** Reconnect all persisted repo mounts after app launch / sign-in. */
@@ -304,6 +326,8 @@ export type DesktopApi = {
 	 * repo display metadata to the cloud, and seed `BRAIN.md` (RB5).
 	 */
 	linkRepoFolder(input: RepoLinkInput): Promise<RepoLinkResult>;
+	/** Undo a socket-created mount: unlink, then remove files only if clean. */
+	undoRepoLink(input: { folderId: string }): Promise<RepoLinkUndoResult>;
 	/** Deregister a repo mount and leave the materialized files on disk. */
 	unlinkRepoFolder(folderId: string): Promise<void>;
 	/** All persisted repo mounts on this machine, with live engine status. */
@@ -321,6 +345,8 @@ export type DesktopApi = {
 	onSyncedFolderEvent(
 		callback: (event: SyncedFolderEvent) => void,
 	): Unsubscribe;
+	setAuthState(state: DesktopAuthState): Promise<void>;
+	onRepoLinkLinked(callback: (event: RepoLinkLinkedEvent) => void): Unsubscribe;
 	getUpdateState(): Promise<DesktopUpdateState>;
 	getFullScreen(): Promise<boolean>;
 	checkForUpdates(): Promise<void>;

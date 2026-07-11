@@ -190,6 +190,7 @@ function fakeBackend(calls: Calls, state: BackendState): SyncBackend {
 		},
 		getWorkspace: notImpl,
 		createWorkspace: notImpl,
+		createFolder: notImpl,
 		getFiles: notImpl,
 		pushFile: notImpl,
 		softDeleteFile: notImpl,

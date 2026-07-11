@@ -67,6 +67,23 @@ export default defineSchema({
 		updatedAt: v.number(),
 	}).index("by_day", ["day"]),
 
+	deviceAuthRequests: defineTable({
+		code: v.string(),
+		status: v.union(
+			v.literal("pending"),
+			v.literal("approved"),
+			v.literal("denied"),
+			v.literal("expired"),
+		),
+		requestedAt: v.number(),
+		hostname: v.optional(v.string()),
+		approvedBy: v.optional(v.id("users")),
+		refreshToken: v.optional(v.string()),
+	})
+		.index("by_code", ["code"])
+		.index("by_requestedAt", ["requestedAt"])
+		.index("by_status_and_requestedAt", ["status", "requestedAt"]),
+
 	files: defineTable({
 		workspaceId: v.id("workspaces"),
 		path: v.string(),

@@ -1,5 +1,9 @@
 #!/usr/bin/env node
-import { dirname, resolve } from "node:path";
+import { spawn } from "node:child_process";
+import * as nodeFs from "node:fs/promises";
+import net from "node:net";
+import { homedir, hostname } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { parseArgs as parseNodeArgs } from "node:util";
 import {
 	createConvexBackend,
@@ -14,6 +18,7 @@ import {
 	reconcileProjectionFile,
 	removeCloudSyncConfig,
 	sync as runSync,
+	SYNCED_FOLDER_INDEX_REL,
 	type SyncResult,
 	writeCloudSyncConfig,
 	writeLiveDocumentProjections,
@@ -26,6 +31,10 @@ import chokidar from "chokidar";
 import { ConvexHttpClient } from "convex/browser";
 
 const fs = createNodeFileSystem();
+const CREDENTIALS_DIR = join(homedir(), ".hubble");
+const CREDENTIALS_PATH = join(CREDENTIALS_DIR, "credentials.json");
+const DEVICE_AUTH_TIMEOUT_MS = 10 * 60 * 1000;
+const DEVICE_AUTH_POLL_INTERVAL_MS = 2000;
 
 function getConvexUrl(): string {
 	return process.env.CONVEX_URL ?? "http://127.0.0.1:3210";
@@ -48,12 +57,21 @@ type CliArgs = {
 	parentId?: string;
 	title?: string;
 	folderId?: string;
+	folderName?: string;
 	documentPath?: string;
+	mountPath?: string;
+	repoDir?: string;
 	watch: boolean;
 	actor?: string;
 	deploymentUrl?: string;
+	authFromCredentials: boolean;
 	extraArgs: string[];
 	workspacePath: string;
+};
+
+type Credentials = {
+	deploymentUrl: string;
+	refreshToken: string;
 };
 
 async function main() {
@@ -70,8 +88,25 @@ async function main() {
 		return;
 	}
 
+	if (parsed.command === "login") {
+		await runLogin(parsed);
+		return;
+	}
+
+	if (parsed.command === "logout") {
+		await runLogout();
+		return;
+	}
+
+	if (parsed.command === "mount") {
+		await runMount(parsed);
+		return;
+	}
+
+	await resolveStoredAuth(parsed);
+
 	if (parsed.command === "cloud") {
-		await runCloudCommand(parsed);
+		await runWithAuthRetry(parsed, () => runCloudCommand(parsed));
 		return;
 	}
 
@@ -125,6 +160,179 @@ async function runCloudCommand(parsed: CliArgs) {
 
 	printUsage();
 	process.exitCode = 1;
+}
+
+async function runLogin(parsed: CliArgs) {
+	if (parsed.extraArgs.length > 0) {
+		printLoginHelp();
+		process.exitCode = 1;
+		return;
+	}
+
+	const deploymentUrl = await resolveLoginDeploymentUrl(parsed);
+	const client = createConvexHttpClient(deploymentUrl);
+	const requested = await client.mutation(api.deviceAuth.request, {
+		hostname: hostname(),
+	});
+
+	console.log("Hubble device login");
+	console.log("");
+	console.log(`Code: ${requested.code}`);
+	console.log(`Approve: ${requested.approveUrl}`);
+	console.log("");
+	console.log("Verify this code matches in the browser before approving.");
+	await openBrowserBestEffort(requested.approveUrl);
+
+	const startedAt = Date.now();
+	while (Date.now() - startedAt < DEVICE_AUTH_TIMEOUT_MS) {
+		await delay(DEVICE_AUTH_POLL_INTERVAL_MS);
+		const result = await client.mutation(api.deviceAuth.poll, {
+			code: requested.code,
+		});
+		switch (result.status) {
+			case "pending":
+				break;
+			case "approved":
+				if (!result.refreshToken) {
+					throw new Error(
+						"Approved device login did not return a refresh token.",
+					);
+				}
+				await writeCredentials({
+					deploymentUrl,
+					refreshToken: result.refreshToken,
+				});
+				console.log(`Logged in to ${deploymentUrl}`);
+				return;
+			case "denied":
+				throw new Error("Device login was denied.");
+			case "expired":
+				throw new Error("Device login expired. Run `hubble login` again.");
+		}
+	}
+
+	throw new Error("Device login timed out. Run `hubble login` again.");
+}
+
+async function runLogout() {
+	await nodeFs.rm(CREDENTIALS_PATH, { force: true });
+	console.log("Logged out of Hubble CLI");
+}
+
+type CliServerStatus = {
+	appVersion: string;
+	auth: {
+		deploymentUrl: string;
+		email?: string;
+		name?: string;
+	} | null;
+	mounts: Array<{
+		folderId: string;
+		folderName: string;
+		workspaceId: string;
+		mountPath: string;
+		repoDir: string;
+		status: string;
+		lastReconcileAt: number | null;
+		documentCount?: number;
+	}>;
+};
+
+type CliSocketResponse<T> =
+	| { id: string; ok: true; result: T }
+	| { id: string; ok: false; error: string };
+
+async function runMount(parsed: CliArgs) {
+	if (parsed.extraArgs.length > 0) {
+		printMountHelp();
+		process.exitCode = 1;
+		return;
+	}
+	if (!parsed.workspaceId) {
+		console.error("Missing required --workspace id.");
+		process.exitCode = 1;
+		return;
+	}
+	if (!parsed.folderId) {
+		console.error("Missing required --folder id.");
+		process.exitCode = 1;
+		return;
+	}
+	if (!parsed.folderName) {
+		console.error("Missing required --folder-name name.");
+		process.exitCode = 1;
+		return;
+	}
+	if (!parsed.repoDir) {
+		console.error("Missing required --repo dir.");
+		process.exitCode = 1;
+		return;
+	}
+
+	const auth = await resolveMountAuth(parsed);
+	const socketPath = getCliSocketPath();
+	let status = await readAppStatus(socketPath).catch(() => null);
+	if (!status) {
+		await launchHubbleApp();
+		status = await waitForAppStatus(socketPath, 30_000);
+	}
+
+	await assertMountAccountMatches(status, auth);
+
+	const repoDir = resolve(parsed.workspacePath, parsed.repoDir);
+	const mountPath = parsed.mountPath
+		? resolve(parsed.workspacePath, parsed.mountPath)
+		: undefined;
+	const result = await sendCliCommand<{
+		mountPath: string;
+		documentCount?: number;
+	}>(socketPath, "link-repo", {
+		workspaceId: parsed.workspaceId,
+		folderId: parsed.folderId,
+		folderName: parsed.folderName,
+		repoDir,
+		mountPath,
+		deploymentUrl: auth.deploymentUrl,
+		authToken: auth.authToken,
+	});
+
+	const verified = await sendCliCommand<CliServerStatus>(socketPath, "status");
+	const mount = verified.mounts.find(
+		(entry) => entry.folderId === parsed.folderId,
+	);
+	if (!mount) {
+		throw new Error(
+			`Desktop app linked the folder but did not report mount ${parsed.folderId} in status.`,
+		);
+	}
+	if (mount.status !== "connected" && mount.status !== "syncing") {
+		throw new Error(
+			`Desktop app reported mount ${parsed.folderId} as ${mount.status}, not connected.`,
+		);
+	}
+	const indexPath = join(
+		mount.mountPath,
+		...SYNCED_FOLDER_INDEX_REL.split("/"),
+	);
+	try {
+		const indexStat = await nodeFs.stat(indexPath);
+		if (!indexStat.isFile()) throw new Error(`${indexPath} is not a file`);
+	} catch (error) {
+		throw new Error(
+			`Live mount was not proven: sync index is missing at ${indexPath}. Check that the desktop app is signed in and can sync this folder. (${errorMessage(error)})`,
+		);
+	}
+
+	console.log("Live mount connected");
+	console.log(`  mount: ${mount.mountPath}`);
+	console.log(`  repo: ${mount.repoDir}`);
+	console.log(`  status: ${mount.status}`);
+	const documentCount = result.documentCount ?? mount.documentCount;
+	if (documentCount !== undefined) {
+		console.log(
+			`  documents: ${documentCount} document${documentCount === 1 ? "" : "s"}`,
+		);
+	}
 }
 
 async function runManualSync(workspacePath: string, parsed: CliArgs) {
@@ -616,6 +824,18 @@ async function runFolderExport(
 		if (slash > 0) await fs.ensureDir(`${outDir}/${relPath.slice(0, slash)}`);
 		await fs.writeFile(`${outDir}/${relPath}`, document.markdown);
 	}
+	await fs.writeFile(
+		`${outDir}/.hubble-export.json`,
+		`${JSON.stringify(
+			{
+				static: true,
+				exportedAt: new Date().toISOString(),
+				folderId: parsed.folderId,
+			},
+			null,
+			2,
+		)}\n`,
+	);
 
 	console.log(
 		`exported ${documents.length} document${documents.length === 1 ? "" : "s"} to ${outDir}`,
@@ -704,13 +924,321 @@ async function writeCloudConnection(
 	console.log(`  device: ${config.cloudSync?.deviceId}`);
 }
 
-function getDeploymentUrl(opts: Pick<CliArgs, "deploymentUrl">): string {
-	return opts.deploymentUrl ?? getConvexUrl();
+function getDeploymentUrl(
+	opts: Pick<CliArgs, "deploymentUrl">,
+	credentials?: Credentials | null,
+): string {
+	return opts.deploymentUrl ?? credentials?.deploymentUrl ?? getConvexUrl();
 }
 
 function getAuthToken(flagValue?: string): string | undefined {
 	return (
 		flagValue ?? process.env.HUBBLE_AUTH_TOKEN ?? process.env.CONVEX_AUTH_TOKEN
+	);
+}
+
+async function resolveLoginDeploymentUrl(parsed: CliArgs): Promise<string> {
+	if (parsed.deploymentUrl) return parsed.deploymentUrl;
+	const cloudSync = (await readConfigOrDefault(fs, parsed.workspacePath))
+		.cloudSync;
+	if (cloudSync?.deploymentUrl) return cloudSync.deploymentUrl;
+	const credentials = await readCredentials();
+	return getDeploymentUrl(parsed, credentials);
+}
+
+async function resolveStoredAuth(parsed: CliArgs) {
+	if (parsed.authToken) return;
+
+	const credentials = await readCredentials();
+	if (!credentials) return;
+
+	parsed.deploymentUrl ??= credentials.deploymentUrl;
+	const tokens = await refreshCredentials(credentials);
+	parsed.authToken = tokens.token;
+	parsed.authFromCredentials = true;
+}
+
+async function resolveMountAuth(parsed: CliArgs): Promise<{
+	deploymentUrl: string;
+	authToken: string;
+}> {
+	if (parsed.authToken) {
+		return {
+			deploymentUrl: await resolveLoginDeploymentUrl(parsed),
+			authToken: parsed.authToken,
+		};
+	}
+
+	const credentials = await readCredentials();
+	if (!credentials) {
+		throw new Error(
+			"`hubble mount` requires a Hubble user login. Run `hubble login` first.",
+		);
+	}
+	if (
+		parsed.deploymentUrl &&
+		parsed.deploymentUrl !== credentials.deploymentUrl
+	) {
+		throw new Error(
+			`Saved login is for ${credentials.deploymentUrl}, not ${parsed.deploymentUrl}. Run \`hubble login --url ${parsed.deploymentUrl}\` first.`,
+		);
+	}
+	const tokens = await refreshCredentials(credentials);
+	return {
+		deploymentUrl: credentials.deploymentUrl,
+		authToken: tokens.token,
+	};
+}
+
+function getCliSocketPath(): string {
+	const userData = process.env.HUBBLE_APP_USERDATA;
+	if (userData) return join(userData, "cli.sock");
+	if (process.platform === "darwin") {
+		return join(
+			homedir(),
+			"Library",
+			"Application Support",
+			"Hubble",
+			"cli.sock",
+		);
+	}
+	return join(homedir(), ".config", "Hubble", "cli.sock");
+}
+
+async function readAppStatus(socketPath: string): Promise<CliServerStatus> {
+	return sendCliCommand<CliServerStatus>(socketPath, "status");
+}
+
+async function waitForAppStatus(
+	socketPath: string,
+	timeoutMs: number,
+): Promise<CliServerStatus> {
+	const startedAt = Date.now();
+	let lastError: unknown = null;
+	while (Date.now() - startedAt < timeoutMs) {
+		try {
+			return await readAppStatus(socketPath);
+		} catch (error) {
+			lastError = error;
+			await delay(500);
+		}
+	}
+	throw new Error(
+		`Hubble did not open its CLI socket at ${socketPath} within ${Math.round(timeoutMs / 1000)}s. Phase 3 will automate desktop install; for now, install and open Hubble manually. (${errorMessage(lastError)})`,
+	);
+}
+
+async function launchHubbleApp(): Promise<void> {
+	if (process.platform !== "darwin") {
+		throw new Error(
+			"Hubble desktop is not running. Phase 3 will automate desktop install; for now, install and open Hubble manually.",
+		);
+	}
+	try {
+		await spawnAndWait("open", ["-a", "Hubble"]);
+		return;
+	} catch {
+		try {
+			await spawnAndWait("open", ["-b", "com.benholmes.hubblemd.desktop"]);
+			return;
+		} catch (error) {
+			throw new Error(
+				`Could not launch Hubble desktop. Phase 3 will automate install; for now, install Hubble and run this command again. (${errorMessage(error)})`,
+			);
+		}
+	}
+}
+
+function spawnAndWait(command: string, args: string[]): Promise<void> {
+	return new Promise((resolveSpawn, rejectSpawn) => {
+		const child = spawn(command, args, { stdio: "ignore" });
+		child.on("error", rejectSpawn);
+		child.on("exit", (code) => {
+			if (code === 0) resolveSpawn();
+			else rejectSpawn(new Error(`${command} exited ${code}`));
+		});
+	});
+}
+
+async function assertMountAccountMatches(
+	status: CliServerStatus,
+	auth: { deploymentUrl: string; authToken: string },
+) {
+	if (!status.auth) {
+		console.warn(
+			"Warning: Hubble desktop did not report a signed-in account; proceeding with CLI credentials.",
+		);
+		return;
+	}
+	if (status.auth.deploymentUrl !== auth.deploymentUrl) {
+		throw new Error(
+			`Hubble desktop is signed in to ${status.auth.deploymentUrl}, but CLI credentials target ${auth.deploymentUrl}. Sign into the same deployment before mounting.`,
+		);
+	}
+	if (!status.auth.email) return;
+
+	const client = createConvexHttpClient(auth.deploymentUrl, auth.authToken);
+	const viewer = await client.query(api.viewer.me, {});
+	const cliEmail = viewer?.email;
+	if (!cliEmail) {
+		throw new Error(
+			"Hubble desktop reported a signed-in account, but the CLI token did not resolve a viewer email. Run `hubble login` again.",
+		);
+	}
+	if (cliEmail.toLowerCase() !== status.auth.email.toLowerCase()) {
+		throw new Error(
+			`Hubble desktop is signed in as ${status.auth.email}, but CLI credentials are for ${cliEmail}. Run \`hubble login\` with the same account or sign into the desktop app as ${cliEmail}.`,
+		);
+	}
+}
+
+async function sendCliCommand<T>(
+	socketPath: string,
+	cmd: string,
+	args?: object,
+	// link-repo materializes the whole folder before responding, so it needs
+	// far more headroom than a status ping.
+	timeoutMs = cmd === "link-repo" ? 10 * 60 * 1000 : 5000,
+): Promise<T> {
+	const id = crypto.randomUUID();
+	const response = await new Promise<CliSocketResponse<T>>(
+		(resolveResponse, rejectResponse) => {
+			const socket = net.createConnection(socketPath);
+			let buffer = "";
+			socket.setTimeout(timeoutMs);
+			socket.on("connect", () => {
+				socket.write(`${JSON.stringify({ id, cmd, args })}\n`);
+			});
+			socket.on("data", (chunk) => {
+				buffer += chunk.toString("utf8");
+				const newline = buffer.indexOf("\n");
+				if (newline === -1) return;
+				const line = buffer.slice(0, newline);
+				socket.end();
+				try {
+					resolveResponse(JSON.parse(line) as CliSocketResponse<T>);
+				} catch (error) {
+					rejectResponse(error);
+				}
+			});
+			socket.on("timeout", () => {
+				socket.destroy(new Error(`Timed out waiting for ${cmd} response`));
+			});
+			socket.on("error", rejectResponse);
+		},
+	);
+	if (response.id !== id) {
+		throw new Error(`Mismatched CLI socket response id for ${cmd}`);
+	}
+	if (!response.ok) throw new Error(response.error);
+	return response.result;
+}
+
+async function runWithAuthRetry(
+	parsed: CliArgs,
+	run: () => Promise<void>,
+): Promise<void> {
+	try {
+		await run();
+	} catch (err) {
+		if (!parsed.authFromCredentials || !isAuthFailure(err)) throw err;
+		const credentials = await readCredentials();
+		if (!credentials) throw err;
+		const tokens = await refreshCredentials(credentials);
+		parsed.authToken = tokens.token;
+		await run();
+	}
+}
+
+async function refreshCredentials(credentials: Credentials) {
+	try {
+		const client = createConvexHttpClient(credentials.deploymentUrl);
+		const result = await client.action(api.auth.signIn, {
+			refreshToken: credentials.refreshToken,
+		});
+		if (!result.tokens) throw new Error("Refresh token was rejected");
+		await writeCredentials({
+			deploymentUrl: credentials.deploymentUrl,
+			refreshToken: result.tokens.refreshToken,
+		});
+		return result.tokens;
+	} catch (err) {
+		throw new Error(
+			`Saved Hubble login expired or was revoked. Run \`hubble login\` again. (${errorMessage(err)})`,
+		);
+	}
+}
+
+async function readCredentials(): Promise<Credentials | null> {
+	try {
+		const raw = await nodeFs.readFile(CREDENTIALS_PATH, "utf8");
+		const parsed = JSON.parse(raw) as Partial<Credentials>;
+		if (!parsed.deploymentUrl || !parsed.refreshToken) return null;
+		return {
+			deploymentUrl: parsed.deploymentUrl,
+			refreshToken: parsed.refreshToken,
+		};
+	} catch (err) {
+		if (isNodeError(err, "ENOENT")) return null;
+		throw err;
+	}
+}
+
+async function writeCredentials(credentials: Credentials) {
+	await nodeFs.mkdir(CREDENTIALS_DIR, { recursive: true, mode: 0o700 });
+	await nodeFs.chmod(CREDENTIALS_DIR, 0o700);
+	await nodeFs.writeFile(
+		CREDENTIALS_PATH,
+		`${JSON.stringify(credentials, null, 2)}\n`,
+		{ mode: 0o600 },
+	);
+	await nodeFs.chmod(CREDENTIALS_PATH, 0o600);
+}
+
+async function openBrowserBestEffort(url: string) {
+	const command =
+		process.platform === "darwin"
+			? "open"
+			: process.platform === "linux"
+				? "xdg-open"
+				: null;
+	if (!command) return;
+	try {
+		const child = spawn(command, [url], {
+			detached: true,
+			stdio: "ignore",
+		});
+		child.unref();
+	} catch {
+		// The printed approval URL is the reliable path; browser opening is best-effort.
+	}
+}
+
+function delay(ms: number): Promise<void> {
+	return new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
+}
+
+function isAuthFailure(err: unknown): boolean {
+	const message = errorMessage(err).toLowerCase();
+	return (
+		message.includes("unauthenticated") ||
+		message.includes("not authenticated") ||
+		message.includes("unauthorized") ||
+		message.includes("401") ||
+		message.includes("auth")
+	);
+}
+
+function errorMessage(err: unknown): string {
+	return err instanceof Error ? err.message : String(err);
+}
+
+function isNodeError(err: unknown, code: string): boolean {
+	return (
+		typeof err === "object" &&
+		err !== null &&
+		"code" in err &&
+		(err as { code?: string }).code === code
 	);
 }
 
@@ -952,6 +1480,9 @@ function parseCliArgs(argv: string[]) {
 				parent: { type: "string" },
 				title: { type: "string" },
 				folder: { type: "string" },
+				"folder-name": { type: "string" },
+				workspace: { type: "string" },
+				repo: { type: "string" },
 				path: { type: "string" },
 				watch: { type: "boolean" },
 				actor: { type: "string" },
@@ -962,7 +1493,7 @@ function parseCliArgs(argv: string[]) {
 			command,
 			help,
 			workspaceName: values.name,
-			workspaceId: values.id,
+			workspaceId: values.workspace ?? values.id,
 			authToken: getAuthToken(values["auth-token"]),
 			baseRevision: values["base-revision"],
 			appendMarkdown: values.append,
@@ -975,13 +1506,17 @@ function parseCliArgs(argv: string[]) {
 			parentId: values.parent,
 			title: values.title,
 			folderId: values.folder,
+			folderName: values["folder-name"],
 			documentPath: values.path,
+			mountPath: values.path,
+			repoDir: values.repo,
 			watch: values.watch ?? false,
 			actor: values.actor,
 			deploymentUrl: values.url,
+			authFromCredentials: false,
 			extraArgs,
 			workspacePath: values.cwd ? resolve(values.cwd) : process.cwd(),
-		} as const;
+		};
 	} catch (error) {
 		return {
 			error: error instanceof Error ? error.message : String(error),
@@ -990,6 +1525,18 @@ function parseCliArgs(argv: string[]) {
 }
 
 function printHelp(args: CliArgs) {
+	if (args.command === "login") {
+		printLoginHelp();
+		return;
+	}
+	if (args.command === "logout") {
+		printLogoutHelp();
+		return;
+	}
+	if (args.command === "mount") {
+		printMountHelp();
+		return;
+	}
 	if (args.command !== "cloud") {
 		printRootHelp();
 		return;
@@ -1037,10 +1584,56 @@ function printHelp(args: CliArgs) {
 
 function printRootHelp() {
 	console.log("Usage:");
+	console.log("  hubble login [--url url]");
+	console.log("  hubble logout");
+	console.log(
+		"  hubble mount --workspace id --folder id --folder-name name --repo dir [--path mountPath] [--url url]",
+	);
 	console.log("  hubble [--cwd path] cloud <command>");
 	console.log("");
 	console.log("Commands:");
+	console.log("  login    Sign in with browser approval");
+	console.log("  logout   Remove saved CLI credentials");
+	console.log("  mount    Create a live desktop-watched repo mount");
 	console.log("  cloud    Manage Cloud Sync");
+}
+
+function printLoginHelp() {
+	console.log("Usage:");
+	console.log("  hubble login [--url url]");
+	console.log("");
+	console.log(
+		"Starts a browser-approved device login and saves CLI credentials.",
+	);
+	console.log("");
+	console.log("Options:");
+	console.log("  --url url  Convex deployment URL");
+}
+
+function printLogoutHelp() {
+	console.log("Usage:");
+	console.log("  hubble logout");
+	console.log("");
+	console.log("Deletes saved Hubble CLI credentials.");
+}
+
+function printMountHelp() {
+	console.log("Usage:");
+	console.log(
+		"  hubble mount --workspace id --folder id --folder-name name --repo dir [--path mountPath] [--url url]",
+	);
+	console.log("");
+	console.log(
+		"Links a cloud folder into a local repo through the Hubble desktop app and exits only after the live watcher is proven.",
+	);
+	console.log("");
+	console.log("Options:");
+	console.log("  --workspace id      Cloud workspace id");
+	console.log("  --folder id         Cloud folder id");
+	console.log("  --folder-name name  Cloud folder display name");
+	console.log("  --repo dir          Local repository directory");
+	console.log("  --path mountPath    Optional mount path");
+	console.log("  --url url           Convex deployment URL");
 }
 
 function printCloudHelp() {
@@ -1172,6 +1765,11 @@ function printDisconnectHelp() {
 
 function printUsage() {
 	console.error("Usage:");
+	console.error("  hubble login [--url url]");
+	console.error("  hubble logout");
+	console.error(
+		"  hubble mount --workspace id --folder id --folder-name name --repo dir [--path mountPath] [--url url]",
+	);
 	console.error("  hubble [--cwd path] cloud create --name name [--url url]");
 	console.error(
 		"  hubble [--cwd path] cloud connect (--name name|--id id) [--url url]",
@@ -1207,4 +1805,7 @@ function printUsage() {
 	console.error("  hubble [--cwd path] cloud disconnect");
 }
 
-void main();
+void main().catch((err) => {
+	console.error(errorMessage(err));
+	process.exitCode = 1;
+});

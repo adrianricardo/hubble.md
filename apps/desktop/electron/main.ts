@@ -44,6 +44,7 @@ import {
 	markdownAssetFolderPath,
 	withMarkdownExtension,
 } from "../src/lib/filePath";
+import { type CliServer, startCliServer } from "./cliServer";
 import { LiveSyncService } from "./liveSync";
 import {
 	BRAIN_DOC_FILENAME,
@@ -55,6 +56,7 @@ import {
 	resolveGitRepo,
 	sanitizeMountSegment,
 } from "./repoLink";
+import { isMountClean } from "./repoMountClean";
 import {
 	classifySyncedFolderRoot,
 	SYNCED_FOLDER_INDEX_REL,
@@ -108,6 +110,12 @@ type WindowBounds = {
 	height: number;
 };
 
+type DesktopAuthState = {
+	deploymentUrl: string;
+	email?: string;
+	name?: string;
+} | null;
+
 const isDev = !app.isPackaged || process.env.HUBBLE_DESKTOP_FORCE_DEV === "1";
 const { autoUpdater } = electronUpdater;
 const devAppName = isDev ? process.env.HUBBLE_DESKTOP_DEV_APP_NAME : undefined;
@@ -119,6 +127,7 @@ const supportsAutoUpdates = !isDev && process.platform === "darwin";
 const updateCheckIntervalMs = 4 * 60 * 60 * 1000;
 
 app.setName(appName);
+app.setAsDefaultProtocolClient("hubble");
 if (devAppName) {
 	app.setPath("userData", path.join(app.getPath("appData"), devAppName));
 }
@@ -150,6 +159,8 @@ let updateState: DesktopUpdateState = {
 	lastCheckedAt: null,
 };
 const watchers = new Map<string, FSWatcher>();
+let cachedAuthState: DesktopAuthState = null;
+let cliServer: CliServer | null = null;
 // Always-on lifecycle (Decision C): background mode + tray are only engaged
 // while a cloud Live-Document workspace is connected.
 let tray: Tray | null = null;
@@ -283,6 +294,16 @@ const repoLinkSchema = z.object({
 const repoMountReconnectSchema = z.object({
 	deploymentUrl: convexDeploymentUrlSchema,
 	authToken: authTokenSchema,
+});
+const desktopAuthStateSchema = z
+	.object({
+		deploymentUrl: convexDeploymentUrlSchema,
+		email: z.string().optional(),
+		name: z.string().optional(),
+	})
+	.nullable();
+const repoLinkUndoSchema = z.object({
+	folderId: z.string().min(1),
 });
 const defaultWindowState: WindowState = { width: 920, height: 720 };
 const windowStateSchema = z.object({
@@ -440,6 +461,7 @@ async function removeRepoMountConfig(folderId: string): Promise<void> {
 
 function repoMountStatus(stored: StoredRepoMount): RepoMount {
 	const service = repoMounts.get(stored.folderId);
+	const status = service?.getStatus();
 	return {
 		folderId: stored.folderId,
 		folderName: stored.folderName,
@@ -448,7 +470,8 @@ function repoMountStatus(stored: StoredRepoMount): RepoMount {
 		repoDir: stored.repoDir,
 		repoName: stored.repoName,
 		repoRemoteUrl: stored.repoRemoteUrl,
-		status: service ? service.getStatus().state : "disconnected",
+		status: status ? status.state : "disconnected",
+		lastReconcileAt: status?.lastReconcileAt ?? null,
 	};
 }
 
@@ -469,6 +492,168 @@ async function connectRepoMountEngine(
 	});
 	repoMounts.set(folderId, service);
 	await service.connect({ syncRoot: mountPath, deploymentUrl, authToken });
+}
+
+async function performRepoLink(input: unknown): Promise<RepoLinkResult> {
+	const parsed = repoLinkSchema.parse(input);
+	if (
+		cachedAuthState &&
+		cachedAuthState.deploymentUrl !== parsed.deploymentUrl
+	) {
+		throw new Error(
+			`Desktop app is signed in to ${cachedAuthState.deploymentUrl}; refusing mount for ${parsed.deploymentUrl}.`,
+		);
+	}
+
+	const repoDir = resolvePath(parsed.repoDir);
+	grantRoot(repoDir);
+
+	const repo = await resolveGitRepo(repoDir);
+	const mountPath = parsed.mountPath
+		? resolvePath(parsed.mountPath)
+		: path.join(repoDir, sanitizeMountSegment(parsed.folderName));
+	grantRoot(mountPath);
+	await fs.mkdir(mountPath, { recursive: true });
+	await fs.rm(path.join(mountPath, ".hubble-export.json"), { force: true });
+
+	const backend = createConvexBackend(parsed.deploymentUrl, parsed.authToken);
+
+	// Read-only best-effort origin parse → cloud display metadata (D11).
+	const repoRemoteUrl = repo
+		? await parseGitOriginUrl(repo.commonGitDir)
+		: null;
+	const repoName = repoNameFrom(repoDir, repoRemoteUrl);
+	await backend.setFolderRepoLink({
+		folderId: parsed.folderId,
+		repoName,
+		repoRemoteUrl: repoRemoteUrl ?? undefined,
+	});
+
+	// RB5: seed BRAIN.md once (idempotent, any-case).
+	let brainSeeded = false;
+	const subtreeDocs = await backend.getFolderSubtreeDocuments(parsed.folderId);
+	const hasBrain = hasBrainDocument(subtreeDocs);
+	if (!hasBrain) {
+		const markdown = buildBrainMarkdown({
+			folderName: parsed.folderName,
+			repoName,
+			repoRemoteUrl,
+			documentIndex: subtreeDocs.map((doc) => ({
+				title: doc.title,
+				relativePath: doc.relativePath,
+			})),
+		});
+		await backend.createDocument({
+			workspaceId: parsed.workspaceId,
+			folderId: parsed.folderId,
+			title: "BRAIN",
+			path: BRAIN_DOC_FILENAME,
+			markdown,
+			actor: "repo-link-seed",
+		});
+		brainSeeded = true;
+	}
+
+	// Materialize the subtree at the mount + start the per-mount engine.
+	await connectRepoMountEngine(
+		parsed.folderId,
+		mountPath,
+		parsed.deploymentUrl,
+		parsed.authToken,
+	);
+	setBackgroundActive(true);
+
+	// Keep the mount invisible to git (never edits tracked files).
+	let excluded = false;
+	let manualGitignoreLine: string | null = null;
+	if (repo) {
+		const result = await excludeMountFromGit(repo, mountPath);
+		excluded = result.ok;
+		manualGitignoreLine = result.ok ? null : result.pattern;
+	}
+
+	await upsertRepoMountConfig({
+		folderId: parsed.folderId,
+		folderName: parsed.folderName,
+		workspaceId: parsed.workspaceId,
+		mountPath,
+		repoDir,
+		repoName,
+		repoRemoteUrl,
+	});
+
+	return {
+		folderId: parsed.folderId,
+		mountPath,
+		isGitRepo: repo !== null,
+		excluded,
+		manualGitignoreLine,
+		repoName,
+		repoRemoteUrl,
+		brainSeeded,
+		documentCount:
+			repoMounts.get(parsed.folderId)?.getStatus().documentCount ?? 0,
+	};
+}
+
+async function unlinkRepoMount(folderId: string): Promise<void> {
+	const service = repoMounts.get(folderId);
+	if (service) {
+		await service.disconnect();
+		repoMounts.delete(folderId);
+	}
+	await removeRepoMountConfig(folderId);
+	if (repoMounts.size === 0 && !syncedFolder.connected) {
+		setBackgroundActive(false);
+	}
+}
+
+async function undoRepoMount(folderId: string): Promise<{
+	folderId: string;
+	mountPath: string;
+	removedFiles: boolean;
+}> {
+	const mounts = await loadRepoMountConfig();
+	const mount = mounts.find((entry) => entry.folderId === folderId);
+	if (!mount) throw new Error(`Repo mount not found: ${folderId}`);
+
+	await unlinkRepoMount(folderId);
+	const clean = await isMountClean(mount.mountPath);
+	if (clean) {
+		await fs.rm(mount.mountPath, { recursive: true, force: true });
+	}
+	return {
+		folderId,
+		mountPath: mount.mountPath,
+		removedFiles: clean,
+	};
+}
+
+async function startCliCommandServer(): Promise<void> {
+	cliServer = await startCliServer({
+		socketPath: path.join(app.getPath("userData"), "cli.sock"),
+		handlers: {
+			async status() {
+				const mounts = await loadRepoMountConfig();
+				return {
+					appVersion: app.getVersion(),
+					auth: cachedAuthState,
+					mounts: mounts.map(repoMountStatus),
+				};
+			},
+			async "link-repo"(args) {
+				const parsed = repoLinkSchema.parse(args);
+				const result = await performRepoLink(parsed);
+				sendToRenderer("desktop:repo-link:linked", {
+					folderId: parsed.folderId,
+					folderName: parsed.folderName,
+					mountPath: result.mountPath,
+					repoDir: resolvePath(parsed.repoDir),
+				});
+				return result;
+			},
+		},
+	});
 }
 
 async function loadWindowState(): Promise<WindowState> {
@@ -722,6 +907,10 @@ function firstExistingFileArg(args: string[]): string | null {
 		}
 	}
 	return null;
+}
+
+function firstProtocolUrlArg(args: string[]): string | null {
+	return args.find((arg) => arg.startsWith("hubble://")) ?? null;
 }
 
 function sendToRenderer(channel: string, ...args: unknown[]) {
@@ -1165,6 +1354,33 @@ function showMainWindow() {
 	void createWindow();
 }
 
+function handleProtocolUrl(rawUrl: string) {
+	const focus = () => showMainWindow();
+	if (app.isReady()) {
+		focus();
+	} else {
+		app.once("ready", focus);
+	}
+
+	let route = "";
+	try {
+		const url = new URL(rawUrl);
+		if (url.protocol !== "hubble:") {
+			console.warn(`Ignoring non-hubble protocol URL: ${rawUrl}`);
+			return;
+		}
+		route = url.hostname ? `/${url.hostname}${url.pathname}` : url.pathname;
+	} catch (error) {
+		console.warn("Ignoring malformed hubble protocol URL:", error);
+		return;
+	}
+
+	switch (route) {
+		default:
+			console.warn(`Unrecognized hubble:// route: ${route || "/"}`);
+	}
+}
+
 function ensureTray() {
 	if (tray) return;
 	tray = createAppTray(trayIconPath(), appName, {
@@ -1592,6 +1808,10 @@ function registerIpc() {
 		buildMenu();
 	});
 
+	ipcMain.handle("desktop:auth-state", (_event, state: unknown) => {
+		cachedAuthState = desktopAuthStateSchema.parse(state);
+	});
+
 	ipcMain.handle("desktop:set-background-active", (_event, active: boolean) => {
 		setBackgroundActive(active === true);
 	});
@@ -1697,118 +1917,21 @@ function registerIpc() {
 	ipcMain.handle(
 		"desktop:repo-link:link",
 		async (_event, input: RepoLinkInput): Promise<RepoLinkResult> => {
-			const parsed = repoLinkSchema.parse(input);
-			const repoDir = resolvePath(parsed.repoDir);
-			grantRoot(repoDir);
-
-			const repo = await resolveGitRepo(repoDir);
-			const mountPath = parsed.mountPath
-				? resolvePath(parsed.mountPath)
-				: path.join(repoDir, sanitizeMountSegment(parsed.folderName));
-			grantRoot(mountPath);
-			await fs.mkdir(mountPath, { recursive: true });
-
-			const backend = createConvexBackend(
-				parsed.deploymentUrl,
-				parsed.authToken,
-			);
-
-			// Read-only best-effort origin parse → cloud display metadata (D11).
-			const repoRemoteUrl = repo
-				? await parseGitOriginUrl(repo.commonGitDir)
-				: null;
-			const repoName = repoNameFrom(repoDir, repoRemoteUrl);
-			await backend.setFolderRepoLink({
-				folderId: parsed.folderId,
-				repoName,
-				repoRemoteUrl: repoRemoteUrl ?? undefined,
-			});
-
-			// RB5: seed BRAIN.md once (idempotent, any-case).
-			let brainSeeded = false;
-			const subtreeDocs = await backend.getFolderSubtreeDocuments(
-				parsed.folderId,
-			);
-			const hasBrain = hasBrainDocument(subtreeDocs);
-			if (!hasBrain) {
-				const markdown = buildBrainMarkdown({
-					folderName: parsed.folderName,
-					repoName,
-					repoRemoteUrl,
-					documentIndex: subtreeDocs.map((doc) => ({
-						title: doc.title,
-						relativePath: doc.relativePath,
-					})),
-				});
-				await backend.createDocument({
-					workspaceId: parsed.workspaceId,
-					folderId: parsed.folderId,
-					title: "BRAIN",
-					path: BRAIN_DOC_FILENAME,
-					markdown,
-					actor: "repo-link-seed",
-				});
-				brainSeeded = true;
-			}
-
-			// Materialize the subtree at the mount + start the per-mount engine.
-			await connectRepoMountEngine(
-				parsed.folderId,
-				mountPath,
-				parsed.deploymentUrl,
-				parsed.authToken,
-			);
-			setBackgroundActive(true);
-
-			// Keep the mount invisible to git (never edits tracked files).
-			let excluded = false;
-			let manualGitignoreLine: string | null = null;
-			if (repo) {
-				const result = await excludeMountFromGit(repo, mountPath);
-				excluded = result.ok;
-				manualGitignoreLine = result.ok ? null : result.pattern;
-			}
-
-			await upsertRepoMountConfig({
-				folderId: parsed.folderId,
-				folderName: parsed.folderName,
-				workspaceId: parsed.workspaceId,
-				mountPath,
-				repoDir,
-				repoName,
-				repoRemoteUrl,
-			});
-
-			return {
-				folderId: parsed.folderId,
-				mountPath,
-				isGitRepo: repo !== null,
-				excluded,
-				manualGitignoreLine,
-				repoName,
-				repoRemoteUrl,
-				brainSeeded,
-				documentCount:
-					repoMounts.get(parsed.folderId)?.getStatus().documentCount ?? 0,
-			};
+			return performRepoLink(input);
 		},
 	);
 
 	ipcMain.handle(
 		"desktop:repo-link:unlink",
 		async (_event, folderId: string) => {
-			// Deregister the mount; the materialized files are left on disk.
-			const service = repoMounts.get(folderId);
-			if (service) {
-				await service.disconnect();
-				repoMounts.delete(folderId);
-			}
-			await removeRepoMountConfig(folderId);
-			if (repoMounts.size === 0 && !syncedFolder.connected) {
-				setBackgroundActive(false);
-			}
+			await unlinkRepoMount(folderId);
 		},
 	);
+
+	ipcMain.handle("desktop:repo-link:undo", async (_event, input: unknown) => {
+		const parsed = repoLinkUndoSchema.parse(input);
+		return undoRepoMount(parsed.folderId);
+	});
 
 	ipcMain.handle("desktop:repo-link:list", async (): Promise<RepoMount[]> => {
 		const mounts = await loadRepoMountConfig();
@@ -1874,6 +1997,11 @@ if (!singleInstanceLock) {
 	app.quit();
 } else {
 	app.on("second-instance", (_event, argv) => {
+		const protocolUrl = firstProtocolUrlArg(argv.slice(1));
+		if (protocolUrl) {
+			handleProtocolUrl(protocolUrl);
+			return;
+		}
 		const openPath = firstExistingFileArg(argv.slice(1));
 		// Reuse the reopen path so a re-launch surfaces the window even when it
 		// was hidden to the tray in background mode.
@@ -1893,6 +2021,11 @@ if (!singleInstanceLock) {
 		sendToRenderer("desktop:open-file", resolved);
 	});
 
+	app.on("open-url", (event, url) => {
+		event.preventDefault();
+		handleProtocolUrl(url);
+	});
+
 	app.whenReady().then(async () => {
 		await loadGrants();
 		if (launchWorkspacePath) grantRoot(launchWorkspacePath);
@@ -1908,11 +2041,18 @@ if (!singleInstanceLock) {
 		registerIpc();
 		buildMenu();
 		configureAutoUpdates();
+		await startCliCommandServer();
 		await createWindow();
 	});
 
 	app.on("before-quit", () => {
 		isQuitting = true;
+		if (cliServer) {
+			void cliServer.close().catch((error) => {
+				console.error("Failed to close CLI socket:", error);
+			});
+			cliServer = null;
+		}
 	});
 
 	app.on("window-all-closed", () => {

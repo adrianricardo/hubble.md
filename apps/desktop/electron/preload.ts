@@ -92,6 +92,7 @@ const desktopApi = {
 		ipcRenderer.invoke("desktop:live-sync:status-folder"),
 	linkRepoFolder: (input) =>
 		ipcRenderer.invoke("desktop:repo-link:link", input),
+	undoRepoLink: (input) => ipcRenderer.invoke("desktop:repo-link:undo", input),
 	unlinkRepoFolder: (folderId) =>
 		ipcRenderer.invoke("desktop:repo-link:unlink", folderId),
 	listRepoMounts: () => ipcRenderer.invoke("desktop:repo-link:list"),
@@ -101,6 +102,9 @@ const desktopApi = {
 		ipcRenderer.invoke("desktop:live-sync:is-live-document", absPath),
 	onSyncedFolderEvent: (callback) =>
 		subscribe("desktop:live-sync:event", callback),
+	setAuthState: (state) => ipcRenderer.invoke("desktop:auth-state", state),
+	onRepoLinkLinked: (callback) =>
+		subscribe("desktop:repo-link:linked", callback),
 	getUpdateState: () => ipcRenderer.invoke("desktop:get-update-state"),
 	getFullScreen: () => ipcRenderer.invoke("desktop:get-fullscreen"),
 	checkForUpdates: () => ipcRenderer.invoke("desktop:check-for-updates"),

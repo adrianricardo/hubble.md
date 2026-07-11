@@ -136,6 +136,7 @@ export class SyncedFolderService {
 	#index: SyncedFolderIndex = {};
 	#state: SyncedFolderStatus["state"] = "idle";
 	#lastError: string | null = null;
+	#lastReconcileAt: number | null = null;
 	#lastEventAt: number | null = null;
 	#telemetry: SyncedFolderTelemetry = emptyTelemetry();
 
@@ -201,6 +202,7 @@ export class SyncedFolderService {
 			connected: this.connected,
 			syncRoot: this.#syncRoot,
 			documentCount: Object.keys(this.#index).length,
+			lastReconcileAt: this.#lastReconcileAt,
 			lastEventAt: this.#lastEventAt,
 			lastError: this.#lastError,
 			telemetry: cloneTelemetry(this.#telemetry),
@@ -355,6 +357,7 @@ export class SyncedFolderService {
 		}
 		await saveSyncedFolderIndex(this.#fs, syncRoot, result.index);
 		this.#index = result.index;
+		this.#lastReconcileAt = this.#now();
 
 		// ── Access-loss (§6 case 1, MATERIALIZE-origin direction) ──────────────
 		// A doc that was in the previous index but is absent from the freshly

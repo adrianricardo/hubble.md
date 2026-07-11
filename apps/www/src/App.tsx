@@ -18,6 +18,7 @@ import {
 import { AuthStatus, SignInScreen } from "./auth/AuthScreens";
 import { clearWorkspace, saveWorkspace } from "./connection/connection";
 import { DashboardScreen } from "./screens/DashboardScreen";
+import { DeviceAuthScreen } from "./screens/DeviceAuthScreen";
 import { GuestFolderScreen } from "./screens/GuestFolderScreen";
 import { AppShell } from "./shell/AppShell";
 
@@ -97,6 +98,10 @@ function isJoinRoute(pathname: string): boolean {
 	return JOIN_ROUTE_PATTERN.test(pathname);
 }
 
+function isDeviceAuthRoute(pathname: string): boolean {
+	return pathname === "/device";
+}
+
 function SignedOutRoute() {
 	const location = useLocation();
 	if (isJoinRoute(location.pathname)) {
@@ -105,6 +110,14 @@ function SignedOutRoute() {
 				defaultMode="signUp"
 				heading="Open your shared folder"
 				banner="Someone on your team shared a folder of living docs with you — the same context they (and their agents) work from every day. No code, no install required to read or edit here."
+			/>
+		);
+	}
+	if (isDeviceAuthRoute(location.pathname)) {
+		return (
+			<SignInScreen
+				heading="Sign in to approve CLI access"
+				banner="After sign-in, you will return to the device approval screen."
 			/>
 		);
 	}
@@ -156,6 +169,7 @@ function RoutedApp({ testIdentity }: { testIdentity: TestIdentity | null }) {
 				path="/folder/:folderId/d/:documentId"
 				element={<GuestFolderRoute />}
 			/>
+			<Route path="/device" element={<DeviceAuthScreen />} />
 			<Route path="*" element={<Navigate to="/" replace />} />
 		</Routes>
 	);
