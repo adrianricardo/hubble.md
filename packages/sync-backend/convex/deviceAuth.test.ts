@@ -44,7 +44,7 @@ describe("device auth", () => {
 			hostname: "dev-machine.local",
 		});
 
-		await asUser(t, userId).mutation(api.deviceAuth.approve, {
+		await asUser(t, userId).action(api.deviceAuth.approve, {
 			code: requested.code,
 		});
 
@@ -90,7 +90,7 @@ describe("device auth", () => {
 
 		vi.setSystemTime(new Date("2026-07-11T12:10:01Z"));
 		await expect(
-			asUser(t, userId).mutation(api.deviceAuth.approve, {
+			asUser(t, userId).action(api.deviceAuth.approve, {
 				code: requested.code,
 			}),
 		).rejects.toThrow("Device code expired");
@@ -121,7 +121,7 @@ describe("device auth", () => {
 		const requested = await t.mutation(api.deviceAuth.request, {});
 
 		await expect(
-			t.mutation(api.deviceAuth.approve, { code: requested.code }),
+			t.action(api.deviceAuth.approve, { code: requested.code }),
 		).rejects.toThrow("Not authenticated");
 	});
 });

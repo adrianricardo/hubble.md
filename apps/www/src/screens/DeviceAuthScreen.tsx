@@ -1,5 +1,5 @@
 import { api } from "@hubble.md/sync-backend";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { categorizeError, describeError } from "../connection/convex-error";
@@ -20,7 +20,7 @@ export function DeviceAuthScreen() {
 		api.deviceAuth.describe,
 		codeReady ? { code: normalizedCode } : "skip",
 	);
-	const approve = useMutation(api.deviceAuth.approve);
+	const approve = useAction(api.deviceAuth.approve);
 	const deny = useMutation(api.deviceAuth.deny);
 	const [pendingAction, setPendingAction] = useState<TerminalState | null>(
 		null,

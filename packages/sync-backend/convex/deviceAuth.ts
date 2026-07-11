@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import {
+	action,
 	internalMutation,
 	type MutationCtx,
 	mutation,
@@ -68,7 +69,46 @@ export const describe = query({
 	},
 });
 
-export const approve = mutation({
+// `approve` must be an action: the library's token mint inside `auth.store`
+// reads the built-in CONVEX_SITE_URL env var, which is absent in a nested
+// mutation→mutation call (verified live 2026-07-11) but present when the
+// mutation is invoked top-level from an action — the same shape as the
+// library's own signIn action.
+export const approve = action({
+	args: { code: v.string() },
+	handler: async (ctx, args): Promise<{ status: "approved" }> => {
+		const prepared: {
+			requestId: Id<"deviceAuthRequests">;
+			userId: Id<"users">;
+			sessionId: Id<"authSessions">;
+		} = await ctx.runMutation(internal.deviceAuth.approvePrepare, {
+			code: args.code,
+		});
+
+		const signIn = (await ctx.runMutation(internal.auth.store, {
+			args: {
+				type: "signIn",
+				userId: prepared.userId,
+				sessionId: prepared.sessionId,
+				generateTokens: true,
+			},
+		})) as unknown as {
+			tokens: { refreshToken: string } | null;
+		};
+		if (!signIn.tokens) {
+			throw new Error("Failed to create device login session");
+		}
+
+		await ctx.runMutation(internal.deviceAuth.approveFinalize, {
+			requestId: prepared.requestId,
+			approvedBy: prepared.userId,
+			refreshToken: signIn.tokens.refreshToken,
+		});
+		return { status: "approved" as const };
+	},
+});
+
+export const approvePrepare = internalMutation({
 	args: { code: v.string() },
 	handler: async (ctx, args) => {
 		const userId = await getAuthUserId(ctx);
@@ -89,26 +129,26 @@ export const approve = mutation({
 		// signs in without a sessionId, so create the CLI session first and let
 		// `store` mint the official JWT + refresh token for that session.
 		const sessionId = await createDeviceSession(ctx, userId);
-		const signIn = (await ctx.runMutation(internal.auth.store, {
-			args: {
-				type: "signIn",
-				userId,
-				sessionId,
-				generateTokens: true,
-			},
-		})) as unknown as {
-			tokens: { refreshToken: string } | null;
-		};
-		if (!signIn.tokens) {
-			throw new Error("Failed to create device login session");
-		}
+		return { requestId: requestDoc._id, userId, sessionId };
+	},
+});
 
-		await ctx.db.patch(requestDoc._id, {
+export const approveFinalize = internalMutation({
+	args: {
+		requestId: v.id("deviceAuthRequests"),
+		approvedBy: v.id("users"),
+		refreshToken: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const requestDoc = await ctx.db.get(args.requestId);
+		if (!requestDoc || requestDoc.status !== "pending") {
+			throw new Error("Device code is no longer pending");
+		}
+		await ctx.db.patch(args.requestId, {
 			status: "approved",
-			approvedBy: userId,
-			refreshToken: signIn.tokens.refreshToken,
+			approvedBy: args.approvedBy,
+			refreshToken: args.refreshToken,
 		});
-		return { status: "approved" as const };
 	},
 });
 
