@@ -11,10 +11,15 @@ run record `/specs/hubble-init/runs/2026-07-09-567-brain-apply-run.md`, skill ru
 
 Next session, in order:
 
-1. **Desktop repo-link the "567 Brain" folder** (shared to Adrian's account, editor,
-   repo-link metadata set): verify it appears in shared-with-me, mount it over
-   `567-platform/brain/cloud/`, and confirm live watch replaces the one-shot CLI
-   export. This exercises the RB3 desktop path against an init-created folder.
+1. ~~Desktop repo-link the "567 Brain" folder~~ **✅ verified 2026-07-10** live with
+   Adrian: workspace "567 Product Brain" appears via owner membership in the
+   repo-link picker (gap #10 fix not needed for this path), mounted over
+   `567-platform/brain/cloud/` (repo root = 567-platform), git exclude + BRAIN.md
+   confirmed, and live watch verified BOTH directions — app edit → file, and file
+   append → cloud reconcile in ~5s. Stale CLI export archived and replaced by the
+   live mount. UX learnings: the repo picker wants the git root (users try the
+   mount dir — "not a repo" error), and the mount-path field silently keeps stale
+   values across relinks.
 2. ~~Fix serializer bugs (DESIGN.md §Gap #8)~~ **✅ done 2026-07-10** (working
    tree, uncommitted): all four bugs fixed in `packages/editor` — nested-emphasis
    divergence, lone `~` doubling, verbatim frontmatter round-trip (frozen

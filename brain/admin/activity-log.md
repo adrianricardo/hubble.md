@@ -1,5 +1,15 @@
 # Brain Activity Log
 
+- 2026-07-10 — Desktop repo-link of "567 Brain" verified live (roadmap NEXT STEP
+  item 1, RB3 path against an init-created folder). Owner-membership handoff put
+  the workspace in the picker; mount at `567-platform/brain/cloud/` with repo
+  root; git exclude + BRAIN.md seeded; live watch proven both directions (app
+  edit → file; file append → cloud in ~5s). Took three link attempts — UX
+  friction filed in roadmap: repo picker expects git root; mount-path field
+  retains stale values. Old serializer bug visible in the stale export
+  (`*********optionally*********`) vs clean live projection confirmed the Gap #8
+  fix on real data. Next: split THIS repo's brain (item 3).
+
 - 2026-07-10 — Serializer idempotency fixed (DESIGN.md gap #8, all four bugs):
   nested-emphasis divergence (root cause: per-text-node mark wrapping; now
   mark-run serialization), lone `~` doubling (`singleTilde: false`), verbatim
