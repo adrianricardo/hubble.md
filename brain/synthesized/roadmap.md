@@ -129,6 +129,13 @@ user can create issues but cannot apply repository labels; the queue therefore s
 needs a maintainer to apply `ready-to-implement` and remove any automated
 `needs-triage` labels.
 
+**Atomic relocation confirmation is implemented** (commit `7377eec`, issue #168
+closed): confirmation re-authorizes and recomputes exposure in one Convex transaction,
+commits only an exact current fingerprint, and returns refreshed impact without moving
+when the review is stale. Shared backend/client contracts are wired; backend tests pass
+68/68 and sync plus Convex-client typechecks pass. Next implementation slice: #169,
+route watched moves through relocation prepare before building durable review state.
+
 Desktop IA follow-up (direction settled 2026-07-11): replace the simultaneous
 **Folders** / **Live Documents** / **On this computer** sidebar with one current
 context and one folder/document tree. Repo-linked projections become contextual
