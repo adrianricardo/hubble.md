@@ -398,6 +398,95 @@ describe("guest create + move", () => {
 		const doc = await t.run((ctx) => ctx.db.get(rootDocId));
 		expect(doc?.folderId).toBe(rootFolderId);
 	});
+
+	test("confirm relocation applies a reviewed consequential move", async () => {
+		const t = testInstance();
+		const { ownerId, strangerId, workspaceId, rootDocId } =
+			await setupFolderTree(t);
+		const destinationId = await t.run((ctx) =>
+			ctx.db.insert("folders", {
+				workspaceId,
+				name: "External",
+				createdAt: 1,
+				updatedAt: 1,
+			}),
+		);
+		await shareFolder(t, destinationId, strangerId, "viewer");
+		const prepared = await asUser(t, ownerId).mutation(
+			api.folders.prepareDocumentRelocation,
+			{
+				documentId: rootDocId,
+				folderId: destinationId,
+				title: "Moved",
+				path: "External/Moved.md",
+			},
+		);
+		if (prepared.status !== "confirmation-required") {
+			throw new Error("Expected confirmation-required relocation");
+		}
+		const confirmed = await asUser(t, ownerId).mutation(
+			api.folders.confirmDocumentRelocation,
+			{
+				documentId: rootDocId,
+				folderId: destinationId,
+				title: "Moved",
+				path: "External/Moved.md",
+				fingerprint: prepared.fingerprint,
+			},
+		);
+		expect(confirmed).toEqual({ status: "completed" });
+		const doc = await t.run((ctx) => ctx.db.get(rootDocId));
+		expect(doc).toMatchObject({
+			folderId: destinationId,
+			title: "Moved",
+			path: "External/Moved.md",
+		});
+	});
+
+	test("confirm relocation refreshes stale impact without moving", async () => {
+		const t = testInstance();
+		const { ownerId, strangerId, workspaceId, rootDocId, rootFolderId } =
+			await setupFolderTree(t);
+		const destinationId = await t.run((ctx) =>
+			ctx.db.insert("folders", {
+				workspaceId,
+				name: "External",
+				createdAt: 1,
+				updatedAt: 1,
+			}),
+		);
+		await shareFolder(t, destinationId, strangerId, "viewer");
+		const prepared = await asUser(t, ownerId).mutation(
+			api.folders.prepareDocumentRelocation,
+			{
+				documentId: rootDocId,
+				folderId: destinationId,
+				title: "Moved",
+				path: "External/Moved.md",
+			},
+		);
+		if (prepared.status !== "confirmation-required") {
+			throw new Error("Expected confirmation-required relocation");
+		}
+		await shareFolder(t, destinationId, ownerId, "viewer");
+		const refreshed = await asUser(t, ownerId).mutation(
+			api.folders.confirmDocumentRelocation,
+			{
+				documentId: rootDocId,
+				folderId: destinationId,
+				title: "Moved",
+				path: "External/Moved.md",
+				fingerprint: prepared.fingerprint,
+			},
+		);
+		expect(refreshed.status).toBe("confirmation-required");
+		if (refreshed.status !== "confirmation-required") {
+			throw new Error("Expected refreshed confirmation-required relocation");
+		}
+		expect(refreshed.fingerprint).not.toBe(prepared.fingerprint);
+		const doc = await t.run((ctx) => ctx.db.get(rootDocId));
+		expect(doc?.folderId).toBe(rootFolderId);
+	});
 });
 
 describe("folder share management + repo link", () => {

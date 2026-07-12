@@ -609,6 +609,57 @@ export const prepareDocumentRelocation = mutation({
 	},
 });
 
+export const confirmDocumentRelocation = mutation({
+	args: {
+		documentId: v.id("documents"),
+		folderId: v.optional(v.id("folders")),
+		title: v.string(),
+		path: v.string(),
+		fingerprint: v.string(),
+	},
+	handler: async (ctx, args) => {
+		await requireDocumentWrite(ctx, args.documentId);
+		const document = await ctx.db.get(args.documentId);
+		if (!document || document.deletedAt !== undefined) {
+			throw new Error("Document not found");
+		}
+		if (args.folderId) {
+			const destination = await ctx.db.get(args.folderId);
+			if (
+				!destination ||
+				destination.deletedAt !== undefined ||
+				destination.workspaceId !== document.workspaceId
+			) throw new Error("Folder not found");
+		}
+		const member = await isWorkspaceMember(ctx, document.workspaceId);
+		if (!member) {
+			if (!args.folderId) throw new Error("Unauthorized");
+			const role = await folderRole(ctx, args.folderId);
+			if (role !== "owner" && role !== "editor") throw new Error("Unauthorized");
+		}
+
+		const source = await relocationBoundary(ctx, document.folderId);
+		const destination = await relocationBoundary(ctx, args.folderId);
+		const fingerprint = relocationFingerprint(source, destination);
+		const impact = relocationImpact(source, destination);
+		if (fingerprint !== args.fingerprint) {
+			return {
+				status: "confirmation-required" as const,
+				fingerprint,
+				impact,
+			};
+		}
+
+		await ctx.db.patch(args.documentId, {
+			folderId: args.folderId,
+			title: args.title.trim() || "Untitled",
+			path: args.path,
+			updatedAt: Date.now(),
+		});
+		return { status: "completed" as const };
+	},
+});
+
 // ---------------------------------------------------------------------------
 // Mutations — folder sharing + repo-link metadata
 // ---------------------------------------------------------------------------

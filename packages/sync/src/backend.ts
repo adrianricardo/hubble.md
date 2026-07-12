@@ -175,6 +175,13 @@ export interface SyncBackend {
 		title: string;
 		path: string;
 	}): Promise<DocumentRelocationResult>;
+	confirmDocumentRelocation?(args: {
+		documentId: string;
+		folderId: string | null;
+		title: string;
+		path: string;
+		fingerprint: string;
+	}): Promise<DocumentRelocationResult>;
 	/**
 	 * Soft-delete a Live Document (over `documents.remove`) after a **local
 	 * delete** — a watcher `unlink` whose rename/move correlation window expired.

@@ -215,6 +215,17 @@ export function createConvexBackend(
 				path: args.path,
 			});
 		},
+		async confirmDocumentRelocation(args) {
+			return client.mutation(api.folders.confirmDocumentRelocation, {
+				documentId: args.documentId as Id<"documents">,
+				folderId: args.folderId
+					? (args.folderId as Id<"folders">)
+					: undefined,
+				title: args.title,
+				path: args.path,
+				fingerprint: args.fingerprint,
+			});
+		},
 		async removeDocument(documentId, actor) {
 			await client.mutation(api.documents.remove, {
 				documentId: documentId as Id<"documents">,
