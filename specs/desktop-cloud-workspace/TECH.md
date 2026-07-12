@@ -1,10 +1,9 @@
 # Desktop cloud workspace
 
-> **Architecture snapshot:** `v1-release` at
-> [`3b437d3b6ab6fdcb82498bc021118f1417806b60`](https://github.com/adrianricardo/hubble.md/tree/3b437d3b6ab6fdcb82498bc021118f1417806b60),
-> captured 2026-07-11. The product contract is durable; this module plan must be
-> revalidated against HEAD before implementation because the desktop and sync code are
-> changing quickly.
+> **Architecture snapshot:** revalidated on `v1-release` at
+> [`8f2fb06b924bfb6daa4b765bb2b8b4398bfe8cd2`](https://github.com/adrianricardo/hubble.md/tree/8f2fb06b924bfb6daa4b765bb2b8b4398bfe8cd2)
+> on 2026-07-11, plus the projection naming/self-write guard in the same working tree.
+> The product contract is durable; re-run the gate after material architectural changes.
 
 ## Context
 
@@ -55,6 +54,18 @@ git diff --stat 3b437d3b6ab6fdcb82498bc021118f1417806b60...HEAD -- \
 The agent must then re-read every changed boundary named below and update this TECH.md
 before implementation. Re-reading code is required to map the current architecture; it
 does not replace PRODUCT.md, which remains the normative statement of intent.
+
+**2026-07-11 result:** completed against `8f2fb06`. Since the original pin, changed
+boundaries add CLI-driven desktop install/auth handoff and allow repo-link selection
+from a child directory while resolving the git root. Repo mounts are still owned by
+the `repoMounts` map in Electron `main.ts`; `SyncedFolderService` is still the per-root
+engine; desktop still composes `FoldersSection`, `LiveDocumentsSection`, and the local
+tree; subscriptions remain workspace-global. No projection manager, startup disk scan,
+pending-operation journal, unified cloud tree, or folder-scoped subscription contract
+has landed. The module ownership table and phase ordering below therefore remain
+current. The naming prerequisite is now closed: `document.path` supplies the canonical
+filename (title fallback for legacy pathless documents), and watcher classification
+waits for materialize indexing/self-write hashes.
 
 ### Architecture principles
 
@@ -190,12 +201,15 @@ not derive local state from repo metadata stored on the cloud folder.
 
 ### Phase 0 — Rebase the plan and close prerequisites
 
-1. Run the revalidation gate and update this file for current ownership and APIs.
-2. Add a superseding ADR and reconcile `CONTEXT.md`, ADR-0009, and active
-   realtime-collab guidance so future agents do not preserve two product models.
-3. Choose one canonical projection naming rule. The current title/path mismatch and
-   documented materialize-ingest duplication loop must be fixed before broadening local
-   create.
+1. ~~Run the revalidation gate and update this file for current ownership and APIs.~~
+   **Done 2026-07-11** against `8f2fb06` plus the projection-guard working tree.
+2. ~~Add a superseding ADR and reconcile `CONTEXT.md`, ADR-0009, and active
+   realtime-collab guidance so future agents do not preserve two product models.~~
+   **Done 2026-07-11** via ADR-0010 and supersession pointers.
+3. ~~Choose one canonical projection naming rule and close the documented
+   materialize-ingest duplication loop before broadening local create.~~ **Done at
+   code/test level 2026-07-11:** path filename with title fallback plus an in-flight
+   materialize/index barrier. Live dogfood acceptance remains outstanding.
 4. Put the unified UI and new projection coordinator behind an internal build flag
    until the safety suite passes. The flag defaults off only during development and
    must never expose local authority as an automatic auth/sync fallback.
@@ -215,6 +229,24 @@ not derive local state from repo metadata stored on the cloud folder.
 6. Add Convex and adapter tests before changing the desktop engine.
 
 ### Phase 2 — Safe startup and guarded materialization
+
+**Progress 2026-07-11:** tracked-file startup drift and read-only projection planning
+are implemented. Before materialization, the service reconciles changed prior entries
+against their saved base and pauses for missing files or unsafe backstops. It then
+computes the exact desired cloud paths through the existing allocator on a no-write
+filesystem and compares them with disk. New untracked Markdown is classified; an
+untracked file at a desired cloud path pauses materialization without changing local
+bytes. Missing-file and collision blockers persist in a versioned device-local
+operations manifest with stable identity/timestamps, surface through a pending count,
+and clear after resolution. Quit-time missing/add pairs correlate by inode first and
+exact hash second; unique moves and ambiguous candidate sets are journaled for review
+without applying cloud changes. Guarded application captures the reviewed destination
+hashes and compare-checks every cloud-document write; a late local change is preserved
+and journaled as a typed guard conflict. The v2 index envelope, mount-identity
+validation, observed topology, offline launch gate, persisted access-verification
+state, and renderer-facing status are implemented with migration and preservation
+regressions. Phase 2 is complete at code/test/build level; packaged live acceptance
+is still required before shipping.
 
 1. Version the local index and persist folder topology and mount identity.
 2. On connect, load the prior index and pending journal, then scan disk before fetching

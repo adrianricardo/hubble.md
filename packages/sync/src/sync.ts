@@ -411,6 +411,46 @@ export type MaterializeSyncedFolderResult = {
 	index: SyncedFolderIndex;
 };
 
+function createReadOnlyPlanningFileSystem(): ProjectionFsSubset {
+	return {
+		async ensureDir() {},
+		async writeFile() {},
+		async readFileOrNull() {
+			return null;
+		},
+		async setReadOnly() {},
+	};
+}
+
+/** Compute the whole-workspace cloud projection without touching the real disk. */
+export async function planSyncedFolder(
+	backend: Pick<
+		SyncBackend,
+		"listWorkspaces" | "getFolders" | "getLiveDocuments" | "getSharedWithMe"
+	>,
+	opts: { syncRoot: string },
+): Promise<SyncedFolderIndex> {
+	const result = await materializeSyncedFolder(
+		backend,
+		createReadOnlyPlanningFileSystem(),
+		opts,
+	);
+	return result.index;
+}
+
+/** Compute a repo-link mount projection without touching the real disk. */
+export async function planMountFolder(
+	backend: Pick<SyncBackend, "getFolderSubtreeDocuments">,
+	opts: { syncRoot: string; folderId: string },
+): Promise<SyncedFolderIndex> {
+	const result = await materializeMountFolder(
+		backend,
+		createReadOnlyPlanningFileSystem(),
+		opts,
+	);
+	return result.index;
+}
+
 /**
  * Materialize the user's cloud Live-Document membership into the on-disk synced
  * folder: one top folder per workspace, the workspace's folder tree nested via
@@ -649,7 +689,7 @@ async function writeSubtreeDocument(
 ) {
 	const inner = joinRel(
 		sanitizeRelPath(document.relativePath),
-		`${sanitizeSegment(document.title)}.md`,
+		projectionFileName(document.path, document.title),
 	);
 	const relPath0 = joinRel(baseRel, inner);
 	const slash = relPath0.lastIndexOf("/");
@@ -667,6 +707,24 @@ async function writeSubtreeDocument(
 		written,
 		index,
 	);
+}
+
+/**
+ * Canonical filename for every folder projection. A document path is the
+ * stable filesystem identity chosen at creation/import time; the title remains
+ * independently editable display text. Legacy documents without a path fall
+ * back to their title.
+ */
+export function projectionFileName(
+	documentPath: string | null | undefined,
+	title: string,
+): string {
+	const normalizedPath = documentPath?.split("\\").join("/");
+	const pathTail = normalizedPath
+		?.split("/")
+		.filter((segment) => segment.length > 0)
+		.pop();
+	return sanitizeSegment(pathTail ?? `${title}.md`);
 }
 
 /** Write one document's file + read-only chmod + base cache + reverse index. */

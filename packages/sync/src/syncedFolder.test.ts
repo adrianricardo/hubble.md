@@ -701,6 +701,36 @@ describe("materializeMountFolder (RB3 repo-link mount)", () => {
 		expect(result.written).toHaveLength(2);
 	});
 
+	it("uses the document path filename while keeping the title as display text", async () => {
+		const fs = createMemoryFs();
+		const backend = createBackend({
+			workspaces: [],
+			folders: {},
+			documents: {},
+			subtreeDocuments: {
+				f_link: [
+					sharedDoc({
+						_id: "m_activity",
+						title: "Brain Activity Log",
+						path: "admin/activity-log.md",
+						workspaceId: "ws_x",
+						relativePath: "admin",
+					}),
+				],
+			},
+		});
+
+		const result = await materializeMountFolder(backend, fs, {
+			syncRoot: MOUNT_ROOT,
+			folderId: "f_link",
+		});
+
+		expect(result.written).toEqual([`${MOUNT_ROOT}/admin/activity-log.md`]);
+		expect(await fs.readFile(`${MOUNT_ROOT}/admin/activity-log.md`)).toBe(
+			"# Brain Activity Log\n",
+		);
+	});
+
 	it("drops path-escape segments from cloud-controlled relative paths", async () => {
 		const fs = createMemoryFs();
 		const backend = createBackend({

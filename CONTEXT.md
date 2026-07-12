@@ -8,12 +8,12 @@ Glossary for shared terms across the project. Implementation details belong in c
 > documents are cloud-authoritative, watched Markdown is a writable projection, and
 > Plain Folder / Loose File / local-only Workspace authoring is not a production mode.
 > Use this glossary to understand existing code during migration, not to override the
-> new product contract.
+> new product contract. ADR-0010 records the target authority model.
 
 ## Flagged ambiguities
 
 - **A Workspace is defined by its configuration, not by the cloud.** Don't conflate "is this a Workspace?" (does the folder have a `.hubble/` configuration) with "is it synced?" ([[Cloud Sync]] enabled). A desktop Workspace can be local-only and gain Cloud Sync later. *(Note: not yet true in code — `init()` requires a Convex backend to mint a `workspaceId`. This is the subject of an active spec; see the deferred-cloud-sync handoff.)*
-- **Live Documents do not redefine all Workspace editing.** A [[Live Document]] is cloud-authoritative, but local-only [[Workspace]] editing, [[Plain Folder]] editing, and [[Loose File]] editing remain file-authoritative.
+- **Legacy local-authority terms describe migration code, not the target product.** Local-only [[Workspace]] editing, [[Plain Folder]] editing, and [[Loose File]] editing remain in the current implementation but are retired from the production model by ADR-0010.
 - **"Open folder" (desktop runtime) vs "Workspace."** The desktop editor operates on any open folder path and reads/writes the filesystem directly; that folder may be a [[Workspace Folder]] or a [[Plain Folder]]. Say "open folder" for the runtime notion, "Workspace" for the configured logical entity.
 - **"Open file" can mean OS selection or editor navigation.** In desktop shell language, opening a file may mean choosing a Loose File from the operating system. In [[HTML App]] API language, opening a file means navigating the editor to a [[Markdown File]] inside the current [[Workspace]].
 

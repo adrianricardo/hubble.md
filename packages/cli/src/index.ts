@@ -15,6 +15,7 @@ import {
 	changedRange,
 	exportLiveDocuments,
 	importLiveDocuments,
+	projectionFileName,
 	readConfigOrDefault,
 	reconcileProjectionFile,
 	removeCloudSyncConfig,
@@ -896,7 +897,7 @@ async function runFolderExport(
 		usedByDir.set(dirRel, used);
 		const fileName = uniqueName(
 			used,
-			exportFileName(document.path, document.title),
+			projectionFileName(document.path, document.title),
 		);
 		const relPath = dirRel ? `${dirRel}/${fileName}` : fileName;
 		const slash = relPath.lastIndexOf("/");
@@ -1486,18 +1487,6 @@ function logResult(reason: string, result: SyncResult) {
 	if (result.conflicts.length > 0) {
 		console.log(`  conflicts: ${result.conflicts.join(", ")}`);
 	}
-}
-
-function exportFileName(
-	documentPath: string | null | undefined,
-	title: string,
-) {
-	const normalizedPath = documentPath?.split("\\").join("/");
-	const pathTail = normalizedPath
-		?.split("/")
-		.filter((segment) => segment.length > 0)
-		.pop();
-	return sanitizeSegment(pathTail ?? `${title}.md`);
 }
 
 /**

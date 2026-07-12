@@ -61,13 +61,45 @@ fresh suggested mount path after either selection changes. The stable dev releas
 not been published and the complete install path still needs a clean-machine operator
 acceptance pass; do not describe Phase 3 as packaged-live-verified yet.
 
-**Next build step:** close the two projection correctness gaps found by Phase 2
-dogfood before broadening the desktop filesystem surface: (a) choose and migrate to
-one canonical naming scheme (desktop materializer currently uses title; `folder
-export` uses path), and (b) add an idempotency/self-write guard so a title/path mismatch
-cannot create materialize↔ingest duplicates. Also keep `cloud create` in a scratch cwd
-because it connects its cwd as the workspace path. After those guards, start the
-desktop cloud-workspace TECH.md revalidation/Phase 0 work. Publishing
+**Projection correctness guards are implemented at code/test level** (working tree,
+2026-07-11): document `path` is the canonical filename for desktop materialization
+and CLI folder export (title fallback for pathless legacy docs), watcher events wait
+for an in-flight materialize pass to install its index/self-write hashes before
+classification, and startup now computes the exact desired cloud projection through
+a no-write planner before materialization. New Markdown is classified separately from
+untracked files that collide with a desired cloud path; collisions pause startup and
+preserve local bytes. Existing mounts migrate by document-ID rekey. Focused sync +
+desktop suites and `pnpm build:desktop` pass. Live dogfood acceptance is not yet
+recorded.
+
+**Desktop cloud-workspace Phase 0 revalidation and documentation supersession are
+complete** (working tree, 2026-07-11): TECH was revalidated against `8f2fb06` plus the
+projection guards; its ownership/module map remains current. ADR-0010 now supersedes
+the legacy dual-authority model, with `CONTEXT.md`, ADR-0009, and active synced-folder
+guidance reconciled.
+
+**Phase 2 startup safety is complete at code/test/build level** (working tree, 2026-07-11):
+tracked quit-time edits reconcile against their saved base before materialization;
+missing tracked files, unsafe backstops, and untracked desired-path collisions pause
+without touching local bytes. Missing-file and collision blockers now persist in a
+versioned device-local operations journal with stable IDs/timestamps, are counted in
+service status, and clear durably after resolution. Quit-time missing/add pairs now
+correlate by inode first and exact content hash second; unique moves and ambiguous
+candidate sets are journaled without applying cloud changes or touching local bytes.
+Materialization now captures the reviewed destination hashes and compare-checks each
+cloud document write; a late local change stops the pass, preserves its bytes, and
+persists a typed guard conflict. The index is now a v2 mount-identified envelope with
+observed topology and lossless v1 migration; mount mismatches pause for review.
+Offline launch and access-verification failures persist pending verification, preserve
+every local byte, and surface `verifying`, `offline`, and `pending-review` status.
+Sync tests pass 43/43, desktop tests pass 123/123, and the desktop production build
+passes. Packaged live acceptance remains outstanding.
+
+**Next build step:** begin Phase 3 filesystem operation policy and review: neutral
+moves first, then consequential-move confirmation and deletion/Trash recovery. Add
+the internal development flag when the new coordinator or unified UI first has a
+runtime path to gate; the safety fix itself applies to the current engine. Also keep
+`cloud create` in a scratch cwd because it connects its cwd as the workspace path. Publishing
 `desktop-dev-latest` and clean-machine Phase 3 acceptance are separate operator gates.
 
 Desktop IA follow-up (direction settled 2026-07-11): replace the simultaneous

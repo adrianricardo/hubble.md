@@ -5,7 +5,8 @@
 > in its sibling `TECH.md`. Do not treat this document's single global sync root,
 > app-running assumptions, immediate delete behavior, or parallel local-authority modes
 > as current product intent. Reuse its reconcile primitives only after the new plan's
-> startup-drift and operation-safety gates are satisfied.
+> startup-drift and operation-safety gates are satisfied. ADR-0010 records the
+> superseding authority model.
 
 Implementation-ready design for the **designated synced folder** model: a single
 user-chosen sync root (e.g. `~/Hubble`) that is a managed, Drive-for-Desktop-style

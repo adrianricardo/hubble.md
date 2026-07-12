@@ -65,7 +65,14 @@ export type DesktopUpdateState = {
 
 export type DesktopPlatform = NodeJS.Platform;
 
-export type LiveSyncStatusState = "idle" | "connected" | "syncing" | "error";
+export type LiveSyncStatusState =
+	| "idle"
+	| "verifying"
+	| "connected"
+	| "syncing"
+	| "offline"
+	| "pending-review"
+	| "error";
 
 export type LiveSyncStatus = {
 	state: LiveSyncStatusState;
@@ -109,6 +116,10 @@ export type SyncedFolderStatus = {
 	syncRoot: string | null;
 	/** Number of indexed Live Documents in the mirror. */
 	documentCount: number;
+	/** Durable startup blockers awaiting review or recovery. */
+	pendingOperationCount: number;
+	/** Why startup cannot currently verify cloud state and access. */
+	verificationReason: "offline" | "access" | null;
 	/** Last successful cloud-to-disk materialize/reconcile pass. */
 	lastReconcileAt: number | null;
 	lastEventAt: number | null;

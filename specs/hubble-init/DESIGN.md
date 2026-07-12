@@ -144,18 +144,20 @@ it runs in:
     `sharedWithMe.documents`, ignores `.folders`), and RepoLinkSection's workspace
     picker lists member workspaces only — a folder-shared user can neither see nor
     mount the folder. Found during the apply run's handoff.
-11. **Projection naming split** (found 2026-07-11 live acceptance): the desktop
-    materializer names projection files by doc *title* (`admin/Brain Activity
-    Log.md`) while `hubble cloud folder export` names by doc *path*
-    (`admin/activity-log.md`) — the same folder yields two different trees.
-    Needs one canonical scheme (and a migration story for existing mounts).
-12. **Materialize↔ingest duplication loop** (found 2026-07-11 live acceptance):
+11. **Projection naming split.** *Closed at code/test level 2026-07-11:* document
+    `path` is now the canonical projection filename for both the desktop
+    materializer and `hubble cloud folder export`, with title fallback for legacy
+    pathless documents. Existing mounts migrate through the document-ID rekey path;
+    live dogfood verification remains part of the next acceptance pass.
+12. **Materialize↔ingest duplication loop.** *Closed at code/test level
+    2026-07-11:* watcher events now wait for an in-flight materialize pass to install
+    its reverse index and self-write hashes before classification. A regression test
+    pauses the materializer mid-write and proves the resulting `add` is not imported.
+    Original failure (found 2026-07-11 live acceptance):
     creating a cloud doc whose title differs from its path-derived filename, in a
     live-mounted folder, made the mount engine ingest its own materialized
     title-named file as a new local doc, re-materialize under "(2)", and repeat —
-    6 cloud copies before stabilizing. The new-local-file ingestion path needs an
-    idempotency/dedupe guard (e.g. content-hash match against just-materialized
-    docs, or recognize its own writes).
+    6 cloud copies before stabilizing.
 
 ## Open design questions
 

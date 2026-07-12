@@ -64,7 +64,24 @@ function memoryFs(initial: Record<string, string> = {}): MemoryFs {
 		},
 		async ensureDir() {},
 		async setReadOnly() {},
-		listMarkdownFiles: unsupported,
+		async listMarkdownFiles(dir) {
+			const prefix = `${dir}/`;
+			return Promise.all(
+				Array.from(files.entries())
+					.filter(([path]) => {
+						if (!path.startsWith(prefix) || !path.endsWith(".md")) return false;
+						return !path
+							.slice(prefix.length)
+							.split("/")
+							.some((segment) => segment.startsWith("."));
+					})
+					.map(async ([path, content]) => ({
+						relativePath: path.slice(prefix.length),
+						content,
+						hash: await contentHash(content),
+					})),
+			);
+		},
 		readBinaryFile: unsupported,
 		writeBinaryFile: unsupported,
 		listAssetFiles: unsupported,
@@ -121,7 +138,11 @@ function doc1(
 	};
 }
 
-function fakeBackend(calls: Calls, state: BackendState): SyncBackend {
+function fakeBackend(
+	calls: Calls,
+	state: BackendState,
+	onGetLiveDocuments?: (call: number) => void,
+): SyncBackend {
 	const notImpl = (): never => {
 		throw new Error("not implemented in fake backend");
 	};
@@ -136,6 +157,7 @@ function fakeBackend(calls: Calls, state: BackendState): SyncBackend {
 		},
 		async getLiveDocuments() {
 			calls.getLiveDocuments += 1;
+			onGetLiveDocuments?.(calls.getLiveDocuments);
 			return state.docs;
 		},
 		async getSharedWithMe() {
@@ -182,11 +204,21 @@ function fakeBackend(calls: Calls, state: BackendState): SyncBackend {
 		async applyDocumentPatch(args): Promise<DocumentPatchResult> {
 			calls.patch.push({ documentId: args.documentId });
 			if (state.patchError) throw state.patchError;
-			return {
+			const result = {
 				documentId: args.documentId,
 				revision: args.baseRevision + 1,
 				markdown: "hello world",
 			};
+			state.docs = state.docs.map((document) =>
+				document._id === args.documentId
+					? {
+							...document,
+							markdown: result.markdown,
+							version: result.revision,
+						}
+					: document,
+			);
+			return result;
 		},
 		getWorkspace: notImpl,
 		createWorkspace: notImpl,
@@ -206,7 +238,12 @@ function makeService(
 	calls: Calls,
 	events: Array<{ kind: string }>,
 	overrides: Partial<BackendState> = {},
-	options: { isOffline?: () => boolean; mountFolderId?: string } = {},
+	options: {
+		isOffline?: () => boolean;
+		mountFolderId?: string;
+		statInode?: (path: string) => number | null;
+		onGetLiveDocuments?: (call: number, fs: MemoryFs) => void;
+	} = {},
 ) {
 	const state: BackendState = {
 		docs: overrides.docs ?? [doc1()],
@@ -216,7 +253,9 @@ function makeService(
 		subtreeDocs: overrides.subtreeDocs ?? {},
 	};
 	const fs = memoryFs();
-	const backend = fakeBackend(calls, state);
+	const backend = fakeBackend(calls, state, (call) =>
+		options.onGetLiveDocuments?.(call, fs),
+	);
 	const subscription: {
 		callback: (() => void) | null;
 		error: ((error: Error) => void) | null;
@@ -253,7 +292,7 @@ function makeService(
 		fs,
 		now: () => NOW,
 		deviceId: "device-test",
-		statInode: () => 111,
+		statInode: options.statInode ?? (() => 111),
 		isOffline: options.isOffline,
 		mountFolderId: options.mountFolderId,
 		emit: (event) => events.push(event),
@@ -266,6 +305,7 @@ function makeService(
 const BASE_MD = `${SYNC_ROOT}/.hubble/state/live-documents/d1.base.md`;
 const BASE_JSON = `${SYNC_ROOT}/.hubble/state/live-documents/d1.json`;
 const QUEUE_MANIFEST = `${SYNC_ROOT}/.hubble/queue/events.json`;
+const OPERATIONS_MANIFEST = `${SYNC_ROOT}/.hubble/pending/projection-operations.json`;
 
 /** Find a written path matching `re` in the memory fs. */
 function findPath(fs: MemoryFs, re: RegExp): string | undefined {
@@ -369,6 +409,62 @@ describe("SyncedFolderService routing", () => {
 		});
 
 		expect(calls.patch).toEqual([]);
+	});
+
+	it("waits for materialize indexing before classifying an add from its own write", async () => {
+		const { service, fs, state, subscription } = makeService(calls, events);
+		await service.connect(CONNECT_INPUT);
+
+		const projectionPath = `${SYNC_ROOT}/WS/activity-log.md`;
+		let releaseWrite!: () => void;
+		const writePaused = new Promise<void>((resolve) => {
+			releaseWrite = resolve;
+		});
+		let projectionWritten!: () => void;
+		const sawProjectionWrite = new Promise<void>((resolve) => {
+			projectionWritten = resolve;
+		});
+		const originalWriteFile = fs.writeFile.bind(fs);
+		fs.writeFile = async (path, content) => {
+			await originalWriteFile(path, content);
+			if (path === projectionPath) {
+				projectionWritten();
+				await writePaused;
+			}
+		};
+
+		state.docs = [
+			doc1(),
+			doc1({
+				_id: "d_activity",
+				title: "Brain Activity Log",
+				path: "WS/activity-log.md",
+				markdown: "activity",
+			}),
+		];
+		subscription.callback?.();
+		await sawProjectionWrite;
+
+		let eventHandled = false;
+		const event = service
+			.handleRawEvent({
+				type: "add",
+				absPath: projectionPath,
+				hash: await contentHash("activity"),
+				inode: 111,
+				at: NOW,
+			})
+			.then(() => {
+				eventHandled = true;
+			});
+		await Promise.resolve();
+		expect(eventHandled).toBe(false);
+
+		releaseWrite();
+		await event;
+
+		expect(service.lookup(projectionPath)?.documentId).toBe("d_activity");
+		expect(calls.import).toEqual([]);
 	});
 
 	it("create: imports new files with workspace-relative cloud paths", async () => {
@@ -550,7 +646,7 @@ describe("SyncedFolderService routing", () => {
 	});
 
 	it("offline queue: replays a changed projection before reconnect materialize", async () => {
-		let offline = true;
+		let offline = false;
 		const { service, fs, state } = makeService(
 			calls,
 			events,
@@ -558,6 +654,7 @@ describe("SyncedFolderService routing", () => {
 			{ isOffline: () => offline },
 		);
 		await service.connect(CONNECT_INPUT);
+		offline = true;
 
 		await fs.writeFile(`${SYNC_ROOT}/WS/Doc.md`, "hello offline");
 		await service.handleRawEvent({
@@ -587,8 +684,134 @@ describe("SyncedFolderService routing", () => {
 		expect(await fs.readFile(`${SYNC_ROOT}/WS/Doc.md`)).toBe("hello world");
 	});
 
+	it("startup drift: reconciles an edit made while the app was quit before materialize", async () => {
+		const { service, fs, state } = makeService(calls, events);
+		await service.connect(CONNECT_INPUT);
+		await service.disconnect();
+
+		await fs.writeFile(`${SYNC_ROOT}/WS/Doc.md`, "hello while quit");
+		state.docs = [doc1({ markdown: "cloud concurrently changed", version: 4 })];
+		const status = await service.connect(CONNECT_INPUT);
+
+		expect(calls.patch).toEqual([{ documentId: "d1" }]);
+		expect(status.state).toBe("connected");
+		expect(await fs.readFile(`${SYNC_ROOT}/WS/Doc.md`)).toBe("hello world");
+		expect(events).toContainEqual({ kind: "reconciled" });
+	});
+
+	it("startup drift: a missing managed file pauses materialize without recreating it", async () => {
+		const { service, fs, state } = makeService(calls, events);
+		await service.connect(CONNECT_INPUT);
+		await service.disconnect();
+
+		await fs.deleteFile(`${SYNC_ROOT}/WS/Doc.md`);
+		state.docs = [
+			doc1({ markdown: "cloud must not recreate this", version: 4 }),
+		];
+		const status = await service.connect(CONNECT_INPUT);
+
+		expect(status.state).toBe("pending-review");
+		expect(status.lastError).toContain("pending filesystem operation");
+		expect(status.pendingOperationCount).toBe(1);
+		expect(await fs.readFileOrNull(`${SYNC_ROOT}/WS/Doc.md`)).toBeNull();
+		expect(JSON.parse(await fs.readFile(OPERATIONS_MANIFEST))).toMatchObject({
+			version: 1,
+			operations: [{ kind: "missing-document", documentId: "d1" }],
+		});
+		expect(calls.patch).toEqual([]);
+	});
+
+	it("startup drift: journals an unambiguous quit-time rename without applying it", async () => {
+		const inodeByPath = new Map<string, number>();
+		const { service, fs } = makeService(
+			calls,
+			events,
+			{},
+			{ statInode: (path) => inodeByPath.get(path) ?? null },
+		);
+		inodeByPath.set(`${SYNC_ROOT}/WS/Doc.md`, 111);
+		await service.connect(CONNECT_INPUT);
+		await service.disconnect();
+
+		await fs.deleteFile(`${SYNC_ROOT}/WS/Doc.md`);
+		await fs.writeFile(`${SYNC_ROOT}/WS/Renamed.md`, "hello world");
+		inodeByPath.set(`${SYNC_ROOT}/WS/Renamed.md`, 111);
+		const status = await service.connect(CONNECT_INPUT);
+
+		expect(status.state).toBe("pending-review");
+		expect(await fs.readFile(`${SYNC_ROOT}/WS/Renamed.md`)).toBe("hello world");
+		expect(await fs.readFileOrNull(`${SYNC_ROOT}/WS/Doc.md`)).toBeNull();
+		expect(JSON.parse(await fs.readFile(OPERATIONS_MANIFEST))).toMatchObject({
+			operations: [
+				{
+					kind: "startup-move",
+					documentId: "d1",
+					path: `${SYNC_ROOT}/WS/Doc.md`,
+					toPath: `${SYNC_ROOT}/WS/Renamed.md`,
+					matchedBy: "inode",
+				},
+			],
+		});
+		expect(calls.rename).toEqual([]);
+	});
+
+	it("startup projection plan: an untracked cloud-path collision pauses before materialize", async () => {
+		const { service, fs } = makeService(calls, events);
+		await fs.writeFile(`${SYNC_ROOT}/WS/Doc.md`, "local untracked bytes");
+
+		const status = await service.connect(CONNECT_INPUT);
+
+		expect(status.state).toBe("pending-review");
+		expect(status.lastError).toContain("untracked Markdown path collision");
+		expect(status.pendingOperationCount).toBe(1);
+		expect(await fs.readFile(`${SYNC_ROOT}/WS/Doc.md`)).toBe(
+			"local untracked bytes",
+		);
+		expect(JSON.parse(await fs.readFile(OPERATIONS_MANIFEST))).toMatchObject({
+			version: 1,
+			operations: [{ kind: "path-collision", documentId: "d1" }],
+		});
+		expect(
+			await fs.readFileOrNull(`${SYNC_ROOT}/.hubble/index/synced-folder.json`),
+		).toBeNull();
+
+		await service.disconnect();
+		await fs.deleteFile(`${SYNC_ROOT}/WS/Doc.md`);
+		const recovered = await service.connect(CONNECT_INPUT);
+		expect(recovered.state).toBe("connected");
+		expect(recovered.pendingOperationCount).toBe(0);
+		expect(JSON.parse(await fs.readFile(OPERATIONS_MANIFEST))).toMatchObject({
+			version: 1,
+			operations: [],
+		});
+	});
+
+	it("guarded materialize: journals a destination changed after planning without overwriting it", async () => {
+		const { service, fs } = makeService(
+			calls,
+			events,
+			{},
+			{
+				onGetLiveDocuments(call, memory) {
+					if (call === 2) {
+						memory.__files.set(`${SYNC_ROOT}/WS/Doc.md`, "late local edit");
+					}
+				},
+			},
+		);
+
+		const status = await service.connect(CONNECT_INPUT);
+
+		expect(status.state).toBe("pending-review");
+		expect(status.lastError).toContain("changed after startup verification");
+		expect(await fs.readFile(`${SYNC_ROOT}/WS/Doc.md`)).toBe("late local edit");
+		expect(JSON.parse(await fs.readFile(OPERATIONS_MANIFEST))).toMatchObject({
+			operations: [{ kind: "guard-conflict", documentId: "d1" }],
+		});
+	});
+
 	it("offline queue: keeps a failed replay on disk and skips materialize", async () => {
-		let offline = true;
+		let offline = false;
 		const { service, fs, state } = makeService(
 			calls,
 			events,
@@ -596,6 +819,7 @@ describe("SyncedFolderService routing", () => {
 			{ isOffline: () => offline },
 		);
 		await service.connect(CONNECT_INPUT);
+		offline = true;
 
 		await fs.writeFile(`${SYNC_ROOT}/WS/Doc.md`, "hello offline");
 		await service.handleRawEvent({
@@ -624,6 +848,58 @@ describe("SyncedFolderService routing", () => {
 		expect(status.telemetry).toMatchObject({
 			errorCount: 1,
 			queuedEventCount: 1,
+		});
+	});
+
+	it("offline launch: persists pending verification and never reads cloud state", async () => {
+		const { service, fs } = makeService(
+			calls,
+			events,
+			{},
+			{ isOffline: () => true },
+		);
+		await fs.writeFile(`${SYNC_ROOT}/WS/Doc.md`, "local bytes");
+
+		const status = await service.connect(CONNECT_INPUT);
+
+		expect(status).toMatchObject({
+			state: "offline",
+			verificationReason: "offline",
+		});
+		expect(calls.getLiveDocuments).toBe(0);
+		expect(await fs.readFile(`${SYNC_ROOT}/WS/Doc.md`)).toBe("local bytes");
+		expect(
+			JSON.parse(
+				await fs.readFile(`${SYNC_ROOT}/.hubble/index/synced-folder.json`),
+			),
+		).toMatchObject({
+			version: 2,
+			mount: { kind: "workspace-mirror" },
+			verification: { state: "pending", reason: "offline" },
+		});
+	});
+
+	it("access verification failure: preserves local bytes and reports review state", async () => {
+		const { service, fs } = makeService(calls, events, {}, {
+			onGetLiveDocuments() {
+				throw new Error("permission denied");
+			},
+		});
+		await fs.writeFile(`${SYNC_ROOT}/WS/Doc.md`, "local bytes");
+
+		const status = await service.connect(CONNECT_INPUT);
+
+		expect(status).toMatchObject({
+			state: "pending-review",
+			verificationReason: "access",
+		});
+		expect(await fs.readFile(`${SYNC_ROOT}/WS/Doc.md`)).toBe("local bytes");
+		expect(
+			JSON.parse(
+				await fs.readFile(`${SYNC_ROOT}/.hubble/index/synced-folder.json`),
+			),
+		).toMatchObject({
+			verification: { state: "pending", reason: "access" },
 		});
 	});
 

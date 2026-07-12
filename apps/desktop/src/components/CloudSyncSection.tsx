@@ -589,6 +589,11 @@ function getSyncedFolderStatusView(status: SyncedFolderStatus | null): {
 		};
 	}
 	switch (status.state) {
+		case "verifying":
+			return {
+				label: "Verifying",
+				dotClassName: `${dotBase} bg-sky-500`,
+			};
 		case "connected":
 			return {
 				label: "Connected",
@@ -600,9 +605,15 @@ function getSyncedFolderStatusView(status: SyncedFolderStatus | null): {
 				dotClassName: `${dotBase} bg-sky-500`,
 			};
 		case "error":
+		case "pending-review":
 			return {
 				label: "Needs attention",
 				dotClassName: `${dotBase} bg-destructive`,
+			};
+		case "offline":
+			return {
+				label: "Offline",
+				dotClassName: `${dotBase} bg-amber-500`,
 			};
 		case "idle":
 			return {

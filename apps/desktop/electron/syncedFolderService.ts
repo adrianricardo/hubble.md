@@ -6,19 +6,31 @@ import {
 } from "@hubble.md/convex-client";
 import {
 	type BackstopReason,
+	captureProjectionSnapshot,
+	compareProjectionPlanWithDisk,
 	contentHash,
+	correlateStartupProjectionMoves,
 	diffSyncedFolderIndex,
 	type FileSystem,
+	guardProjectionFileSystem,
+	inspectStartupProjectionDrift,
 	liveDocumentBaseCacheRoot,
-	loadSyncedFolderIndex,
+	loadSyncedFolderIndexManifest,
 	materializeMountFolder,
 	materializeSyncedFolder,
+	ProjectionGuardConflict,
+	type ProjectionSnapshot,
+	planMountFolder,
+	planSyncedFolder,
 	reconcileProjectionFile,
 	rekeySyncedFolderEntry,
 	type SyncBackend,
 	type SyncedFolderIndex,
 	type SyncedFolderIndexEntry,
-	saveSyncedFolderIndex,
+	type SyncedFolderIndexManifest,
+	type SyncedFolderMountIdentity,
+	saveProjectionOperations,
+	saveSyncedFolderIndexManifest,
 	toLocalEditName,
 	writeReconcileBase,
 } from "@hubble.md/sync";
@@ -104,6 +116,31 @@ type QueueManifest = {
 	events: QueuedWatcherEvent[];
 };
 
+function projectionTopology(
+	syncRoot: string,
+	index: SyncedFolderIndex,
+): SyncedFolderIndexManifest["topology"] {
+	const byFolder = new Map<
+		string,
+		SyncedFolderIndexManifest["topology"][number]
+	>();
+	for (const [path, entry] of Object.entries(index)) {
+		if (!entry.folderId || byFolder.has(entry.folderId)) continue;
+		const relative = path.startsWith(`${syncRoot}/`)
+			? path.slice(syncRoot.length + 1)
+			: path;
+		const slash = relative.lastIndexOf("/");
+		byFolder.set(entry.folderId, {
+			folderId: entry.folderId,
+			workspaceId: entry.workspaceId,
+			relativePath: slash === -1 ? "" : relative.slice(0, slash),
+		});
+	}
+	return [...byFolder.values()].sort((a, b) =>
+		a.relativePath.localeCompare(b.relativePath),
+	);
+}
+
 /**
  * Synced-folder engine for the Electron main process (SYNCED-FOLDER Phase 3b).
  *
@@ -138,6 +175,9 @@ export class SyncedFolderService {
 	#lastError: string | null = null;
 	#lastReconcileAt: number | null = null;
 	#lastEventAt: number | null = null;
+	#pendingOperationCount = 0;
+	#verificationReason: "offline" | "access" | null = null;
+	#indexManifest: SyncedFolderIndexManifest | null = null;
 	#telemetry: SyncedFolderTelemetry = emptyTelemetry();
 
 	#heldUnlinks: HeldUnlink[] = [];
@@ -147,6 +187,9 @@ export class SyncedFolderService {
 	#cloudMaterializeTimer: ReturnType<typeof setTimeout> | null = null;
 	#cloudMaterializeRunning = false;
 	#cloudMaterializePending = false;
+	#materializeTask: Promise<void> | null = null;
+	#startupProjectionSnapshot: ProjectionSnapshot | null = null;
+	#startupProjectionPlan: SyncedFolderIndex | null = null;
 	#heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 	#watcher: WatcherHandle | null = null;
 	#subscriber: Subscriber | null = null;
@@ -202,6 +245,8 @@ export class SyncedFolderService {
 			connected: this.connected,
 			syncRoot: this.#syncRoot,
 			documentCount: Object.keys(this.#index).length,
+			pendingOperationCount: this.#pendingOperationCount,
+			verificationReason: this.#verificationReason,
 			lastReconcileAt: this.#lastReconcileAt,
 			lastEventAt: this.#lastEventAt,
 			lastError: this.#lastError,
@@ -239,19 +284,59 @@ export class SyncedFolderService {
 		this.#syncRoot = syncRoot;
 		this.#connectionGeneration = connectionGeneration;
 		this.#lastError = null;
+		this.#verificationReason = null;
+		this.#state = "verifying";
 
 		await this.#fs.ensureDir(`${syncRoot}/${QUEUE_DIR_REL}`);
 
 		// Replay offline edits against the previous index before materializing;
 		// otherwise cloud→disk sync could overwrite the unsynced local bytes.
-		this.#index = await loadSyncedFolderIndex(this.#fs, syncRoot);
-		const queueDrained = await this.#flushQueue();
+		const mount = this.#mountIdentity();
+		try {
+			this.#indexManifest = await loadSyncedFolderIndexManifest(
+				this.#fs,
+				syncRoot,
+				mount,
+			);
+		} catch (error) {
+			this.#state = "pending-review";
+			this.#lastError = error instanceof Error ? error.message : String(error);
+			this.#recordEvent({ kind: "error" });
+			return this.getStatus();
+		}
+		this.#index = this.#indexManifest.entries;
+		if (this.#isOffline()) {
+			await this.#pauseForVerification("offline");
+			return this.getStatus();
+		}
+		let queueDrained: boolean;
+		try {
+			queueDrained = await this.#flushQueue();
+		} catch (error) {
+			await this.#pauseForStartupError(error);
+			return this.getStatus();
+		}
 		if (!queueDrained) {
 			this.#state = "error";
 			return this.getStatus();
 		}
+		try {
+			const startupSafe = await this.#reconcileStartupDrift();
+			if (!startupSafe) return this.getStatus();
+			const projectionSafe = await this.#verifyProjectionPlan();
+			if (!projectionSafe) return this.getStatus();
+		} catch (error) {
+			await this.#pauseForStartupError(error);
+			return this.getStatus();
+		}
 
-		await this.#materialize(connectionGeneration);
+		try {
+			await this.#materialize(connectionGeneration);
+		} catch (error) {
+			if (!(error instanceof ProjectionGuardConflict)) throw error;
+			await this.#recordGuardConflict(error);
+			return this.getStatus();
+		}
 		this.#startCloudSubscriptions(deploymentUrl, authToken);
 
 		this.#heartbeatTimer = setInterval(() => {
@@ -269,7 +354,204 @@ export class SyncedFolderService {
 		}
 
 		this.#state = "connected";
+		this.#verificationReason = null;
 		return this.getStatus();
+	}
+
+	#mountIdentity(): SyncedFolderMountIdentity {
+		return this.#mountFolderId
+			? { kind: "folder", folderId: this.#mountFolderId }
+			: { kind: "workspace-mirror" };
+	}
+
+	async #pauseForStartupError(error: unknown): Promise<void> {
+		const message = error instanceof Error ? error.message : String(error);
+		const accessFailure =
+			/auth|unauthori[sz]ed|forbidden|permission|access/i.test(message);
+		const networkFailure =
+			this.#isOffline() ||
+			/fetch|network|offline|timed? out|unavailable|connection/i.test(message);
+		if (accessFailure || networkFailure) {
+			await this.#pauseForVerification(accessFailure ? "access" : "offline");
+			return;
+		}
+		this.#lastError = message;
+		this.#state = "error";
+		this.#recordEvent({ kind: "error" });
+	}
+
+	async #pauseForVerification(reason: "offline" | "access"): Promise<void> {
+		const manifest = this.#indexManifest;
+		const syncRoot = this.#syncRoot;
+		this.#verificationReason = reason;
+		this.#state = reason === "offline" ? "offline" : "pending-review";
+		this.#lastError =
+			reason === "offline"
+				? "Cloud state could not be verified while offline; local files were left untouched."
+				: "Current cloud access could not be verified; local files were left untouched.";
+		if (manifest && syncRoot) {
+			manifest.verification = {
+				state: "pending",
+				reason,
+				updatedAt: this.#now(),
+			};
+			await saveSyncedFolderIndexManifest(this.#fs, syncRoot, manifest);
+		}
+	}
+
+	async #verifyProjectionPlan(): Promise<boolean> {
+		const backend = this.#backend;
+		const syncRoot = this.#syncRoot;
+		if (!backend || !syncRoot) return false;
+		const plan = this.#mountFolderId
+			? await planMountFolder(backend, {
+					syncRoot,
+					folderId: this.#mountFolderId,
+				})
+			: await planSyncedFolder(backend, { syncRoot });
+		const comparison = await compareProjectionPlanWithDisk(
+			this.#fs,
+			syncRoot,
+			plan,
+			this.#index,
+		);
+		const operations = comparison.collisions.map(({ path, file }) => {
+			const entry = plan[path];
+			if (!entry)
+				throw new Error(`Missing desired projection entry for ${path}`);
+			return {
+				kind: "path-collision" as const,
+				documentId: entry.documentId,
+				workspaceId: entry.workspaceId,
+				folderId: entry.folderId,
+				path,
+				localHash: file.hash,
+				desiredHash: entry.hash,
+			};
+		});
+		const manifest = await saveProjectionOperations(
+			this.#fs,
+			syncRoot,
+			operations,
+			this.#now(),
+		);
+		this.#pendingOperationCount = manifest.operations.length;
+		if (operations.length === 0) {
+			this.#startupProjectionPlan = plan;
+			this.#startupProjectionSnapshot = await captureProjectionSnapshot(
+				this.#fs,
+				plan,
+			);
+			return true;
+		}
+		this.#lastError = `Startup verification found ${comparison.collisions.length} untracked Markdown path collision${comparison.collisions.length === 1 ? "" : "s"}; cloud materialization is paused to preserve local files.`;
+		this.#state = "pending-review";
+		this.#recordEvent({ kind: "error" });
+		return false;
+	}
+
+	async #recordGuardConflict(error: ProjectionGuardConflict): Promise<void> {
+		const syncRoot = this.#syncRoot;
+		const plan = this.#startupProjectionPlan;
+		const entry = plan?.[error.path];
+		if (!syncRoot || !entry) return;
+		const manifest = await saveProjectionOperations(
+			this.#fs,
+			syncRoot,
+			[
+				{
+					kind: "guard-conflict",
+					documentId: entry.documentId,
+					workspaceId: entry.workspaceId,
+					folderId: entry.folderId,
+					path: error.path,
+					expectedHash: error.expectedHash,
+					actualHash: error.actualHash,
+					desiredHash: entry.hash,
+				},
+			],
+			this.#now(),
+		);
+		this.#pendingOperationCount = manifest.operations.length;
+		this.#lastError = `Projection destination changed after startup verification; materialization paused without overwriting ${error.path}.`;
+		this.#state = "pending-review";
+		this.#recordEvent({ kind: "error" });
+	}
+
+	async #reconcileStartupDrift(): Promise<boolean> {
+		const backend = this.#backend;
+		const syncRoot = this.#syncRoot;
+		if (!backend || !syncRoot) return false;
+
+		const drift = await inspectStartupProjectionDrift(this.#fs, this.#index);
+		const correlation = await correlateStartupProjectionMoves(
+			this.#fs,
+			syncRoot,
+			this.#index,
+			drift,
+			this.#statInode,
+		);
+		const blockers = [
+			...correlation.missing.map(({ path, entry }) => ({
+				kind: "missing-document" as const,
+				documentId: entry.documentId,
+				workspaceId: entry.workspaceId,
+				folderId: entry.folderId,
+				path,
+				baseHash: entry.hash,
+			})),
+			...correlation.moves.map((move) => ({
+				kind: "startup-move" as const,
+				documentId: move.entry.documentId,
+				workspaceId: move.entry.workspaceId,
+				folderId: move.entry.folderId,
+				path: move.fromPath,
+				toPath: move.toPath,
+				matchedBy: move.matchedBy,
+			})),
+			...correlation.ambiguous.map(({ path, entry, candidatePaths }) => ({
+				kind: "ambiguous-startup-move" as const,
+				documentId: entry.documentId,
+				workspaceId: entry.workspaceId,
+				folderId: entry.folderId,
+				path,
+				candidatePaths,
+			})),
+		];
+		if (blockers.length > 0) {
+			const manifest = await saveProjectionOperations(
+				this.#fs,
+				syncRoot,
+				blockers,
+				this.#now(),
+			);
+			this.#pendingOperationCount = manifest.operations.length;
+			this.#lastError = `Startup verification found ${blockers.length} pending filesystem operation${blockers.length === 1 ? "" : "s"}; cloud materialization is paused for review.`;
+			this.#state = "pending-review";
+			this.#recordEvent({ kind: "error" });
+			return false;
+		}
+
+		for (const item of drift) {
+			if (item.kind !== "changed") continue;
+			const outcome = await reconcileProjectionFile(backend, this.#fs, {
+				documentId: item.entry.documentId,
+				projectionPath: item.path,
+				workspacePath: syncRoot,
+				actor: "startup-reconcile",
+			});
+			if (outcome.status === "backstop") {
+				this.#lastError = `Startup verification could not safely reconcile ${item.path} (${outcome.reason}); cloud materialization is paused.`;
+				this.#state = "error";
+				this.#recordEvent({ kind: "error" });
+				return false;
+			}
+			if (outcome.status === "reconciled") {
+				await this.#refreshIndexEntry(item.path, outcome.markdown);
+				this.#recordEvent({ kind: "reconciled" });
+			}
+		}
+		return true;
 	}
 
 	async disconnect(): Promise<SyncedFolderStatus> {
@@ -303,6 +585,11 @@ export class SyncedFolderService {
 		this.#backend = null;
 		this.#syncRoot = null;
 		this.#index = {};
+		this.#indexManifest = null;
+		this.#pendingOperationCount = 0;
+		this.#verificationReason = null;
+		this.#startupProjectionPlan = null;
+		this.#startupProjectionSnapshot = null;
 		this.#heldUnlinks = [];
 		this.#recentlyWrittenByUs.clear();
 		this.#state = "idle";
@@ -329,16 +616,35 @@ export class SyncedFolderService {
 	async #materialize(
 		connectionGeneration = this.#connectionGeneration,
 	): Promise<void> {
+		if (this.#materializeTask) {
+			await this.#materializeTask;
+			return;
+		}
+		const task = this.#performMaterialize(connectionGeneration);
+		this.#materializeTask = task;
+		try {
+			await task;
+		} finally {
+			if (this.#materializeTask === task) this.#materializeTask = null;
+		}
+	}
+
+	async #performMaterialize(connectionGeneration: number): Promise<void> {
 		const backend = this.#backend;
 		const syncRoot = this.#syncRoot;
 		if (!backend || !syncRoot) return;
 		const previous = this.#index;
+		const snapshot = this.#startupProjectionSnapshot;
+		this.#startupProjectionSnapshot = null;
+		const projectionFs = snapshot
+			? guardProjectionFileSystem(this.#fs, snapshot)
+			: this.#fs;
 		const result = this.#mountFolderId
-			? await materializeMountFolder(backend, this.#fs, {
+			? await materializeMountFolder(backend, projectionFs, {
 					syncRoot,
 					folderId: this.#mountFolderId,
 				})
-			: await materializeSyncedFolder(backend, this.#fs, {
+			: await materializeSyncedFolder(backend, projectionFs, {
 					syncRoot,
 				});
 		if (
@@ -355,7 +661,23 @@ export class SyncedFolderService {
 			entry.inode = this.#statInode(absPath);
 			this.#recentlyWrittenByUs.set(absPath, { hash: entry.hash, at: now });
 		}
-		await saveSyncedFolderIndex(this.#fs, syncRoot, result.index);
+		const manifest = this.#indexManifest ?? {
+			version: 2 as const,
+			mount: this.#mountIdentity(),
+			syncRoot,
+			topology: [],
+			verification: {
+				state: "verified" as const,
+				reason: null,
+				updatedAt: now,
+			},
+			entries: {},
+		};
+		manifest.entries = result.index;
+		manifest.topology = projectionTopology(syncRoot, result.index);
+		manifest.verification = { state: "verified", reason: null, updatedAt: now };
+		await saveSyncedFolderIndexManifest(this.#fs, syncRoot, manifest);
+		this.#indexManifest = manifest;
 		this.#index = result.index;
 		this.#lastReconcileAt = this.#now();
 
@@ -378,6 +700,15 @@ export class SyncedFolderService {
 			}
 			await this.#handleAccessLoss(path, entry);
 		}
+	}
+
+	async #saveCurrentIndex(): Promise<void> {
+		const syncRoot = this.#syncRoot;
+		const manifest = this.#indexManifest;
+		if (!syncRoot || !manifest) return;
+		manifest.entries = this.#index;
+		manifest.topology = projectionTopology(syncRoot, this.#index);
+		await saveSyncedFolderIndexManifest(this.#fs, syncRoot, manifest);
 	}
 
 	#startCloudSubscriptions(deploymentUrl: string, authToken: string): void {
@@ -533,6 +864,11 @@ export class SyncedFolderService {
 		enqueueOnError: boolean,
 	): Promise<void> {
 		if (!this.#backend || !this.#syncRoot) return;
+		// Chokidar can emit an `add` before a multi-file cloud materialize pass has
+		// installed its new reverse index/self-write hashes. Wait for that atomic
+		// boundary so our own file can never be classified as a new local document.
+		if (this.#materializeTask) await this.#materializeTask;
+		if (!this.#backend || !this.#syncRoot) return;
 		this.#sweepSelfWrites();
 
 		const decision = classifySyncedFolderChange(event, {
@@ -654,7 +990,7 @@ export class SyncedFolderService {
 					role: "editor",
 				};
 				this.#markWrittenByUs(decision.absPath, markdown);
-				await saveSyncedFolderIndex(this.#fs, syncRoot, this.#index);
+				await this.#saveCurrentIndex();
 				this.#recordEvent({ kind: "created" });
 				return;
 			}
@@ -670,7 +1006,7 @@ export class SyncedFolderService {
 				await backend.removeDocument(decision.documentId, "synced-folder");
 				delete this.#index[decision.absPath];
 				await this.#dropBaseCache(decision.documentId);
-				await saveSyncedFolderIndex(this.#fs, syncRoot, this.#index);
+				await this.#saveCurrentIndex();
 				this.#recordEvent({ kind: "removed-local" });
 				return;
 			}
@@ -726,7 +1062,7 @@ export class SyncedFolderService {
 		entry.hash = await contentHash(markdown);
 		entry.inode = this.#statInode(absPath);
 		if (this.#syncRoot) {
-			await saveSyncedFolderIndex(this.#fs, this.#syncRoot, this.#index);
+			await this.#saveCurrentIndex();
 		}
 	}
 
@@ -827,7 +1163,7 @@ export class SyncedFolderService {
 
 		delete this.#index[absPath];
 		await this.#dropBaseCache(entry.documentId);
-		await saveSyncedFolderIndex(this.#fs, syncRoot, this.#index);
+		await this.#saveCurrentIndex();
 		this.#recordEvent({ kind: "removed-access" });
 	}
 
@@ -968,7 +1304,7 @@ export class SyncedFolderService {
 		// Drop the matching held unlink so it can't later fire as a delete.
 		this.#heldUnlinks = this.#heldUnlinks.filter((h) => h.absPath !== fromPath);
 		if (this.#syncRoot) {
-			void saveSyncedFolderIndex(this.#fs, this.#syncRoot, this.#index);
+			void this.#saveCurrentIndex();
 		}
 	}
 
