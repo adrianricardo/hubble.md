@@ -8,12 +8,13 @@ This folder holds the **engineering specs** for the realtime-collab → repo-bra
 
 - `TECH.md` — architecture: CRDT authority (`@convex-dev/prosemirror-sync`), Live
   Documents, watcher → diff → scoped-patch reconcile ("the one bridge"), permissions.
-- `SYNCED-FOLDER.md` — the synced-folder projection/watcher design.
+- `SYNCED-FOLDER.md` — historical projection/watcher foundation; its product semantics
+  are superseded by `/specs/desktop-cloud-workspace/{PRODUCT,TECH}.md`.
 - `DECISIONS.md` — fork-era engineering decision log (#1–6; ADR-0009 in `docs/adr/`).
 - `REPO-BRAIN-VISION.md` / `REPO-BRAIN-RATIONALE.md` — the 2026-07-03 pivot: locked
   model (Workspace ⊃ Folders ⊃ cloud Docs), Decided #1–15, strategy and bets.
   **Note:** Decided #13 (manual-only seeding) is superseded by the agent-init entry —
-  see `/brain/synthesized/current-vision.md`.
+  see `/brain/cloud/synthesized/Current Vision.md` when the cloud brain is mounted.
 - `repo-brain-storyboard.html` — v1.1 visual walkthrough (agent-init scenes 1–3).
 - `TEST-RUNBOOK.md` — QA runbook for the repo-first launch gates.
 - `OPERATIONS.md` — support/telemetry runbook.

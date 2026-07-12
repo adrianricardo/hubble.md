@@ -6,7 +6,7 @@ current system). Nothing here is load-bearing; it is kept for history and as the
 
 | Doc | Why archived |
 |---|---|
-| `PRODUCT.md` | Underlying product framing; wedge/entry superseded by repo-brain vision, now absorbed into `/brain/synthesized/current-vision.md`. |
+| `PRODUCT.md` | Underlying product framing; wedge/entry superseded by repo-brain vision, now absorbed into `/brain/cloud/synthesized/Current Vision.md` when mounted. |
 | `SPIKE.md` | prosemirror-sync spike — validated, executed. |
 | `STAGE6-BUILD-DECISIONS.md`, `SONNET-TASKS.md`, `ORCHESTRATION-NOTES.md` | Build-time coordination records for completed phases. |
 | `DESKTOP-ALWAYS-ON.md`, `OFFLINE-DECISION.md` | Decision records — decisions stand, docs are historical. |

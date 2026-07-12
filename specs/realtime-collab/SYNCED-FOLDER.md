@@ -1,5 +1,12 @@
 # Synced Folder — On-Disk Mirror Design (Stage 6, Decision B / Track C)
 
+> **Historical implementation foundation (2026-07-11):** The target desktop behavior
+> is now `/specs/desktop-cloud-workspace/PRODUCT.md`, with a commit-pinned migration plan
+> in its sibling `TECH.md`. Do not treat this document's single global sync root,
+> app-running assumptions, immediate delete behavior, or parallel local-authority modes
+> as current product intent. Reuse its reconcile primitives only after the new plan's
+> startup-drift and operation-safety gates are satisfied.
+
 Implementation-ready design for the **designated synced folder** model: a single
 user-chosen sync root (e.g. `~/Hubble`) that is a managed, Drive-for-Desktop-style
 mirror of the user's cloud Live-Document membership. **Design only — no production

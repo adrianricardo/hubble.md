@@ -31,6 +31,9 @@ more vision in his head than is written; don't treat gaps as decisions.
 
 ## Relationship to /specs
 
+- `/specs/desktop-cloud-workspace/` — normative desktop IA/projection behavior
+  (`PRODUCT.md`) plus a commit-pinned, revalidation-required implementation plan
+  (`TECH.md`).
 - `/specs/realtime-collab/` — engineering specs for the realtime-collab/repo-brain build (TECH, SYNCED-FOLDER, runbooks) + `archive/` of executed/superseded plans.
 - `/specs/hubble-init/` — design for the agent-run init/extraction skill (the new front door); run records in `runs/`.
 - Vision lives in the **cloud half**, not in specs. Specs describe how; the brain describes what and why.

@@ -13,11 +13,11 @@ The brain lives in two halves:
 - **Git half (`brain/`)**: this file, `README.md`, `synthesized/decision-log.md`
   (engineering/build decisions), `synthesized/roadmap.md` (build state + NEXT STEP).
 - **Cloud half (`brain/cloud/` when mounted)**: the "Hubble Brain" folder in the
-  "Hubble Product Brain" workspace — `synthesized/` (current-vision,
-  product-decisions, track-strategy, open-questions), `admin/` (activity-log,
-  pending-extraction), `sources/`. Cloud files are ordinary markdown under the mount;
-  edit them like any file. Without the mount (fresh clone, cloud agent), see
-  `README.md` for what lives there.
+  "Hubble Product Brain" workspace — `synthesized/` (`Current Vision.md`,
+  `Product Decision Log.md`, `Track Strategy.md`, `Open Questions.md`), `admin/`
+  (`Brain Activity Log.md`, `Pending Extraction.md`), and `sources/`. Cloud files are
+  ordinary markdown under the mount; edit them like any file. Without the mount (fresh
+  clone, cloud agent), see `README.md` for what lives there.
 
 ## Resolver — where new information belongs
 
@@ -65,6 +65,7 @@ the product decision log **and** reflected in the relevant synthesis doc.
 
 At the end of a session that produced product direction: capture the raw material in
 cloud `sources/`, route durable outcomes through the resolver, log the pass in cloud
-`admin/Brain Activity Log.md`, and note anything deferred in `open-questions.md`. If the
+`admin/Brain Activity Log.md`, and note anything deferred in
+`synthesized/Open Questions.md`. If the
 mount isn't available, queue the entries in the commit message / run record and file
 them when it is.

@@ -1,6 +1,7 @@
 # Repo-Brain Collaboration — Vision Synthesis
 
-> ⚠ **2026-07-09:** the current vision now lives at `/brain/synthesized/current-vision.md`.
+> ⚠ **2026-07-09:** the current vision now lives at
+> `/brain/cloud/synthesized/Current Vision.md` when the cloud brain is mounted.
 > This doc remains the authoritative detail for Decided #1–15, **except #13** (manual-only
 > seeding), which is superseded by the agent-init entry point (`/specs/hubble-init/DESIGN.md`,
 > storyboard v1.1 scenes 1–3).

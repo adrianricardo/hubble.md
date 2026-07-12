@@ -2,6 +2,14 @@
 
 Glossary for shared terms across the project. Implementation details belong in code or ADRs — not here.
 
+> **Target-product note (2026-07-11):** The current implementation still contains the
+> local-authority modes defined below. For the planned desktop cloud-workspace model,
+> `/specs/desktop-cloud-workspace/PRODUCT.md` supersedes those user-facing assumptions:
+> documents are cloud-authoritative, watched Markdown is a writable projection, and
+> Plain Folder / Loose File / local-only Workspace authoring is not a production mode.
+> Use this glossary to understand existing code during migration, not to override the
+> new product contract.
+
 ## Flagged ambiguities
 
 - **A Workspace is defined by its configuration, not by the cloud.** Don't conflate "is this a Workspace?" (does the folder have a `.hubble/` configuration) with "is it synced?" ([[Cloud Sync]] enabled). A desktop Workspace can be local-only and gain Cloud Sync later. *(Note: not yet true in code — `init()` requires a Convex backend to mint a `workspaceId`. This is the subject of an active spec; see the deferred-cloud-sync handoff.)*

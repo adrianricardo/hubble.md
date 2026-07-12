@@ -3,7 +3,7 @@
 Newest first. Cite sources; keep entries short.
 
 Engineering/build decisions live here. Product/strategy decisions moved to the cloud
-brain (`brain/cloud/synthesized/product-decisions.md` when mounted) — split 2026-07-10
+brain (`brain/cloud/synthesized/Product Decision Log.md` when mounted) — split 2026-07-10
 by the hubble-init apply run.
 
 ## 2026-07-09 — Track C gate 1 SATISFIED: triage logic approved
