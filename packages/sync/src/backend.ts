@@ -61,6 +61,21 @@ export type DocumentPatchResult = {
 	markdown: string;
 };
 
+export type DocumentRelocationImpact = {
+	gainingUserCount: number;
+	losingUserCount: number;
+	publicAccessChanged: boolean;
+	repoExposureChanged: boolean;
+};
+
+export type DocumentRelocationResult =
+	| { status: "completed" }
+	| {
+			status: "confirmation-required";
+			fingerprint: string;
+			impact: DocumentRelocationImpact;
+	  };
+
 /** Backend-agnostic interface for sync operations. */
 export interface SyncBackend {
 	getWorkspace(name: string): Promise<string | null>;
@@ -154,6 +169,12 @@ export interface SyncBackend {
 	 * drag (over `folders.moveDocument`). `folderId === null` → workspace root.
 	 */
 	moveDocument(documentId: string, folderId: string | null): Promise<void>;
+	prepareDocumentRelocation?(args: {
+		documentId: string;
+		folderId: string | null;
+		title: string;
+		path: string;
+	}): Promise<DocumentRelocationResult>;
 	/**
 	 * Soft-delete a Live Document (over `documents.remove`) after a **local
 	 * delete** — a watcher `unlink` whose rename/move correlation window expired.

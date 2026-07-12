@@ -497,6 +497,118 @@ export const moveDocument = mutation({
 	},
 });
 
+type RelocationBoundary = {
+	users: string[];
+	publicRole: DocumentRole | null;
+	repoRoots: string[];
+};
+
+async function relocationBoundary(
+	ctx: MutationCtx,
+	folderId: Id<"folders"> | undefined,
+): Promise<RelocationBoundary> {
+	const users = new Set<string>();
+	const repoRoots = new Set<string>();
+	let publicRole: DocumentRole | null = null;
+	let current = folderId;
+	let depth = 0;
+	while (current && depth < FOLDER_INHERITANCE_DEPTH_CAP) {
+		const folderId = current;
+		const folder = await ctx.db.get(folderId);
+		if (!folder || folder.deletedAt !== undefined) break;
+		if (folder.repoName || folder.repoRemoteUrl) repoRoots.add(folder._id);
+		for (const share of await ctx.db
+			.query("folderShares")
+			.withIndex("by_folder", (q) => q.eq("folderId", folderId))
+			.take(256)) {
+			if (share.userId) users.add(share.userId);
+			if (share.linkScope === "public") publicRole = share.role;
+		}
+		current = folder.parentId;
+		depth++;
+	}
+	return {
+		users: [...users].sort(),
+		publicRole,
+		repoRoots: [...repoRoots].sort(),
+	};
+}
+
+function relocationFingerprint(
+	source: RelocationBoundary,
+	destination: RelocationBoundary,
+): string {
+	return JSON.stringify({ source, destination });
+}
+
+function relocationImpact(
+	source: RelocationBoundary,
+	destination: RelocationBoundary,
+) {
+	const sourceUsers = new Set(source.users);
+	const destinationUsers = new Set(destination.users);
+	return {
+		gainingUserCount: destination.users.filter((id) => !sourceUsers.has(id)).length,
+		losingUserCount: source.users.filter((id) => !destinationUsers.has(id)).length,
+		publicAccessChanged: source.publicRole !== destination.publicRole,
+		repoExposureChanged:
+			JSON.stringify(source.repoRoots) !== JSON.stringify(destination.repoRoots),
+	};
+}
+
+export const prepareDocumentRelocation = mutation({
+	args: {
+		documentId: v.id("documents"),
+		folderId: v.optional(v.id("folders")),
+		title: v.string(),
+		path: v.string(),
+	},
+	handler: async (ctx, args) => {
+		await requireDocumentWrite(ctx, args.documentId);
+		const document = await ctx.db.get(args.documentId);
+		if (!document || document.deletedAt !== undefined) {
+			throw new Error("Document not found");
+		}
+		if (args.folderId) {
+			const destination = await ctx.db.get(args.folderId);
+			if (
+				!destination ||
+				destination.deletedAt !== undefined ||
+				destination.workspaceId !== document.workspaceId
+			) throw new Error("Folder not found");
+		}
+		const member = await isWorkspaceMember(ctx, document.workspaceId);
+		if (!member) {
+			if (!args.folderId) throw new Error("Unauthorized");
+			const role = await folderRole(ctx, args.folderId);
+			if (role !== "owner" && role !== "editor") throw new Error("Unauthorized");
+		}
+		const source = await relocationBoundary(ctx, document.folderId);
+		const destination = await relocationBoundary(ctx, args.folderId);
+		const fingerprint = relocationFingerprint(source, destination);
+		const impact = relocationImpact(source, destination);
+		if (
+			impact.gainingUserCount === 0 &&
+			impact.losingUserCount === 0 &&
+			!impact.publicAccessChanged &&
+			!impact.repoExposureChanged
+		) {
+			await ctx.db.patch(args.documentId, {
+				folderId: args.folderId,
+				title: args.title.trim() || "Untitled",
+				path: args.path,
+				updatedAt: Date.now(),
+			});
+			return { status: "completed" as const };
+		}
+		return {
+			status: "confirmation-required" as const,
+			fingerprint,
+			impact,
+		};
+	},
+});
+
 // ---------------------------------------------------------------------------
 // Mutations — folder sharing + repo-link metadata
 // ---------------------------------------------------------------------------

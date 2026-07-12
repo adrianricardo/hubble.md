@@ -2,6 +2,8 @@ export type {
 	AgentDocument,
 	AgentPatchIntent,
 	DocumentPatchResult,
+	DocumentRelocationImpact,
+	DocumentRelocationResult,
 	Folder,
 	ReplaceRangeIntent,
 	SyncBackend,

@@ -344,6 +344,60 @@ describe("guest create + move", () => {
 		const doc = await t.run((ctx) => ctx.db.get(rootDocId));
 		expect(doc?.folderId).toBe(childFolderId);
 	});
+
+	test("prepare relocation atomically completes when inherited exposure is unchanged", async () => {
+		const t = testInstance();
+		const { ownerId, rootFolderId, childFolderId, rootDocId } =
+			await setupFolderTree(t);
+		const result = await asUser(t, ownerId).mutation(
+			api.folders.prepareDocumentRelocation,
+			{
+				documentId: rootDocId,
+				folderId: childFolderId,
+				title: "Moved",
+				path: "Child/Moved.md",
+			},
+		);
+		expect(result).toEqual({ status: "completed" });
+		const doc = await t.run((ctx) => ctx.db.get(rootDocId));
+		expect(doc).toMatchObject({
+			folderId: childFolderId,
+			title: "Moved",
+			path: "Child/Moved.md",
+		});
+		expect(rootFolderId).toBeDefined();
+	});
+
+	test("prepare relocation returns review impact without moving across exposure boundaries", async () => {
+		const t = testInstance();
+		const { ownerId, strangerId, workspaceId, rootDocId, rootFolderId } =
+			await setupFolderTree(t);
+		const destinationId = await t.run((ctx) =>
+			ctx.db.insert("folders", {
+				workspaceId,
+				name: "External",
+				repoName: "external-repo",
+				createdAt: 1,
+				updatedAt: 1,
+			}),
+		);
+		await shareFolder(t, destinationId, strangerId, "viewer");
+		const result = await asUser(t, ownerId).mutation(
+			api.folders.prepareDocumentRelocation,
+			{
+				documentId: rootDocId,
+				folderId: destinationId,
+				title: "Root Doc",
+				path: "External/Root Doc.md",
+			},
+		);
+		expect(result).toMatchObject({
+			status: "confirmation-required",
+			impact: { gainingUserCount: 1, repoExposureChanged: true },
+		});
+		const doc = await t.run((ctx) => ctx.db.get(rootDocId));
+		expect(doc?.folderId).toBe(rootFolderId);
+	});
 });
 
 describe("folder share management + repo link", () => {

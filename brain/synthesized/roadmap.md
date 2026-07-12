@@ -110,6 +110,15 @@ no longer mistaken for the Workspace root. Sync tests pass 43/43, desktop tests 
 124/124, and `pnpm build:desktop` passes. Next: replace composed cross-folder mutations
 with the atomic prepare/confirm relocation contract and persist consequential moves.
 
+**Phase 3 atomic relocation prepare seam is implemented** (working tree, 2026-07-11):
+the sync backend and Convex adapter expose `prepareDocumentRelocation`; one transaction
+authorizes source and destination, compares bounded inherited user/public-link and
+repo-link exposure, atomically applies neutral folder/title/path changes, or returns a
+current fingerprint and aggregate impact without moving the document. Backend tests
+pass 66/66 and sync/client typechecks pass. Next: add confirmation-time fingerprint
+revalidation, then route watcher moves through prepare and persist review-required
+results before any cloud hierarchy change.
+
 Desktop IA follow-up (direction settled 2026-07-11): replace the simultaneous
 **Folders** / **Live Documents** / **On this computer** sidebar with one current
 context and one folder/document tree. Repo-linked projections become contextual
