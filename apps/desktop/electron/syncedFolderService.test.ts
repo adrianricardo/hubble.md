@@ -105,6 +105,9 @@ type Calls = {
 	}>;
 	confirmRelocation: Array<{
 		documentId: string;
+		folderId: string | null;
+		title: string;
+		path: string;
 		fingerprint: string;
 	}>;
 	import: Array<{
@@ -197,6 +200,9 @@ function fakeBackend(
 		async confirmDocumentRelocation(args) {
 			calls.confirmRelocation.push({
 				documentId: args.documentId,
+				folderId: args.folderId,
+				title: args.title,
+				path: args.path,
 				fingerprint: args.fingerprint,
 			});
 			return state.relocationResult ?? { status: "completed" };
@@ -610,11 +616,38 @@ describe("SyncedFolderService routing", () => {
 				documentId: "d1",
 				folderId: null,
 				title: "Renamed",
-				path: "WS/Renamed.md",
+				path: "Renamed.md",
 			},
 		]);
 		expect(calls.rename).toEqual([]);
 		expect(events).toContainEqual({ kind: "renamed" });
+	});
+
+	it("move stores a workspace-relative document path", async () => {
+		const { service } = makeService(calls, events);
+		await service.connect(CONNECT_INPUT);
+
+		await service.handleRawEvent({
+			type: "unlink",
+			absPath: `${SYNC_ROOT}/WS/Doc.md`,
+			at: NOW,
+		});
+		await service.handleRawEvent({
+			type: "add",
+			absPath: `${SYNC_ROOT}/WS/Specs/Doc.md`,
+			inode: 111,
+			at: NOW + 100,
+		});
+
+		expect(calls.prepareRelocation).toEqual([
+			{
+				documentId: "d1",
+				folderId: "f_specs",
+				title: "Doc",
+				path: "Specs/Doc.md",
+			},
+		]);
+		expect(events).toContainEqual({ kind: "moved" });
 	});
 
 	it("consequential rename is journaled before review without a cloud move", async () => {
@@ -809,7 +842,13 @@ describe("SyncedFolderService routing", () => {
 		const result = await service.approvePendingMove(operation?.id ?? "missing");
 		expect(result).toMatchObject({ status: "refreshed" });
 		expect(calls.confirmRelocation).toEqual([
-			{ documentId: "d1", fingerprint: "impact-v1" },
+			{
+				documentId: "d1",
+				folderId: null,
+				title: "Renamed",
+				path: "Renamed.md",
+				fingerprint: "impact-v1",
+			},
 		]);
 		expect(await service.listPendingOperations()).toContainEqual(
 			expect.objectContaining({ fingerprint: "impact-v2" }),
@@ -1786,6 +1825,67 @@ describe("SyncedFolderService routing", () => {
 		);
 		// The whole-workspace query path is not used by a mount engine.
 		expect(calls.getLiveDocuments).toBe(0);
+	});
+
+	it("RB3: a mount relocation keeps its full subtree-relative path", async () => {
+		const subtree: SharedSubtreeDocument[] = [
+			{
+				_id: "md_brain",
+				workspaceId: "ws_x",
+				workspaceName: "Acme",
+				folderId: "f_link",
+				title: "BRAIN",
+				path: "BRAIN.md",
+				markdown: "# BRAIN.md\n",
+				version: 1,
+				role: "owner",
+				canWrite: true,
+				updatedAt: 0,
+				relativePath: "",
+			},
+			{
+				_id: "md_nested",
+				workspaceId: "ws_x",
+				workspaceName: "Acme",
+				folderId: "f_link_sub",
+				title: "Notes",
+				path: "Research/Notes.md",
+				markdown: "# Notes\n",
+				version: 1,
+				role: "owner",
+				canWrite: true,
+				updatedAt: 0,
+				relativePath: "Research",
+			},
+		];
+		const { service } = makeService(
+			calls,
+			events,
+			{ subtreeDocs: { f_link: subtree } },
+			{ mountFolderId: "f_link" },
+		);
+		await service.connect(CONNECT_INPUT);
+
+		await service.handleRawEvent({
+			type: "unlink",
+			absPath: `${SYNC_ROOT}/BRAIN.md`,
+			at: NOW,
+		});
+		await service.handleRawEvent({
+			type: "add",
+			absPath: `${SYNC_ROOT}/Research/BRAIN.md`,
+			inode: 111,
+			at: NOW + 100,
+		});
+
+		expect(calls.prepareRelocation).toEqual([
+			{
+				documentId: "md_brain",
+				folderId: "f_link_sub",
+				title: "BRAIN",
+				path: "Research/BRAIN.md",
+			},
+		]);
 	});
 
 	it("heartbeat loss stops sync instead of overwriting a fresh foreign owner", async () => {

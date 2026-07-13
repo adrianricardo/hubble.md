@@ -293,6 +293,17 @@ export class SyncedFolderService {
 		return this.#index[absPath] !== undefined;
 	}
 
+	#cloudDocumentPath(absPath: string): string {
+		const relativePath = this.#syncRoot
+			? relPath(this.#syncRoot, absPath)
+			: absPath;
+		// Whole-workspace mirrors add a workspace directory; repo mounts begin at
+		// the linked folder itself, so their subtree-relative path is already final.
+		return this.#mountFolderId
+			? relativePath
+			: stripTopLevelWorkspaceDir(relativePath);
+	}
+
 	/** The reverse-index entry for `absPath`, or `null` when not a synced doc. */
 	lookup(absPath: string): SyncedFolderIndexEntry | null {
 		return this.#index[absPath] ?? null;
@@ -334,7 +345,7 @@ export class SyncedFolderService {
 			documentId: operation.documentId,
 			folderId: operation.toFolderId,
 			title: operation.title,
-			path: operation.toPath.slice(syncRoot.length + 1),
+			path: this.#cloudDocumentPath(operation.toPath),
 			fingerprint: operation.fingerprint,
 		});
 		if (result.status === "confirmation-required") {
@@ -1328,7 +1339,7 @@ export class SyncedFolderService {
 
 			case "rename": {
 				const title = titleFromPath(decision.toPath);
-				const path = relPath(syncRoot, decision.toPath);
+				const path = this.#cloudDocumentPath(decision.toPath);
 				const result = backend.prepareDocumentRelocation
 					? await backend.prepareDocumentRelocation({
 							documentId: decision.documentId,
@@ -1356,7 +1367,7 @@ export class SyncedFolderService {
 			case "move": {
 				const folderId = this.#resolveFolderIdForDir(dir(decision.toPath));
 				const title = titleFromPath(decision.toPath);
-				const path = relPath(syncRoot, decision.toPath);
+				const path = this.#cloudDocumentPath(decision.toPath);
 				const result = backend.prepareDocumentRelocation
 					? await backend.prepareDocumentRelocation({
 							documentId: decision.documentId,

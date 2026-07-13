@@ -95,15 +95,12 @@ every local byte, and surface `verifying`, `offline`, and `pending-review` statu
 Sync tests pass 43/43, desktop tests pass 123/123, and the desktop production build
 passes. Packaged live acceptance remains outstanding.
 
-**Next build step:** deploy the richer consequential-move impact contract to dev and
-run #171's isolated Electron acceptance: move a real projection across user-role,
-public-link, and repo-link boundaries; verify the named/path-specific preview, stale
-impact refresh, approval, and cancellation. This is the final Phase 3 acceptance gate.
-After it passes, close #171 and begin the desktop cloud-workspace implementation from
-`specs/desktop-cloud-workspace/TECH.md` by rerunning its HEAD revalidation gate. Keep
-`cloud create` in a scratch cwd because it connects its cwd as the workspace path.
-Publishing `desktop-dev-latest` and clean-machine Phase 3 acceptance remain separate
-operator gates.
+**Next build step:** Phase 3's code-level and isolated-Electron acceptance gates are
+complete. Begin the desktop cloud-workspace implementation from
+`specs/desktop-cloud-workspace/TECH.md` by rerunning its HEAD revalidation gate and
+updating the module map before editing code. Keep `cloud create` in a scratch cwd
+because it connects its cwd as the workspace path. Publishing `desktop-dev-latest`
+and clean-machine Phase 3 acceptance remain separate operator gates.
 
 **Phase 3 topology slice is implemented** (working tree, 2026-07-11): whole-workspace
 materialization now persists explicit folder topology from the cloud folder tree,
@@ -150,8 +147,8 @@ pass 44/44, desktop tests pass 125/125, and `pnpm build:desktop` passes. Next: #
 the coordinator/IPC review path with approval, stale-impact refresh, cancellation, and
 collision recovery.
 
-**Desktop consequential-move review is implemented at code/test/build level**
-(working tree, 2026-07-11; issue #171): typed coordinator and IPC APIs list, approve,
+**Desktop consequential-move review is accepted** (2026-07-13; issue #171): typed
+coordinator and IPC APIs list, approve,
 and cancel durable moves. Confirmation revalidates the fingerprint and refreshes stale
 impact without moving; cancellation restores the latest destination bytes to the
 source, while an occupied source preserves both files and leaves a durable recovery
@@ -161,10 +158,14 @@ Escape/dismissal as cancellation, and an OS notification fallback. Desktop tests
 code/test/build level on 2026-07-13: it detects inherited role upgrades/downgrades as
 consequential, returns exact gain/loss counts plus up to 25 named role changes, shows
 public-link before/after roles, and identifies added/removed repo-linked folders by
-cloud path and repository metadata. Older device journals remain readable. Backend
-tests pass 70/70 and the desktop production build passes after simplify and
-review-readiness. Dev deployment and isolated Electron acceptance of the rendered
-preview, stale refresh, approval, and cancellation remain before #171 is accepted.
+cloud path and repository metadata. Older device journals remain readable. Dev
+deployment plus isolated Electron acceptance passed for the rendered preview, stale
+refresh without a move, approval, and Escape cancellation with an intervening edit.
+The run found and fixed canonical relocation paths incorrectly retaining the mirror's
+top-level workspace directory; whole-workspace moves now store workspace-relative
+paths while repo mounts preserve subtree-relative paths. Desktop tests pass 137/137
+and `pnpm build:desktop` passes after simplify/review-readiness. Run record:
+`specs/realtime-collab/runs/2026-07-13-phase-3-consequential-move-acceptance.md`.
 
 **Deletion classification safety is implemented at code/test/build level** (working
 tree, 2026-07-11; issue #172): the existing move-correlation window is now the bounded
