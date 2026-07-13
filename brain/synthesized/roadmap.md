@@ -207,8 +207,17 @@ subtrees before creating a directory or changing repo/cloud metadata. The legacy
 whole-workspace mirror and folder mounts are now mutually exclusive, and managed-path
 classification checks every active engine. Desktop tests pass 141/141 and
 `pnpm build:desktop` passes. Next: introduce the projection manager to own all engine
-lifecycle, pending-operation routing, and aggregate status, then replace workspace-global repo
-mount subscriptions with folder-scoped subscriptions.
+lifecycle, pending-operation routing, and aggregate status, then replace
+workspace-global repo mount subscriptions with folder-scoped subscriptions.
+
+**Phase 4 projection-manager ownership is implemented** (working tree, 2026-07-13):
+one coordinator now owns the whole-workspace engine and every folder engine, cleans up
+failed mount starts, aggregates per-root status and pending journals, resolves managed
+paths across all roots, and routes move/deletion/Trash review actions to the journal
+that owns each operation. Repo-linked folder reviews now use the same foreground
+dialog and OS notification path as the legacy mirror. Desktop tests pass 144/144.
+Next: add explicit root scope to events/status, folder-scoped subscriptions, and
+`hubble status --json`.
 
 Desktop IA follow-up (direction settled 2026-07-11): replace the simultaneous
 **Folders** / **Live Documents** / **On this computer** sidebar with one current

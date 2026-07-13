@@ -42,6 +42,7 @@ import type {
 	RepoMount,
 	RepoMountReconnectInput,
 	SyncedFolderConnectInput,
+	SyncedFolderEvent,
 	SyncedFolderImportInput,
 	WorkspaceConfig,
 } from "../src/desktopApi/types";
@@ -53,6 +54,7 @@ import {
 } from "../src/lib/filePath";
 import { type CliServer, startCliServer } from "./cliServer";
 import { LiveSyncService } from "./liveSync";
+import { ProjectionManager } from "./projectionManager";
 import {
 	assertCloudProjectionRootsDisjoint,
 	assertLocalProjectionRootsDisjoint,
@@ -240,43 +242,50 @@ function isDesktopOffline(): boolean {
 	return !net.isOnline();
 }
 
+function emitProjectionEvent(event: SyncedFolderEvent): void {
+	sendToRenderer("desktop:live-sync:event", event);
+	if (
+		(event.kind === "move-review-required" || event.kind === "trashed-local") &&
+		(!mainWindow?.isVisible() || !mainWindow.isFocused()) &&
+		Notification.isSupported()
+	) {
+		const notification = new Notification({
+			title:
+				event.kind === "trashed-local"
+					? "Document moved to Trash"
+					: "Review a document move",
+			body:
+				event.kind === "trashed-local"
+					? "Open Hubble to undo."
+					: "This move changes access or linked repository exposure.",
+		});
+		notification.on("click", () => {
+			mainWindow?.show();
+			mainWindow?.focus();
+			sendToRenderer("desktop:live-sync:event", event);
+		});
+		notification.show();
+	}
+}
+
 const syncedFolder = new SyncedFolderService({
-	emit: (event) => {
-		sendToRenderer("desktop:live-sync:event", event);
-		if (
-			(event.kind === "move-review-required" ||
-				event.kind === "trashed-local") &&
-			(!mainWindow?.isVisible() || !mainWindow.isFocused()) &&
-			Notification.isSupported()
-		) {
-			const notification = new Notification({
-				title:
-					event.kind === "trashed-local"
-						? "Document moved to Trash"
-						: "Review a document move",
-				body:
-					event.kind === "trashed-local"
-						? "Open Hubble to undo."
-						: "This move changes access or linked repository exposure.",
-			});
-			notification.on("click", () => {
-				mainWindow?.show();
-				mainWindow?.focus();
-				sendToRenderer("desktop:live-sync:event", event);
-			});
-			notification.show();
-		}
-	},
+	emit: emitProjectionEvent,
 	deviceId: os.hostname(),
 	isOffline: isDesktopOffline,
 	createWatcher: createSyncedFolderWatcher,
 });
 
-// ── Repo-link mounts (RB3 / D11): engine-instance-per-mount ────────────────────
-// Each linked cloud folder gets its own SyncedFolderService rooted at the local
-// mount path inside the user's git repo. The whole-workspace `syncedFolder`
-// above is unchanged; mounts are additive. Keyed by folderId.
-const repoMounts = new Map<string, SyncedFolderService>();
+const projectionManager = new ProjectionManager({
+	wholeWorkspace: syncedFolder,
+	createMount: (folderId) =>
+		new SyncedFolderService({
+			emit: emitProjectionEvent,
+			deviceId: os.hostname(),
+			isOffline: isDesktopOffline,
+			createWatcher: createSyncedFolderWatcher,
+			mountFolderId: folderId,
+		}),
+});
 const grantedFiles = new Set<string>();
 const grantedRoots = new Set<string>();
 let grantsLoaded = false;
@@ -557,7 +566,7 @@ async function assertRepoMountAvailable(
 	candidate: ProjectionMount,
 	backend: SyncBackend,
 ): Promise<void> {
-	if (syncedFolder.connected) {
+	if (projectionManager.wholeWorkspaceConnected) {
 		throw new Error(
 			"Disconnect the whole-workspace projection before making a folder available. Hubble manages one local copy per document on this computer.",
 		);
@@ -581,8 +590,7 @@ async function assertRepoMountAvailable(
 }
 
 function repoMountStatus(stored: StoredRepoMount): RepoMount {
-	const service = repoMounts.get(stored.folderId);
-	const status = service?.getStatus();
+	const status = projectionManager.getMountStatus(stored.folderId);
 	return {
 		folderId: stored.folderId,
 		folderName: stored.folderName,
@@ -603,17 +611,11 @@ async function connectRepoMountEngine(
 	deploymentUrl: string,
 	authToken: string,
 ): Promise<void> {
-	const existing = repoMounts.get(folderId);
-	if (existing) await existing.disconnect();
-	const service = new SyncedFolderService({
-		emit: (event) => sendToRenderer("desktop:live-sync:event", event),
-		deviceId: os.hostname(),
-		isOffline: isDesktopOffline,
-		createWatcher: createSyncedFolderWatcher,
-		mountFolderId: folderId,
+	await projectionManager.connectMount(folderId, {
+		syncRoot: mountPath,
+		deploymentUrl,
+		authToken,
 	});
-	repoMounts.set(folderId, service);
-	await service.connect({ syncRoot: mountPath, deploymentUrl, authToken });
 }
 
 async function performRepoLink(input: unknown): Promise<RepoLinkResult> {
@@ -722,18 +724,17 @@ async function performRepoLink(input: unknown): Promise<RepoLinkResult> {
 		repoRemoteUrl,
 		brainSeeded,
 		documentCount:
-			repoMounts.get(parsed.folderId)?.getStatus().documentCount ?? 0,
+			projectionManager.getMountStatus(parsed.folderId)?.documentCount ?? 0,
 	};
 }
 
 async function unlinkRepoMount(folderId: string): Promise<void> {
-	const service = repoMounts.get(folderId);
-	if (service) {
-		await service.disconnect();
-		repoMounts.delete(folderId);
-	}
+	await projectionManager.disconnectMount(folderId);
 	await removeRepoMountConfig(folderId);
-	if (repoMounts.size === 0 && !syncedFolder.connected) {
+	if (
+		projectionManager.mountCount === 0 &&
+		!projectionManager.wholeWorkspaceConnected
+	) {
 		setBackgroundActive(false);
 	}
 }
@@ -2017,7 +2018,7 @@ function registerIpc() {
 					"Disconnect folder projections before connecting the whole-workspace projection. Hubble manages one local copy per document on this computer.",
 				);
 			}
-			const status = await syncedFolder.connect({
+			const status = await projectionManager.connectWholeWorkspace({
 				syncRoot,
 				deploymentUrl: parsed.deploymentUrl,
 				authToken: parsed.authToken,
@@ -2062,16 +2063,16 @@ function registerIpc() {
 	);
 
 	ipcMain.handle("desktop:live-sync:disconnect-folder", async () => {
-		const status = await syncedFolder.disconnect();
+		const status = await projectionManager.disconnectWholeWorkspace();
 		setBackgroundActive(false);
 		return status;
 	});
 
 	ipcMain.handle("desktop:live-sync:status-folder", () =>
-		syncedFolder.getStatus(),
+		projectionManager.getWholeWorkspaceStatus(),
 	);
 	ipcMain.handle("desktop:live-sync:list-pending-operations", () =>
-		syncedFolder.listPendingOperations(),
+		projectionManager.listPendingOperations(),
 	);
 	ipcMain.handle(
 		"desktop:live-sync:approve-pending-move",
@@ -2079,7 +2080,7 @@ function registerIpc() {
 			const { operationId } = z
 				.object({ operationId: z.string().min(1) })
 				.parse(input);
-			return syncedFolder.approvePendingMove(operationId);
+			return projectionManager.approvePendingMove(operationId);
 		},
 	);
 	ipcMain.handle(
@@ -2088,25 +2089,28 @@ function registerIpc() {
 			const { operationId } = z
 				.object({ operationId: z.string().min(1) })
 				.parse(input);
-			return syncedFolder.cancelPendingMove(operationId);
+			return projectionManager.cancelPendingMove(operationId);
 		},
 	);
 	for (const [channel, handler] of [
 		[
 			"desktop:live-sync:approve-pending-deletion",
-			(operationId: string) => syncedFolder.approvePendingDeletion(operationId),
+			(operationId: string) =>
+				projectionManager.approvePendingDeletion(operationId),
 		],
 		[
 			"desktop:live-sync:cancel-pending-deletion",
-			(operationId: string) => syncedFolder.cancelPendingDeletion(operationId),
+			(operationId: string) =>
+				projectionManager.cancelPendingDeletion(operationId),
 		],
 		[
 			"desktop:live-sync:undo-trash",
-			(operationId: string) => syncedFolder.undoTrashedDocument(operationId),
+			(operationId: string) =>
+				projectionManager.undoTrashedDocument(operationId),
 		],
 		[
 			"desktop:live-sync:dismiss-trash-undo",
-			(operationId: string) => syncedFolder.dismissTrashUndo(operationId),
+			(operationId: string) => projectionManager.dismissTrashUndo(operationId),
 		],
 	] as const) {
 		ipcMain.handle(channel, (_event, input: unknown) => {
@@ -2155,7 +2159,7 @@ function registerIpc() {
 			const parsed = repoMountReconnectSchema.parse(input);
 			const mounts = await loadRepoMountConfig();
 			for (const mount of mounts) {
-				if (repoMounts.has(mount.folderId)) continue;
+				if (projectionManager.hasMount(mount.folderId)) continue;
 				try {
 					grantRoot(mount.mountPath);
 					await assertRepoMountAvailable(
@@ -2175,7 +2179,7 @@ function registerIpc() {
 					);
 				}
 			}
-			if (repoMounts.size > 0) setBackgroundActive(true);
+			if (projectionManager.mountCount > 0) setBackgroundActive(true);
 			return mounts.map(repoMountStatus);
 		},
 	);
@@ -2190,11 +2194,7 @@ function registerIpc() {
 				// An ungranted path is, by definition, not a synced Live Document.
 				return false;
 			}
-			if (syncedFolder.isLiveDocument(resolved)) return true;
-			for (const mount of repoMounts.values()) {
-				if (mount.isLiveDocument(resolved)) return true;
-			}
-			return false;
+			return projectionManager.isLiveDocument(resolved);
 		},
 	);
 }

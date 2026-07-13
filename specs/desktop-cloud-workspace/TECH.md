@@ -311,9 +311,12 @@ rejected when their cloud roots are identical or ancestor/descendant; guest topo
 falls back to the accessible Shared-with-me tree. Whole-workspace and folder engines
 are now mutually exclusive, and the renderer managed-document guard consults every
 active engine. Validation happens before a new mount directory, repo exclusion, cloud
-repo metadata, or BRAIN seed is written. Next: introduce the projection manager and
-move mount lifecycle, pending-operation routing, and aggregate status out of
-`main.ts`, then add folder-scoped subscriptions.
+repo metadata, or BRAIN seed is written. A projection manager now owns whole-workspace
+and folder-engine lifecycle, aggregate status, managed-path lookup, and durable
+operation routing. Pending move, deletion, and Trash actions are located through the
+owning root's journal, so repo-linked folders reach the same renderer review and OS
+notification path as the legacy mirror. Next: scope every emitted event and status
+record, then add folder-scoped subscriptions and the CLI status surface.
 
 1. Validate existing and proposed local paths after normalization. Reject identical,
    ancestor, descendant, and symlink-resolved overlap.
