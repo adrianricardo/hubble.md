@@ -300,11 +300,14 @@ and inspected `clean`. After Adrian's action-time confirmation, the real Hubble
 availability stopped, and left the Scratch cloud folder visible without a local
 marker. Exactly three documents created by this acceptance run (Workspace root,
 `Hubble Brain/admin`, and the accidental `adrian's space` document) were moved to
-Hubble Trash; older `Untitled` documents were preserved. The only remaining gate is
-now explicitly human-only: macOS did not expose VoiceOver's literal spoken phrase to
-the agent session, and a physical Shift+F10 cannot be replaced by the already-passing
-synthetic event. Record those two operator observations, then remove the flag only if
-they pass.
+Hubble Trash; older `Untitled` documents were preserved. Adrian then completed the
+human-only gate: physical Fn+Shift+F10 opened the local actions menu and VoiceOver
+announced **Reveal in file browser**, item 1 of 4, the local path, and the four-item
+menu; Cmd+N announced the destination dialog with **Workspace root** selected/focused,
+**Available to Workspace members**, and its position in the destination group. Phase
+5 acceptance passes. **Next:** remove the internal flag and legacy production branch,
+rerun focused checks/build, then begin Phase 6 import, revocation, and minimal recovery
+completion.
 
 Desktop IA follow-up (direction settled 2026-07-11): replace the simultaneous
 **Folders** / **Live Documents** / **On this computer** sidebar with one current

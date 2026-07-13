@@ -24,9 +24,10 @@ The host run completed most of the gate and found three production issues:
    manager's contract. `Modal` now exposes Base UI's `initialFocus`; a clean,
    foreground Electron open focuses the selected **Workspace root** radio.
 
-The internal flag remains. The destructive clean-remove branch and acceptance-data
-cleanup passed after action-time confirmation. Literal VoiceOver speech plus a
-physical Shift+F10 pass are still outstanding, so Phase 6 stays gated.
+The destructive clean-remove branch, acceptance-data cleanup, literal VoiceOver
+speech, and physical Shift+F10 pass all passed. Phase 5's populated-tree acceptance
+gate is complete; the internal flag and legacy production branch can now be removed
+before Phase 6 begins.
 
 ## Live acceptance evidence
 
@@ -78,15 +79,10 @@ physical Shift+F10 pass are still outstanding, so Phase 6 stays gated.
 - Simplify/comments/review-readiness pass — completed; the two non-obvious lifecycle
   and menu-focus seams retain why-comments.
 
-## Remaining gate
+## Remaining implementation step
 
-1. Run VoiceOver against the populated tree and dialog. Record the spoken level,
-   expanded/selected state, local path/status, action availability, destination access
-   descriptions, and safe initial focus. Press physical Shift+F10 while the app is
-   foregrounded; Context Menu key handling is already covered synthetically because
-   the host keyboard has no such key.
-2. If those pass, rerun focused checks, remove the internal unified-tree flag and
-   legacy production branch, then begin Phase 6.
+Remove the internal unified-tree flag and legacy production branch, rerun focused
+checks and the desktop build, then begin Phase 6.
 
 ## Fresh-session follow-up (2026-07-13, implementation session 5)
 
@@ -115,3 +111,17 @@ and `Hubble Brain/admin`) plus the accidental `adrian's space` document were mov
 Hubble Trash. Cleanup selected only `Untitled` documents created after the acceptance
 run began, asserted that exactly three matched, and verified that no recent matching
 documents remained. Older `Untitled` documents were not touched.
+
+## Human VoiceOver and physical-key acceptance
+
+Adrian completed the two observations that automation could not substitute:
+
+- With the **Hubble Brain** tree item focused, physical Fn+Shift+F10 opened the local
+  actions menu. VoiceOver announced **Reveal in file browser**, menu item 1 of 4, the
+  local path, and the four-item local-availability menu.
+- Cmd+N opened the multi-member destination dialog. VoiceOver announced the dialog,
+  **Workspace root Available to Workspace members**, the selected radio state, its
+  position, and the **Document destination** group. The visible and spoken initial
+  focus was the selected Workspace-root radio.
+
+The literal screen-reader and physical-key gate passes.
