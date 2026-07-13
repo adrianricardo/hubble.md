@@ -32,6 +32,18 @@ There is no separate progress command — this convention is the mechanism. (Do 
 `specs/realtime-collab/archive/PROGRESS.md`; it is a historical record of the web-first
 era.)
 
+## Large-phase session boundaries
+
+While implementing a large phase, actively recommend starting a fresh agent session
+when doing so will improve token efficiency and reduce stale-context risk. Good
+boundaries are: after a cohesive milestone is verified, documented, and committed;
+before beginning the next independently understandable phase; or after a long
+debugging/acceptance loop leaves substantial no-longer-relevant context. Include the
+exact next starting point (roadmap item, issue, or spec section) in the recommendation.
+Do not interrupt an atomic change, stop only because a session is long, or leave a
+dirty tree solely to create a boundary. If continuing in the current session is still
+more efficient, say nothing and keep working.
+
 ## Engineering guidance
 
 - Use logical CSS spacing props (`margin/padding` inline/block/start/end), not
