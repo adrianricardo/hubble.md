@@ -124,7 +124,7 @@ export type LiveSyncConnectInput = {
 };
 
 export type SyncedFolderTelemetryEvent = {
-	kind: SyncedFolderEvent["kind"];
+	kind: SyncedFolderEventDetail["kind"];
 	at: number;
 	reason?: "missing-base" | "read-only";
 };
@@ -254,7 +254,14 @@ export type SyncedFolderImportInput = {
 };
 
 /** Pushed to the renderer over `desktop:live-sync:event` as the mirror changes. */
-export type SyncedFolderEvent =
+export type ProjectionRootScope = {
+	kind: "workspace-mirror" | "folder";
+	workspaceId: string | null;
+	folderId: string | null;
+	localRoot: string | null;
+};
+
+export type SyncedFolderEventDetail =
 	| { kind: "reconciled" }
 	| { kind: "renamed" }
 	| { kind: "moved" }
@@ -274,6 +281,10 @@ export type SyncedFolderEvent =
 	/** A change to a read-only doc was rejected; the local edit was backstopped (§3). */
 	| { kind: "read-only-rejected" }
 	| { kind: "error" };
+
+export type SyncedFolderEvent = SyncedFolderEventDetail & {
+	scope: ProjectionRootScope;
+};
 
 export type LiveSyncReconcileInput = {
 	documentId: string;

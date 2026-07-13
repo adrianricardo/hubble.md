@@ -216,8 +216,19 @@ failed mount starts, aggregates per-root status and pending journals, resolves m
 paths across all roots, and routes move/deletion/Trash review actions to the journal
 that owns each operation. Repo-linked folder reviews now use the same foreground
 dialog and OS notification path as the legacy mirror. Desktop tests pass 144/144.
-Next: add explicit root scope to events/status, folder-scoped subscriptions, and
-`hubble status --json`.
+
+**Phase 4 multi-root correctness and agent status are complete at code/test/build
+level** (working tree, 2026-07-13): every renderer event and agent-facing status record
+now carries local-root, Workspace, and folder scope; the legacy multi-Workspace mirror
+uses null cloud IDs. Repo mounts subscribe only to their folder-subtree query instead
+of every accessible Workspace and shared root. `hubble status --json`, backed by the
+desktop socket, reports per-root health, queued edits, pending review, recovery, Undo,
+and bounded operation-kind counts without document content or credentials. Desktop
+tests pass 145/145, CLI and Convex-client typechecks pass, `pnpm build:desktop` passes,
+and both JSON and human-readable status output passed a real Unix-socket acceptance.
+Next: begin Phase 5 in `specs/desktop-cloud-workspace/TECH.md` by introducing the
+persisted `CloudContext` and unified cloud folder/document tree behind the internal
+build flag.
 
 Desktop IA follow-up (direction settled 2026-07-11): replace the simultaneous
 **Folders** / **Live Documents** / **On this computer** sidebar with one current

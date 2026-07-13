@@ -94,16 +94,31 @@ describe("ProjectionManager", () => {
 			wholeWorkspace: whole,
 			createMount: () => mount,
 		});
-		await manager.connectMount("folder-a", {
+		await manager.connectMount("folder-a", "workspace-a", {
 			...input,
 			syncRoot: "/repo/brain",
 		});
 
 		expect(manager.listStatuses()).toHaveLength(2);
+		expect(manager.listStatuses()[1]?.scope).toEqual({
+			kind: "folder",
+			workspaceId: "workspace-a",
+			folderId: "folder-a",
+			localRoot: "/repo/brain",
+		});
 		expect((await manager.listPendingOperations()).map(({ id }) => id)).toEqual(
 			["whole", "mount"],
 		);
 		expect(manager.isLiveDocument("/repo/brain/doc.md")).toBe(true);
+		expect((await manager.getAgentStatus())[0]).toMatchObject({
+			operations: {
+				total: 1,
+				pendingReview: 1,
+				recovery: 1,
+				undoAvailable: 0,
+				byKind: { "missing-document": 1 },
+			},
+		});
 	});
 
 	it("routes operation actions to the engine that owns the operation", async () => {
@@ -113,7 +128,7 @@ describe("ProjectionManager", () => {
 			wholeWorkspace: whole,
 			createMount: () => mount,
 		});
-		await manager.connectMount("folder-a", input);
+		await manager.connectMount("folder-a", "workspace-a", input);
 
 		await manager.approvePendingMove("mount");
 		expect(mount.approvePendingMove).toHaveBeenCalledWith("mount");
@@ -130,9 +145,9 @@ describe("ProjectionManager", () => {
 			createMount: () => failed,
 		});
 
-		await expect(manager.connectMount("folder-a", input)).rejects.toThrow(
-			"connect failed",
-		);
+		await expect(
+			manager.connectMount("folder-a", "workspace-a", input),
+		).rejects.toThrow("connect failed");
 		expect(manager.hasMount("folder-a")).toBe(false);
 		expect(failed.disconnect).toHaveBeenCalledOnce();
 	});

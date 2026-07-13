@@ -269,7 +269,16 @@ function emitProjectionEvent(event: SyncedFolderEvent): void {
 }
 
 const syncedFolder = new SyncedFolderService({
-	emit: emitProjectionEvent,
+	emit: (event) =>
+		emitProjectionEvent({
+			...event,
+			scope: {
+				kind: "workspace-mirror",
+				workspaceId: null,
+				folderId: null,
+				localRoot: syncedFolder.getStatus().syncRoot,
+			},
+		}),
 	deviceId: os.hostname(),
 	isOffline: isDesktopOffline,
 	createWatcher: createSyncedFolderWatcher,
@@ -279,7 +288,20 @@ const projectionManager = new ProjectionManager({
 	wholeWorkspace: syncedFolder,
 	createMount: (folderId) =>
 		new SyncedFolderService({
-			emit: emitProjectionEvent,
+			emit: (event) => {
+				const scope = projectionManager
+					.listStatuses()
+					.find((entry) => entry.scope.folderId === folderId)?.scope;
+				emitProjectionEvent({
+					...event,
+					scope: scope ?? {
+						kind: "folder",
+						workspaceId: null,
+						folderId,
+						localRoot: null,
+					},
+				});
+			},
 			deviceId: os.hostname(),
 			isOffline: isDesktopOffline,
 			createWatcher: createSyncedFolderWatcher,
@@ -607,11 +629,12 @@ function repoMountStatus(stored: StoredRepoMount): RepoMount {
 /** Connect a per-mount sync engine rooted at `mountPath` for `folderId`. */
 async function connectRepoMountEngine(
 	folderId: string,
+	workspaceId: string,
 	mountPath: string,
 	deploymentUrl: string,
 	authToken: string,
 ): Promise<void> {
-	await projectionManager.connectMount(folderId, {
+	await projectionManager.connectMount(folderId, workspaceId, {
 		syncRoot: mountPath,
 		deploymentUrl,
 		authToken,
@@ -688,6 +711,7 @@ async function performRepoLink(input: unknown): Promise<RepoLinkResult> {
 	// Materialize the subtree at the mount + start the per-mount engine.
 	await connectRepoMountEngine(
 		parsed.folderId,
+		parsed.workspaceId,
 		mountPath,
 		parsed.deploymentUrl,
 		parsed.authToken,
@@ -770,6 +794,7 @@ async function startCliCommandServer(): Promise<void> {
 					appVersion: app.getVersion(),
 					auth: cachedAuthState,
 					mounts: mounts.map(repoMountStatus),
+					projections: await projectionManager.getAgentStatus(),
 				};
 			},
 			async "link-repo"(args) {
@@ -2168,6 +2193,7 @@ function registerIpc() {
 					);
 					await connectRepoMountEngine(
 						mount.folderId,
+						mount.workspaceId,
 						mount.mountPath,
 						parsed.deploymentUrl,
 						parsed.authToken,

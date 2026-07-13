@@ -1,5 +1,8 @@
 import type { PendingProjectionOperation } from "@hubble.md/sync";
-import type { SyncedFolderStatus } from "../src/desktopApi/types";
+import type {
+	ProjectionRootScope,
+	SyncedFolderStatus,
+} from "../src/desktopApi/types";
 import type {
 	ConnectFolderInput,
 	SyncedFolderService,
@@ -21,14 +24,35 @@ type ProjectionEngine = Pick<
 >;
 
 export type ProjectionStatus = {
-	scope: { kind: "workspace-mirror" } | { kind: "folder"; folderId: string };
+	scope: ProjectionRootScope;
 	status: SyncedFolderStatus;
 };
+
+export type ProjectionAgentStatus = ProjectionStatus & {
+	operations: {
+		total: number;
+		pendingReview: number;
+		recovery: number;
+		undoAvailable: number;
+		byKind: Partial<Record<PendingProjectionOperation["kind"], number>>;
+	};
+};
+
+// These blockers need byte/path recovery, not just approval of a cloud action.
+const recoveryOperationKinds = new Set<PendingProjectionOperation["kind"]>([
+	"missing-document",
+	"path-collision",
+	"ambiguous-startup-move",
+	"guard-conflict",
+]);
 
 export class ProjectionManager {
 	#wholeWorkspace: ProjectionEngine;
 	#createMount: (folderId: string) => ProjectionEngine;
-	#mounts = new Map<string, ProjectionEngine>();
+	#mounts = new Map<
+		string,
+		{ workspaceId: string; engine: ProjectionEngine }
+	>();
 
 	constructor(options: {
 		wholeWorkspace: ProjectionEngine;
@@ -51,7 +75,7 @@ export class ProjectionManager {
 	}
 
 	getMountStatus(folderId: string): SyncedFolderStatus | null {
-		return this.#mounts.get(folderId)?.getStatus() ?? null;
+		return this.#mounts.get(folderId)?.engine.getStatus() ?? null;
 	}
 
 	connectWholeWorkspace(input: ConnectFolderInput) {
@@ -68,11 +92,12 @@ export class ProjectionManager {
 
 	async connectMount(
 		folderId: string,
+		workspaceId: string,
 		input: ConnectFolderInput,
 	): Promise<SyncedFolderStatus> {
 		await this.disconnectMount(folderId);
 		const engine = this.#createMount(folderId);
-		this.#mounts.set(folderId, engine);
+		this.#mounts.set(folderId, { workspaceId, engine });
 		try {
 			return await engine.connect(input);
 		} catch (error) {
@@ -83,23 +108,60 @@ export class ProjectionManager {
 	}
 
 	async disconnectMount(folderId: string): Promise<void> {
-		const engine = this.#mounts.get(folderId);
-		if (!engine) return;
+		const mount = this.#mounts.get(folderId);
+		if (!mount) return;
 		this.#mounts.delete(folderId);
-		await engine.disconnect();
+		await mount.engine.disconnect();
 	}
 
 	listStatuses(): ProjectionStatus[] {
 		return [
 			{
-				scope: { kind: "workspace-mirror" },
+				scope: this.#wholeWorkspaceScope(),
 				status: this.#wholeWorkspace.getStatus(),
 			},
-			...[...this.#mounts].map(([folderId, engine]) => ({
-				scope: { kind: "folder" as const, folderId },
-				status: engine.getStatus(),
+			...[...this.#mounts].map(([folderId, mount]) => ({
+				scope: this.#mountScope(folderId, mount),
+				status: mount.engine.getStatus(),
 			})),
 		];
+	}
+
+	async getAgentStatus(): Promise<ProjectionAgentStatus[]> {
+		return Promise.all(
+			this.#entries()
+				.filter(({ engine }) => {
+					const status = engine.getStatus();
+					return status.syncRoot !== null || status.state !== "idle";
+				})
+				.map(async ({ scope, engine }) => {
+					const operations = await engine.listPendingOperations();
+					const byKind: ProjectionAgentStatus["operations"]["byKind"] = {};
+					let recovery = 0;
+					let undoAvailable = 0;
+					for (const operation of operations) {
+						byKind[operation.kind] = (byKind[operation.kind] ?? 0) + 1;
+						if (recoveryOperationKinds.has(operation.kind)) recovery += 1;
+						if (
+							operation.kind === "trash-undo" &&
+							operation.phase === "undo-available"
+						) {
+							undoAvailable += 1;
+						}
+					}
+					return {
+						scope,
+						status: engine.getStatus(),
+						operations: {
+							total: operations.length,
+							pendingReview: operations.length - undoAvailable,
+							recovery,
+							undoAvailable,
+							byKind,
+						},
+					};
+				}),
+		);
 	}
 
 	isLiveDocument(absPath: string): boolean {
@@ -151,7 +213,44 @@ export class ProjectionManager {
 	}
 
 	#engines(): ProjectionEngine[] {
-		return [this.#wholeWorkspace, ...this.#mounts.values()];
+		return [
+			this.#wholeWorkspace,
+			...[...this.#mounts.values()].map(({ engine }) => engine),
+		];
+	}
+
+	#entries(): Array<{ scope: ProjectionRootScope; engine: ProjectionEngine }> {
+		return [
+			{
+				scope: this.#wholeWorkspaceScope(),
+				engine: this.#wholeWorkspace,
+			},
+			...[...this.#mounts].map(([folderId, mount]) => ({
+				scope: this.#mountScope(folderId, mount),
+				engine: mount.engine,
+			})),
+		];
+	}
+
+	#wholeWorkspaceScope(): ProjectionRootScope {
+		return {
+			kind: "workspace-mirror",
+			workspaceId: null,
+			folderId: null,
+			localRoot: this.#wholeWorkspace.getStatus().syncRoot,
+		};
+	}
+
+	#mountScope(
+		folderId: string,
+		mount: { workspaceId: string; engine: ProjectionEngine },
+	): ProjectionRootScope {
+		return {
+			kind: "folder",
+			workspaceId: mount.workspaceId,
+			folderId,
+			localRoot: mount.engine.getStatus().syncRoot,
+		};
 	}
 
 	async #routeOperation<T>(

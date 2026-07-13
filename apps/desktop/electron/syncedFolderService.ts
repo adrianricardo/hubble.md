@@ -40,7 +40,7 @@ import {
 } from "@hubble.md/sync";
 import { createNodeFileSystem } from "@hubble.md/sync/node";
 import type {
-	SyncedFolderEvent,
+	SyncedFolderEventDetail,
 	SyncedFolderStatus,
 	SyncedFolderTelemetry,
 } from "../src/desktopApi/types";
@@ -63,8 +63,8 @@ export type SyncedFolderServiceOptions = {
 	createBackend?: (url: string, authToken?: string) => SyncBackend;
 	createSubscriber?: (url: string, authToken?: string) => Subscriber;
 	fs?: FileSystem;
-	/** Push a `desktop:live-sync:event` to the renderer. */
-	emit?: (event: SyncedFolderEvent) => void;
+	/** Report an engine-local event to the projection coordinator. */
+	emit?: (event: SyncedFolderEventDetail) => void;
 	/** Injectable clock (tests). */
 	now?: () => number;
 	/** This machine's stable id (single-writer lock identity). */
@@ -203,7 +203,7 @@ export class SyncedFolderService {
 	#createBackend: (url: string, authToken?: string) => SyncBackend;
 	#createSubscriber: (url: string, authToken?: string) => Subscriber;
 	#fs: FileSystem;
-	#emit: (event: SyncedFolderEvent) => void;
+	#emit: (event: SyncedFolderEventDetail) => void;
 	#now: () => number;
 	#deviceId: string;
 	#pid: number;
@@ -927,12 +927,8 @@ export class SyncedFolderService {
 
 	/**
 	 * Re-run the full materialize pass and reload the index (cloud → disk).
-	 *
-	 * SEAM: this is the polling fallback. The intended steady-state path is a
-	 * reactive Convex subscription (`ConvexClient.onUpdate` over
-	 * `listWithMarkdown` / `folders.list` / `listWorkspaces`) that pushes
-	 * incremental diffs; that reactive client is the Phase 3b follow-up and is
-	 * deliberately **not** half-built here (SYNCED-FOLDER §3 "On cloud changes").
+	 * Steady-state updates arrive through the root-scoped Convex subscription;
+	 * this remains the explicit/manual refresh seam.
 	 */
 	async refresh(): Promise<SyncedFolderStatus> {
 		if (!this.#backend || !this.#syncRoot) {
@@ -1090,6 +1086,9 @@ export class SyncedFolderService {
 	#startCloudSubscriptions(deploymentUrl: string, authToken: string): void {
 		this.#subscriber = this.#createSubscriber(deploymentUrl, authToken);
 		this.#unsubscribeSyncedFolder = this.#subscriber.onSyncedFolderChanged(
+			this.#mountFolderId
+				? { kind: "folder", folderId: this.#mountFolderId }
+				: { kind: "all-accessible" },
 			() => this.#scheduleCloudMaterialize(),
 			(error) => this.#handleSubscriptionError(error),
 		);
@@ -2064,7 +2063,7 @@ export class SyncedFolderService {
 		return null;
 	}
 
-	#recordEvent(event: SyncedFolderEvent): void {
+	#recordEvent(event: SyncedFolderEventDetail): void {
 		const at = this.#now();
 		this.#lastEventAt = at;
 		switch (event.kind) {

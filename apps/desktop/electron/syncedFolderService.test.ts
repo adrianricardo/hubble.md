@@ -307,9 +307,11 @@ function makeService(
 		options.onGetLiveDocuments?.(call, fs),
 	);
 	const subscription: {
+		scope: { kind: string; folderId?: string } | null;
 		callback: (() => void) | null;
 		error: ((error: Error) => void) | null;
 	} = {
+		scope: null,
 		callback: null,
 		error: null,
 	};
@@ -327,7 +329,8 @@ function makeService(
 				onAssetsChanged() {
 					throw new Error("asset subscription is not used in tests");
 				},
-				onSyncedFolderChanged(callback, onError) {
+				onSyncedFolderChanged(scope, callback, onError) {
+					subscription.scope = scope;
 					subscription.callback = callback;
 					subscription.error = onError;
 					return () => {
@@ -424,7 +427,7 @@ describe("SyncedFolderService routing", () => {
 	});
 
 	it("connect forwards the renderer auth token to the backend factory", async () => {
-		const { service } = makeService(calls, events);
+		const { service, subscription } = makeService(calls, events);
 
 		await service.connect(CONNECT_INPUT);
 
@@ -440,6 +443,37 @@ describe("SyncedFolderService routing", () => {
 				authToken: AUTH_TOKEN,
 			},
 		]);
+		expect(subscription.scope).toEqual({ kind: "all-accessible" });
+	});
+
+	it("folder mounts subscribe only to their cloud subtree", async () => {
+		const mountedDocument: SharedSubtreeDocument = {
+			_id: "d1",
+			workspaceId: "ws_x",
+			workspaceName: "Acme",
+			folderId: "f_link",
+			title: "Doc",
+			path: "Doc.md",
+			markdown: "hello",
+			version: 1,
+			role: "owner",
+			canWrite: true,
+			updatedAt: 0,
+			relativePath: "",
+		};
+		const { service, subscription } = makeService(
+			calls,
+			events,
+			{ subtreeDocs: { f_link: [mountedDocument] } },
+			{ mountFolderId: "f_link" },
+		);
+
+		await service.connect(CONNECT_INPUT);
+
+		expect(subscription.scope).toEqual({
+			kind: "folder",
+			folderId: "f_link",
+		});
 	});
 
 	it("cloud subscription: materializes markdown updates and suppresses the watcher echo", async () => {

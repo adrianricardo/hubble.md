@@ -9,6 +9,7 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
 ### Added
 - `hubble ensure-desktop` can install, open, and sign in the verified macOS development app for live mounts
+- `hubble status --json` reports per-root projection health, queued edits, pending review, and recovery counts for agents and local tooling
 - Synced cloud folders now review consequential moves and provide durable recovery or Undo when local files are deleted
 
 ### Changed

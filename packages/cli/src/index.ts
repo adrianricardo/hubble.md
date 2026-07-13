@@ -59,6 +59,7 @@ type CliArgs = {
 	patchMarkdown?: string;
 	file?: string;
 	format?: string;
+	json: boolean;
 	out?: string;
 	parentId?: string;
 	title?: string;
@@ -112,6 +113,11 @@ async function main() {
 
 	if (parsed.command === "ensure-desktop") {
 		await runEnsureDesktop(parsed);
+		return;
+	}
+
+	if (parsed.command === "status") {
+		await runStatus(parsed);
 		return;
 	}
 
@@ -248,6 +254,32 @@ type CliServerStatus = {
 		lastReconcileAt: number | null;
 		documentCount?: number;
 	}>;
+	projections?: Array<{
+		scope: {
+			kind: "workspace-mirror" | "folder";
+			workspaceId: string | null;
+			folderId: string | null;
+			localRoot: string | null;
+		};
+		status: {
+			state: string;
+			connected: boolean;
+			documentCount: number;
+			pendingOperationCount: number;
+			verificationReason: "offline" | "access" | null;
+			lastReconcileAt: number | null;
+			lastEventAt: number | null;
+			lastError: string | null;
+			telemetry: { queuedEventCount: number };
+		};
+		operations: {
+			total: number;
+			pendingReview: number;
+			recovery: number;
+			undoAvailable: number;
+			byKind: Record<string, number>;
+		};
+	}>;
 };
 
 type CliSocketResponse<T> =
@@ -352,6 +384,36 @@ async function runEnsureDesktop(parsed: CliArgs) {
 	console.log("Hubble desktop is ready");
 	console.log(`  version: ${status.appVersion}`);
 	if (status.auth?.email) console.log(`  account: ${status.auth.email}`);
+}
+
+async function runStatus(parsed: CliArgs) {
+	if (parsed.extraArgs.length > 0) {
+		printStatusHelp();
+		process.exitCode = 1;
+		return;
+	}
+	const status = await readAppStatus(getCliSocketPath());
+	if (parsed.json) {
+		console.log(JSON.stringify(status, null, 2));
+		return;
+	}
+	console.log(`Hubble desktop ${status.appVersion}`);
+	const projections = status.projections ?? [];
+	if (projections.length === 0) {
+		console.log("No projection roots reported.");
+		return;
+	}
+	for (const projection of projections) {
+		console.log("");
+		console.log(projection.scope.localRoot ?? "Unconfigured projection");
+		console.log(`  health: ${projection.status.state}`);
+		console.log(`  documents: ${projection.status.documentCount}`);
+		console.log(
+			`  queued edits: ${projection.status.telemetry.queuedEventCount}`,
+		);
+		console.log(`  pending review: ${projection.operations.pendingReview}`);
+		console.log(`  recovery: ${projection.operations.recovery}`);
+	}
 }
 
 async function ensureDesktopReady(
@@ -1557,6 +1619,7 @@ function parseCliArgs(argv: string[]) {
 				markdown: { type: "string" },
 				file: { type: "string" },
 				format: { type: "string" },
+				json: { type: "boolean" },
 				out: { type: "string" },
 				parent: { type: "string" },
 				title: { type: "string" },
@@ -1584,6 +1647,7 @@ function parseCliArgs(argv: string[]) {
 			patchMarkdown: values.markdown,
 			file: values.file,
 			format: values.format,
+			json: values.json ?? false,
 			out: values.out,
 			parentId: values.parent,
 			title: values.title,
@@ -1622,6 +1686,10 @@ function printHelp(args: CliArgs) {
 	}
 	if (args.command === "ensure-desktop") {
 		printEnsureDesktopHelp();
+		return;
+	}
+	if (args.command === "status") {
+		printStatusHelp();
 		return;
 	}
 	if (args.command !== "cloud") {
@@ -1674,6 +1742,7 @@ function printRootHelp() {
 	console.log("  hubble login [--url url]");
 	console.log("  hubble logout");
 	console.log("  hubble ensure-desktop [--url url] [--yes]");
+	console.log("  hubble status [--json]");
 	console.log(
 		"  hubble mount --workspace id --folder id --folder-name name --repo dir [--path mountPath] [--url url] [--yes]",
 	);
@@ -1683,8 +1752,20 @@ function printRootHelp() {
 	console.log("  login    Sign in with browser approval");
 	console.log("  logout   Remove saved CLI credentials");
 	console.log("  ensure-desktop  Install, open, and sign in the desktop app");
+	console.log(
+		"  status   Report desktop projection health for people or agents",
+	);
 	console.log("  mount    Create a live desktop-watched repo mount");
 	console.log("  cloud    Manage Cloud Sync");
+}
+
+function printStatusHelp() {
+	console.log("Usage:");
+	console.log("  hubble status [--json]");
+	console.log("");
+	console.log(
+		"Reports every desktop projection root, health, queued edits, pending review, and recovery counts.",
+	);
 }
 
 function printLoginHelp() {

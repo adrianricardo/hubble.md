@@ -1,8 +1,8 @@
 # Desktop cloud workspace
 
 > **Architecture snapshot:** revalidated on `v1-release` at
-> [`51f0ee93f9e2c3d5d8558d92a3dd11b606bc8406`](https://github.com/bholmesdev/hubble.md/tree/51f0ee93f9e2c3d5d8558d92a3dd11b606bc8406)
-> on 2026-07-13, plus the Phase 4 overlap guard in the same working tree.
+> [`0882b7517a8480db33fe75da0b2c28703af818eb`](https://github.com/bholmesdev/hubble.md/tree/0882b7517a8480db33fe75da0b2c28703af818eb)
+> on 2026-07-13, plus the Phase 4 root-scoping/status slice in the same working tree.
 > The product contract is durable; re-run the gate after material architectural changes.
 
 ## Context
@@ -78,6 +78,17 @@ only to the whole-workspace instance. Cloud subscriptions remain workspace-globa
 legacy content sections. The ownership table remains current. Phase 4 now starts with
 a testable mount-validation seam; a projection manager is still required to own
 aggregate lifecycle, operations, and status before the unified UI lands.
+
+**2026-07-13 Phase 4 result:** re-run against `0882b75`. The projection manager now
+owns whole-workspace and folder-engine lifecycle, status, managed-path lookup, and
+operation routing. Every renderer event and agent-facing status record carries local
+root, Workspace, and folder identity (the legacy multi-Workspace mirror necessarily
+uses null cloud IDs). Repo mounts subscribe only to their authorized folder-subtree
+query instead of every accessible Workspace/shared root. The desktop socket exposes
+bounded operation counts, and `hubble status --json` reports per-root health, queued
+edits, pending review, recovery, and Undo availability without document content or
+credentials. Phase 4 is complete at code/test/build level; Phase 5 unified desktop
+context/tree work is next.
 
 ### Architecture principles
 
@@ -304,7 +315,7 @@ unified “edit anywhere” presentation before it passes.
 
 ### Phase 4 — Multi-root correctness and agent status
 
-**Progress 2026-07-13:** local projection roots are canonicalized through their
+**Complete at code/test/build level 2026-07-13:** local projection roots are canonicalized through their
 nearest existing ancestor and rejected when identical, ancestor/descendant, or
 symlink-resolved overlaps would occur. Folder mounts in the same Workspace are also
 rejected when their cloud roots are identical or ancestor/descendant; guest topology
@@ -315,8 +326,10 @@ repo metadata, or BRAIN seed is written. A projection manager now owns whole-wor
 and folder-engine lifecycle, aggregate status, managed-path lookup, and durable
 operation routing. Pending move, deletion, and Trash actions are located through the
 owning root's journal, so repo-linked folders reach the same renderer review and OS
-notification path as the legacy mirror. Next: scope every emitted event and status
-record, then add folder-scoped subscriptions and the CLI status surface.
+notification path as the legacy mirror. Events and status records carry explicit root
+identity; repo mounts use one folder-subtree subscription; and
+`hubble status --json` reports safe per-root health and operation counts through the
+desktop socket.
 
 1. Validate existing and proposed local paths after normalization. Reject identical,
    ancestor, descendant, and symlink-resolved overlap.

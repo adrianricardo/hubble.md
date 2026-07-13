@@ -15,11 +15,16 @@ export type Subscriber = {
 		onError: (err: Error) => void,
 	): () => void;
 	onSyncedFolderChanged(
+		scope: SyncedFolderSubscriptionScope,
 		callback: () => void,
 		onError: (err: Error) => void,
 	): () => void;
 	close(): Promise<void>;
 };
+
+export type SyncedFolderSubscriptionScope =
+	| { kind: "all-accessible" }
+	| { kind: "folder"; folderId: string };
 
 type ConvexSharedSubtreeDocument = {
 	_id: Id<"documents">;
@@ -328,7 +333,17 @@ export function createConvexSubscriber(
 				onError,
 			);
 		},
-		onSyncedFolderChanged(callback, onError) {
+		onSyncedFolderChanged(scope, callback, onError) {
+			if (scope.kind === "folder") {
+				// One reactive subtree query covers descendant folder and document reads,
+				// so a repo mount does not need the global Workspace subscription graph.
+				return client.onUpdate(
+					api.documents.listFolderWithMarkdown,
+					{ folderId: scope.folderId as Id<"folders"> },
+					() => callback(),
+					onError,
+				);
+			}
 			const workspaceUnsubscribes = new Map<string, Array<() => void>>();
 
 			const clearWorkspaceSubscriptions = () => {
