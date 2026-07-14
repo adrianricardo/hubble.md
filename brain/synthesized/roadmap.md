@@ -38,8 +38,8 @@ and deferred product candidates are recorded in
 `specs/upstream-selected-improvements/TECH.md`. No product code was ported, and the
 candidate queue remains intact until implementation is verified and landed.
 
-**Selected improvements Milestones 1–3 completed (implementation sessions 1–3,
-2026-07-14):** commits `6d95b76` through `edd2f71` land every selected correctness,
+**Selected improvements Milestones 1–4 completed (implementation sessions 1–4,
+2026-07-14):** commits `6d95b76` through `2bb2e5d` land every selected correctness,
 native-text, persistence/sync, editor-rhythm, and cloud-context creation slice as
 coherent local commits with the required `Upstream-commit` trailers. The correctness
 boundary now covers UTF-8
@@ -70,18 +70,30 @@ non-mutating real Electron/CDP pass confirmed the root and row controls, accessi
 names/tooltips, focused name dialog, parent expansion, and coexistence with direct
 local-availability actions in the populated Hubble Product Brain context.
 
-The current package matrix passes editor 79/79, UI 20/20, cloud UI 8/8, sync 53/53,
-and desktop 177/177. Web tests pass 4/4 from the prior editor-rhythm milestone;
+Every actionable cloud row now has one capability-derived menu. Document actions
+provide title-only Rename, current-context Move through the fingerprinted
+prepare/confirm relocation boundary, and soft Move to Trash with Undo. Folder menus
+combine create, rename, owner-only Share, Trash, and direct-only local availability
+actions without adding folder move or another navigation representation. A new
+permission-checked context capability query returns uniform member capabilities or
+per-node shared-subtree capabilities, so a read-only root can still expose a stronger
+direct descendant grant without leaking inaccessible actions. Pointer context menus
+select/focus the invoked row, Shift+F10 and the Context Menu key reuse the same action
+model, menu dismissal restores the origin, and stable cloud IDs preserve or recover
+roving focus across reactive rename, move, Trash, and restore.
+
+The current package matrix passes editor 79/79, UI 20/20, cloud UI 10/10, sync 53/53,
+sync-backend 75/75, and desktop 177/177. Web tests pass 4/4 from the prior editor-rhythm milestone;
 changed-file Biome and diff checks pass, and `pnpm build:desktop` passes after
 simplify/comments/review-readiness. Repository-wide `pnpm check`
 still reports only pre-existing/mounted formatting diagnostics under
 `brain/cloud/.hubble/**`, `convex/tsconfig.json`, and `skills-lock.json`, plus existing
-storyboard CSS specificity warnings. **Next:** begin Milestone 4 in
-`specs/upstream-selected-improvements/TECH.md` by refactoring the availability-only
-ellipsis into a general capability-derived row action menu. Start with document
-Rename, safe prepared Move, and Move to Trash plus folder create/rename/share/Trash
-and direct-only local actions; preserve roving focus and do not add the deferred
-low-level folder move UI.
+storyboard CSS specificity warnings. **Next:** complete Milestone 5 in
+`specs/upstream-selected-improvements/TECH.md`: run the role/context and directly
+available-folder integration matrix, exercise pointer and keyboard menus plus
+rename/move/Trash/Undo against a backend containing `2bb2e5d`, confirm projection sync
+stays quiet, and finish packaged desktop acceptance. Do not deploy merely to satisfy
+this check; use an already-authorized/local backend or record the external gate.
 
 ## ➤ NEXT STEP (updated 2026-07-13, cross-device checkpoint prioritized)
 
