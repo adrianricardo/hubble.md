@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
 	buildCloudContentTree,
+	cloudContextRootFolderId,
+	cloudFolderAncestorIds,
+	cloudTreeCreateActions,
 	cloudTreeItemAccessibleLabel,
 	searchCloudContent,
 } from "./CloudContentTree";
@@ -64,6 +67,58 @@ describe("buildCloudContentTree", () => {
 		expect(searchCloudContent(tree, "launch")).toEqual([
 			{ id: "match", name: "Launch brief", path: "Research" },
 		]);
+	});
+});
+
+describe("cloud tree create controls", () => {
+	const writable = {
+		canCreate: true,
+		canWriteFolder: (folderId: string) => folderId !== "read-only",
+	};
+
+	it("maps the current context root without exposing the shared root as a row", () => {
+		expect(
+			cloudContextRootFolderId({ kind: "workspace", workspaceId: "space" }),
+		).toBeNull();
+		expect(
+			cloudContextRootFolderId({
+				kind: "shared-folder",
+				workspaceId: "space",
+				folderId: "shared",
+			}),
+		).toBe("shared");
+	});
+
+	it("derives both create actions from the same root and folder capabilities", () => {
+		expect(cloudTreeCreateActions(null, writable)).toEqual([
+			"create-document",
+			"create-folder",
+		]);
+		expect(cloudTreeCreateActions("folder", writable)).toEqual([
+			"create-document",
+			"create-folder",
+		]);
+		expect(cloudTreeCreateActions("read-only", writable)).toEqual([]);
+		expect(
+			cloudTreeCreateActions(null, {
+				canCreate: false,
+				canWriteFolder: () => false,
+			}),
+		).toEqual([]);
+	});
+
+	it("returns the ancestors that must expand before focusing a created folder", () => {
+		const tree = buildCloudContentTree(
+			[
+				{ id: "root", name: "Root", parentId: null },
+				{ id: "parent", name: "Parent", parentId: "root" },
+				{ id: "created", name: "Created", parentId: "parent" },
+			],
+			[],
+			null,
+		);
+		expect(cloudFolderAncestorIds(tree, "created")).toEqual(["root", "parent"]);
+		expect(cloudFolderAncestorIds(tree, "missing")).toBeNull();
 	});
 });
 

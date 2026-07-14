@@ -2,26 +2,38 @@ import { useAuthToken } from "@convex-dev/auth/react";
 import {
 	CloudContentTree,
 	type CloudFolderAvailability,
+	type CloudTreeCapabilities,
+	cloudContextRootFolderId,
 } from "@hubble.md/cloud-ui";
+import { api } from "@hubble.md/sync-backend";
+import type { Id } from "@hubble.md/sync-backend/types";
 import {
 	Button,
+	Input,
 	Modal,
 	Sidebar as SharedSidebar,
 	type SidebarFocusedItem,
 	SidebarFrame,
 } from "@hubble.md/ui";
 import { useStoreValue } from "@simplestack/store/react";
-import { Authenticated, AuthLoading, Unauthenticated } from "convex/react";
+import {
+	Authenticated,
+	AuthLoading,
+	Unauthenticated,
+	useMutation,
+} from "convex/react";
 import {
 	type ReactNode,
 	useCallback,
 	useEffect,
+	useId,
 	useMemo,
 	useRef,
 	useState,
 } from "react";
 import { toast } from "sonner";
 import MingcuteCloudLine from "~icons/mingcute/cloud-line";
+import MingcuteFolderLine from "~icons/mingcute/folder-line";
 import { desktopConvexUrl } from "../convex";
 import { desktopApi } from "../desktopApi";
 import type { LocalAvailabilityRecord } from "../desktopApi/types";
@@ -247,6 +259,16 @@ function AuthenticatedCloudSidebar({
 }) {
 	const { spaces, sharedFolders, context } = useSelectedCloudContext();
 	const authToken = useAuthToken();
+	const createDocument = useMutation(api.documents.create);
+	const createFolder = useMutation(api.folders.create);
+	const folderNameInputId = useId();
+	const [folderCreateTarget, setFolderCreateTarget] = useState<{
+		workspaceId: string;
+		parentId: string | null;
+	} | null>(null);
+	const [folderName, setFolderName] = useState("");
+	const [creatingFolder, setCreatingFolder] = useState(false);
+	const [focusFolderId, setFocusFolderId] = useState<string | null>(null);
 	const [availabilityRecords, setAvailabilityRecords] = useState<
 		LocalAvailabilityRecord[]
 	>([]);
@@ -308,9 +330,61 @@ function AuthenticatedCloudSidebar({
 		context?.kind === "workspace" ||
 		selectedSharedFolder?.role === "owner" ||
 		selectedSharedFolder?.role === "editor";
+	const treeCapabilities = useMemo<CloudTreeCapabilities>(
+		() => ({
+			canCreate,
+			canWriteFolder: () => canCreate,
+		}),
+		[canCreate],
+	);
 	const openDocument = (documentId: string) => {
 		if (onOpenDocument) onOpenDocument(documentId);
 		else toast("Document opening is unavailable in this window");
+	};
+	const createDocumentInFolder = async (folderId: string) => {
+		if (!context || !canCreate) return;
+		try {
+			const documentId = await createDocument({
+				workspaceId: context.workspaceId as Id<"workspaces">,
+				folderId: folderId as Id<"folders">,
+				title: "Untitled",
+			});
+			openDocument(documentId);
+			toast.success("Document created");
+		} catch (error) {
+			toast.error("Failed to create document", {
+				description: error instanceof Error ? error.message : String(error),
+			});
+		}
+	};
+	const requestCreateFolder = (parentId: string | null) => {
+		if (!context || !canCreate) return;
+		setFolderName("");
+		setFolderCreateTarget({ workspaceId: context.workspaceId, parentId });
+	};
+	const submitFolder = async (event: React.FormEvent) => {
+		event.preventDefault();
+		const name = folderName.trim();
+		if (!folderCreateTarget || !name || creatingFolder) return;
+		setCreatingFolder(true);
+		try {
+			const folderId = await createFolder({
+				workspaceId: folderCreateTarget.workspaceId as Id<"workspaces">,
+				parentId: folderCreateTarget.parentId
+					? (folderCreateTarget.parentId as Id<"folders">)
+					: undefined,
+				name,
+			});
+			setFolderCreateTarget(null);
+			setFocusFolderId(folderId);
+			toast.success(`Folder “${name}” created`);
+		} catch (error) {
+			toast.error("Failed to create folder", {
+				description: error instanceof Error ? error.message : String(error),
+			});
+		} finally {
+			setCreatingFolder(false);
+		}
 	};
 	const recordForFolder = (folderId: string) =>
 		availabilityRecords.find(
@@ -461,11 +535,29 @@ function AuthenticatedCloudSidebar({
 					sharedFolders={sharedFolders}
 					context={context}
 				/>
-				<CloudDocumentCreateButton
-					context={context}
-					canCreate={canCreate}
-					onOpenDocument={openDocument}
-				/>
+				<div className="flex shrink-0 items-center">
+					<CloudDocumentCreateButton
+						context={context}
+						canCreate={canCreate}
+						onOpenDocument={openDocument}
+					/>
+					<Button
+						type="button"
+						variant="ghost"
+						size="icon-xs"
+						disabled={!context || !canCreate}
+						aria-label="New folder"
+						title={
+							canCreate ? "New folder" : "You can’t create in this context"
+						}
+						onClick={() => {
+							if (context)
+								requestCreateFolder(cloudContextRootFolderId(context));
+						}}
+					>
+						<MingcuteFolderLine className="size-3.5" />
+					</Button>
+				</div>
 			</div>
 			{context ? (
 				<>
@@ -496,6 +588,13 @@ function AuthenticatedCloudSidebar({
 						context={context}
 						selectedDocumentId={activeDocumentId}
 						onSelectDocument={openDocument}
+						capabilities={treeCapabilities}
+						focusFolderId={focusFolderId}
+						onFocusFolderHandled={(folderId) => {
+							if (folderId === focusFolderId) setFocusFolderId(null);
+						}}
+						onCreateDocumentInFolder={createDocumentInFolder}
+						onRequestCreateFolder={(parentId) => requestCreateFolder(parentId)}
 						localFolders={localFolders}
 						onRevealLocalFolder={(availability) =>
 							void desktopApi.revealFile(availability.localPath)
@@ -512,6 +611,45 @@ function AuthenticatedCloudSidebar({
 					Create a Workspace or ask someone to share a folder with you.
 				</p>
 			)}
+			<Modal
+				open={folderCreateTarget !== null}
+				onOpenChange={(open) => {
+					if (!open && !creatingFolder) setFolderCreateTarget(null);
+				}}
+				title="New folder"
+				description="The folder inherits access from its destination."
+			>
+				<form onSubmit={submitFolder} className="flex flex-col gap-3">
+					<label
+						htmlFor={folderNameInputId}
+						className="flex flex-col gap-1.5 text-xs font-medium text-foreground"
+					>
+						<span>Folder name</span>
+						<Input
+							id={folderNameInputId}
+							value={folderName}
+							onChange={(event) => setFolderName(event.currentTarget.value)}
+							autoFocus
+						/>
+					</label>
+					<div className="flex justify-end gap-2 [padding-block-start:0.25rem]">
+						<Button
+							type="button"
+							variant="ghost"
+							disabled={creatingFolder}
+							onClick={() => setFolderCreateTarget(null)}
+						>
+							Cancel
+						</Button>
+						<Button
+							type="submit"
+							disabled={!folderName.trim() || creatingFolder}
+						>
+							{creatingFolder ? "Creating…" : "Create folder"}
+						</Button>
+					</div>
+				</form>
+			</Modal>
 			<Modal
 				open={stopTarget !== null}
 				onOpenChange={(open) => {

@@ -4,6 +4,11 @@ export {
 	CloudContentTree,
 	type CloudDocumentSearchResult,
 	type CloudFolderAvailability,
+	type CloudTreeCapabilities,
+	type CloudTreeCreateAction,
+	cloudContextRootFolderId,
+	cloudFolderAncestorIds,
+	cloudTreeCreateActions,
 	searchCloudContent,
 } from "./CloudContentTree";
 export type { ConvexErrorKind } from "./convex-error";

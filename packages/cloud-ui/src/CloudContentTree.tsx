@@ -3,7 +3,8 @@ import { api } from "@hubble.md/sync-backend";
 import type { Id } from "@hubble.md/sync-backend/types";
 import { Button } from "@hubble.md/ui";
 import { useQuery } from "convex/react";
-import { useDeferredValue, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import MingcuteAddLine from "~icons/mingcute/add-line";
 import MingcuteComputerLine from "~icons/mingcute/computer-line";
 import MingcuteCopy2Line from "~icons/mingcute/copy-2-line";
 import MingcuteFileLine from "~icons/mingcute/file-line";
@@ -17,6 +18,29 @@ import MingcuteUnlinkLine from "~icons/mingcute/unlink-line";
 export type CloudContentContext =
 	| { kind: "workspace"; workspaceId: string }
 	| { kind: "shared-folder"; folderId: string; workspaceId: string };
+
+export type CloudTreeCapabilities = {
+	canCreate: boolean;
+	canWriteFolder: (folderId: string) => boolean;
+};
+
+export type CloudTreeCreateAction = "create-document" | "create-folder";
+
+export function cloudContextRootFolderId(
+	context: CloudContentContext,
+): string | null {
+	return context.kind === "shared-folder" ? context.folderId : null;
+}
+
+export function cloudTreeCreateActions(
+	folderId: string | null,
+	capabilities: CloudTreeCapabilities,
+): CloudTreeCreateAction[] {
+	const canCreate = folderId
+		? capabilities.canWriteFolder(folderId)
+		: capabilities.canCreate;
+	return canCreate ? ["create-document", "create-folder"] : [];
+}
 
 type FolderInput = { id: string; name: string; parentId: string | null };
 type DocumentInput = {
@@ -167,10 +191,28 @@ function visibleNodes(
 	return visible;
 }
 
+export function cloudFolderAncestorIds(
+	nodes: CloudContentNode[],
+	folderId: string,
+): string[] | null {
+	for (const node of nodes) {
+		if (node.kind !== "folder") continue;
+		if (node.id === folderId) return [];
+		const descendants = cloudFolderAncestorIds(node.children, folderId);
+		if (descendants) return [node.id, ...descendants];
+	}
+	return null;
+}
+
 export function CloudContentTree({
 	context,
 	selectedDocumentId,
 	onSelectDocument,
+	capabilities,
+	focusFolderId,
+	onFocusFolderHandled,
+	onCreateDocumentInFolder,
+	onRequestCreateFolder,
 	localFolders = [],
 	onRevealLocalFolder,
 	onCopyLocalPath,
@@ -180,6 +222,11 @@ export function CloudContentTree({
 	context: CloudContentContext;
 	selectedDocumentId: string | null;
 	onSelectDocument: (documentId: string) => void;
+	capabilities: CloudTreeCapabilities;
+	focusFolderId?: string | null;
+	onFocusFolderHandled?: (folderId: string) => void;
+	onCreateDocumentInFolder?: (folderId: string) => void | Promise<void>;
+	onRequestCreateFolder?: (parentId: string) => void;
 	localFolders?: readonly CloudFolderAvailability[];
 	onRevealLocalFolder?: (availability: CloudFolderAvailability) => void;
 	onCopyLocalPath?: (availability: CloudFolderAvailability) => void;
@@ -203,10 +250,12 @@ export function CloudContentTree({
 	);
 	const [expanded, setExpanded] = useState<Set<string>>(new Set());
 	const [focusedId, setFocusedId] = useState<string | null>(null);
+	const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
 	const [search, setSearch] = useState("");
 	const deferredSearch = useDeferredValue(search);
 	const itemRefs = useRef(new Map<string, HTMLDivElement>());
 	const actionRefs = useRef(new Map<string, AvailabilityActionRefs>());
+	const handledFocusFolderId = useRef<string | null>(null);
 
 	const nodes = useMemo(() => {
 		if (context.kind === "workspace") {
@@ -255,6 +304,30 @@ export function CloudContentTree({
 		context.kind === "shared-folder"
 			? availabilityByFolder.get(context.folderId)
 			: undefined;
+	useEffect(() => {
+		if (
+			!nodes ||
+			!focusFolderId ||
+			handledFocusFolderId.current === focusFolderId
+		)
+			return;
+		const ancestors = cloudFolderAncestorIds(nodes, focusFolderId);
+		if (!ancestors) return;
+		handledFocusFolderId.current = focusFolderId;
+		setSearch("");
+		setExpanded((current) => new Set([...current, ...ancestors]));
+		setPendingFocusId(focusFolderId);
+	}, [focusFolderId, nodes]);
+	useEffect(() => {
+		if (!pendingFocusId) return;
+		const element = itemRefs.current.get(pendingFocusId);
+		if (!element) return;
+		setFocusedId(pendingFocusId);
+		element.focus();
+		element.scrollIntoView({ block: "nearest" });
+		setPendingFocusId(null);
+		onFocusFolderHandled?.(pendingFocusId);
+	}, [onFocusFolderHandled, pendingFocusId]);
 	const focusItem = (id: string) => {
 		setFocusedId(id);
 		itemRefs.current.get(id)?.focus();
@@ -297,7 +370,7 @@ export function CloudContentTree({
 					A quiet place for what comes next
 				</p>
 				<p className="m-0 text-[11px] text-muted-foreground">
-					Create a document to begin.
+					Create a document or folder to begin.
 				</p>
 			</div>
 		);
@@ -425,6 +498,9 @@ export function CloudContentTree({
 							: undefined;
 						const isSelected =
 							node.kind === "document" && node.id === selectedDocumentId;
+						const createActions = isFolder
+							? cloudTreeCreateActions(node.id, capabilities)
+							: [];
 						return (
 							<div
 								key={node.id}
@@ -458,9 +534,7 @@ export function CloudContentTree({
 								onFocus={() => setFocusedId(node.id)}
 								onClick={(event) => {
 									if (
-										(event.target as HTMLElement).closest(
-											"[data-local-actions]",
-										)
+										(event.target as HTMLElement).closest("[data-tree-actions]")
 									)
 										return;
 									if (node.kind === "folder") toggleFolder(node.id);
@@ -496,6 +570,42 @@ export function CloudContentTree({
 										<AvailabilityMarker availability={availability} />
 									) : null}
 								</span>
+								{isFolder && createActions.length > 0 ? (
+									<span
+										data-tree-actions
+										className="flex shrink-0 items-center opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 motion-reduce:transition-none"
+									>
+										{createActions.includes("create-document") &&
+										onCreateDocumentInFolder ? (
+											<Button
+												type="button"
+												variant="ghost"
+												size="icon-xs"
+												aria-label={`New document in ${node.name}`}
+												title="New document"
+												onClick={() => void onCreateDocumentInFolder(node.id)}
+											>
+												<MingcuteAddLine className="size-3.5" />
+											</Button>
+										) : null}
+										{createActions.includes("create-folder") &&
+										onRequestCreateFolder ? (
+											<Button
+												type="button"
+												variant="ghost"
+												size="icon-xs"
+												aria-label={`New folder in ${node.name}`}
+												title="New folder"
+												onClick={() => {
+													toggleFolder(node.id, true);
+													onRequestCreateFolder(node.id);
+												}}
+											>
+												<MingcuteFolderLine className="size-3.5" />
+											</Button>
+										) : null}
+									</span>
+								) : null}
 								{availability ? (
 									<AvailabilityActions
 										availability={availability}
@@ -576,7 +686,7 @@ function AvailabilityActions({
 				render={
 					<Button
 						ref={triggerRef}
-						data-local-actions
+						data-tree-actions
 						tabIndex={triggerRef ? -1 : 0}
 						variant="ghost"
 						size="icon-xs"
