@@ -446,6 +446,7 @@ function AuthenticatedCloudSidebar({
 				title: "Untitled",
 			});
 			openDocument(documentId);
+			setFocusTreeNodeId(documentId);
 			toast.success("Document created");
 		} catch (error) {
 			toast.error("Failed to create document", {
