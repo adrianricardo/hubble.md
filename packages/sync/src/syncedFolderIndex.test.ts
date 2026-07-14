@@ -9,6 +9,25 @@ import {
 } from "./syncedFolderIndex.js";
 
 describe("inspectStartupProjectionDrift", () => {
+	it("refuses to reuse a Workspace-root index for another Workspace", async () => {
+		const raw = JSON.stringify({
+			version: 2,
+			mount: { kind: "workspace", workspaceId: "ws_original" },
+			syncRoot: "/mount",
+			topology: [],
+			verification: { state: "verified", reason: null, updatedAt: 1 },
+			entries: {},
+		});
+
+		await expect(
+			loadSyncedFolderIndexManifest(
+				{ readFileOrNull: async () => raw },
+				"/mount",
+				{ kind: "workspace", workspaceId: "ws_other" },
+			),
+		).rejects.toThrow("different mount");
+	});
+
 	it("migrates a v1 bare index into the versioned mount envelope", async () => {
 		const entry = {
 			documentId: "d1",

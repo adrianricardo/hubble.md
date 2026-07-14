@@ -19,11 +19,14 @@ import {
 	loadSyncedFolderIndexManifest,
 	materializeMountFolder,
 	materializeSyncedFolder,
+	materializeWorkspaceRoot,
 	type PendingProjectionOperation,
 	ProjectionGuardConflict,
+	type ProjectionScope,
 	type ProjectionSnapshot,
 	planMountFolder,
 	planSyncedFolder,
+	planWorkspaceRoot,
 	reconcileProjectionFile,
 	rekeySyncedFolderEntry,
 	removeProjectionOperation,
@@ -60,6 +63,7 @@ import {
 export type WatcherHandle = { close(): Promise<void> | void };
 
 export type SyncedFolderServiceOptions = {
+	scope: ProjectionScope;
 	createBackend?: (url: string, authToken?: string) => SyncBackend;
 	createSubscriber?: (url: string, authToken?: string) => Subscriber;
 	fs?: FileSystem;
@@ -84,12 +88,6 @@ export type SyncedFolderServiceOptions = {
 		syncRoot: string;
 		onEvent: (event: RawWatcherEvent) => void;
 	}) => WatcherHandle | null;
-	/**
-	 * When set, this engine instance is a repo-link **mount** (RB3): it
-	 * materializes exactly the given folder's subtree at `syncRoot` instead of the
-	 * whole-workspace mirror. Engine-instance-per-mount — the multi-root shape.
-	 */
-	mountFolderId?: string;
 };
 
 export type ConnectFolderInput = {
@@ -211,7 +209,7 @@ export class SyncedFolderService {
 	#isOffline: () => boolean;
 	#isPathAvailable: (path: string) => boolean;
 	#createWatcher: SyncedFolderServiceOptions["createWatcher"];
-	#mountFolderId: string | null;
+	#scope: ProjectionScope;
 
 	#backend: SyncBackend | null = null;
 	#syncRoot: string | null = null;
@@ -244,7 +242,7 @@ export class SyncedFolderService {
 	#connectInput: ConnectFolderInput | null = null;
 	#startupIncomplete = false;
 
-	constructor(options: SyncedFolderServiceOptions = {}) {
+	constructor(options: SyncedFolderServiceOptions) {
 		this.#createBackend = options.createBackend ?? createConvexBackend;
 		this.#createSubscriber = options.createSubscriber ?? createConvexSubscriber;
 		this.#fs = options.fs ?? createNodeFileSystem();
@@ -275,7 +273,7 @@ export class SyncedFolderService {
 						}
 					});
 		this.#createWatcher = options.createWatcher;
-		this.#mountFolderId = options.mountFolderId ?? null;
+		this.#scope = options.scope;
 	}
 
 	get connected(): boolean {
@@ -297,11 +295,10 @@ export class SyncedFolderService {
 		const relativePath = this.#syncRoot
 			? relPath(this.#syncRoot, absPath)
 			: absPath;
-		// Whole-workspace mirrors add a workspace directory; repo mounts begin at
-		// the linked folder itself, so their subtree-relative path is already final.
-		return this.#mountFolderId
-			? relativePath
-			: stripTopLevelWorkspaceDir(relativePath);
+		// Only the legacy broad mirror adds a top-level Workspace wrapper.
+		return this.#scope.kind === "all-accessible"
+			? stripTopLevelWorkspaceDir(relativePath)
+			: relativePath;
 	}
 
 	/** The reverse-index entry for `absPath`, or `null` when not a synced doc. */
@@ -688,9 +685,58 @@ export class SyncedFolderService {
 	}
 
 	#mountIdentity(): SyncedFolderMountIdentity {
-		return this.#mountFolderId
-			? { kind: "folder", folderId: this.#mountFolderId }
-			: { kind: "workspace-mirror" };
+		switch (this.#scope.kind) {
+			case "all-accessible":
+				return { kind: "workspace-mirror" };
+			case "workspace":
+				return {
+					kind: "workspace",
+					workspaceId: this.#scope.workspaceId,
+				};
+			case "folder":
+				return { kind: "folder", folderId: this.#scope.folderId };
+		}
+	}
+
+	#planProjection(backend: SyncBackend, syncRoot: string) {
+		switch (this.#scope.kind) {
+			case "all-accessible":
+				return planSyncedFolder(backend, { syncRoot });
+			case "workspace":
+				return planWorkspaceRoot(backend, {
+					syncRoot,
+					workspaceId: this.#scope.workspaceId,
+				});
+			case "folder":
+				return planMountFolder(backend, {
+					syncRoot,
+					folderId: this.#scope.folderId,
+				});
+		}
+	}
+
+	#materializeProjection(
+		backend: SyncBackend,
+		fs: Pick<
+			FileSystem,
+			"ensureDir" | "writeFile" | "readFileOrNull" | "setReadOnly"
+		>,
+		syncRoot: string,
+	) {
+		switch (this.#scope.kind) {
+			case "all-accessible":
+				return materializeSyncedFolder(backend, fs, { syncRoot });
+			case "workspace":
+				return materializeWorkspaceRoot(backend, fs, {
+					syncRoot,
+					workspaceId: this.#scope.workspaceId,
+				});
+			case "folder":
+				return materializeMountFolder(backend, fs, {
+					syncRoot,
+					folderId: this.#scope.folderId,
+				});
+		}
 	}
 
 	async #pauseForStartupError(error: unknown): Promise<void> {
@@ -732,12 +778,7 @@ export class SyncedFolderService {
 		const backend = this.#backend;
 		const syncRoot = this.#syncRoot;
 		if (!backend || !syncRoot) return false;
-		const plan = this.#mountFolderId
-			? await planMountFolder(backend, {
-					syncRoot,
-					folderId: this.#mountFolderId,
-				})
-			: await planSyncedFolder(backend, { syncRoot });
+		const plan = await this.#planProjection(backend, syncRoot);
 		const comparison = await compareProjectionPlanWithDisk(
 			this.#fs,
 			syncRoot,
@@ -973,12 +1014,7 @@ export class SyncedFolderService {
 			? backend
 			: memoizeProjectionBackend(backend);
 		if (!snapshot) {
-			const plan = this.#mountFolderId
-				? await planMountFolder(materializeBackend, {
-						syncRoot,
-						folderId: this.#mountFolderId,
-					})
-				: await planSyncedFolder(materializeBackend, { syncRoot });
+			const plan = await this.#planProjection(materializeBackend, syncRoot);
 			const comparison = await compareProjectionPlanWithDisk(
 				this.#fs,
 				syncRoot,
@@ -1016,14 +1052,11 @@ export class SyncedFolderService {
 		const projectionFs = snapshot
 			? guardProjectionFileSystem(this.#fs, snapshot)
 			: this.#fs;
-		const result = this.#mountFolderId
-			? await materializeMountFolder(materializeBackend, projectionFs, {
-					syncRoot,
-					folderId: this.#mountFolderId,
-				})
-			: await materializeSyncedFolder(materializeBackend, projectionFs, {
-					syncRoot,
-				});
+		const result = await this.#materializeProjection(
+			materializeBackend,
+			projectionFs,
+			syncRoot,
+		);
 		if (
 			connectionGeneration !== this.#connectionGeneration ||
 			backend !== this.#backend ||
@@ -1094,9 +1127,7 @@ export class SyncedFolderService {
 	#startCloudSubscriptions(deploymentUrl: string, authToken: string): void {
 		this.#subscriber = this.#createSubscriber(deploymentUrl, authToken);
 		this.#unsubscribeSyncedFolder = this.#subscriber.onSyncedFolderChanged(
-			this.#mountFolderId
-				? { kind: "folder", folderId: this.#mountFolderId }
-				: { kind: "all-accessible" },
+			this.#scope,
 			() => this.#scheduleCloudMaterialize(),
 			(error) => this.#handleSubscriptionError(error),
 		);

@@ -35,6 +35,7 @@ export type SyncedFolderIndex = Record<string, SyncedFolderIndexEntry>;
 
 export type SyncedFolderMountIdentity =
 	| { kind: "workspace-mirror" }
+	| { kind: "workspace"; workspaceId: string }
 	| { kind: "folder"; folderId: string };
 
 export type SyncedFolderTopologyEntry = {

@@ -1,4 +1,4 @@
-import type { SyncBackend } from "@hubble.md/sync";
+import type { ProjectionScope, SyncBackend } from "@hubble.md/sync";
 import { api } from "@hubble.md/sync-backend";
 import type { Id } from "@hubble.md/sync-backend/types";
 import { ConvexClient, ConvexHttpClient } from "convex/browser";
@@ -22,9 +22,7 @@ export type Subscriber = {
 	close(): Promise<void>;
 };
 
-export type SyncedFolderSubscriptionScope =
-	| { kind: "all-accessible" }
-	| { kind: "folder"; folderId: string };
+export type SyncedFolderSubscriptionScope = ProjectionScope;
 
 type ConvexSharedSubtreeDocument = {
 	_id: Id<"documents">;
@@ -344,6 +342,27 @@ export function createConvexSubscriber(
 					() => callback(),
 					onError,
 				);
+			}
+			if (scope.kind === "workspace") {
+				const args = {
+					workspaceId: scope.workspaceId as Id<"workspaces">,
+				};
+				const unsubscribeFolders = client.onUpdate(
+					api.folders.list,
+					args,
+					() => callback(),
+					onError,
+				);
+				const unsubscribeDocuments = client.onUpdate(
+					api.documents.listWithMarkdown,
+					args,
+					() => callback(),
+					onError,
+				);
+				return () => {
+					unsubscribeFolders();
+					unsubscribeDocuments();
+				};
 			}
 			const workspaceUnsubscribes = new Map<string, Array<() => void>>();
 

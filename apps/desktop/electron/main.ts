@@ -280,6 +280,7 @@ function emitProjectionEvent(event: SyncedFolderEvent): void {
 }
 
 const syncedFolder = new SyncedFolderService({
+	scope: { kind: "all-accessible" },
 	emit: (event) =>
 		emitProjectionEvent({
 			...event,
@@ -297,8 +298,9 @@ const syncedFolder = new SyncedFolderService({
 
 const projectionManager = new ProjectionManager({
 	wholeWorkspace: syncedFolder,
-	createMount: (folderId) =>
+	createMount: (folderId, workspaceId) =>
 		new SyncedFolderService({
+			scope: { kind: "folder", workspaceId, folderId },
 			emit: (event) => {
 				const scope = projectionManager
 					.listStatuses()
@@ -316,7 +318,6 @@ const projectionManager = new ProjectionManager({
 			deviceId: os.hostname(),
 			isOffline: isDesktopOffline,
 			createWatcher: createSyncedFolderWatcher,
-			mountFolderId: folderId,
 		}),
 });
 const grantedFiles = new Set<string>();

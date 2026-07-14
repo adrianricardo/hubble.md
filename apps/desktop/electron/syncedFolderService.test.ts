@@ -14,6 +14,7 @@ import {
 	type DocumentRelocationResult,
 	type FileSystem,
 	type LiveDocumentProjection,
+	type ProjectionScope,
 	type SharedSubtreeDocument,
 	type SharedWithMe,
 	type SyncBackend,
@@ -289,7 +290,7 @@ function makeService(
 	options: {
 		isOffline?: () => boolean;
 		isPathAvailable?: (path: string) => boolean;
-		mountFolderId?: string;
+		scope?: ProjectionScope;
 		statInode?: (path: string) => number | null;
 		onGetLiveDocuments?: (call: number, fs: MemoryFs) => void;
 	} = {},
@@ -307,7 +308,7 @@ function makeService(
 		options.onGetLiveDocuments?.(call, fs),
 	);
 	const subscription: {
-		scope: { kind: string; folderId?: string } | null;
+		scope: { kind: string; workspaceId?: string; folderId?: string } | null;
 		callback: (() => void) | null;
 		error: ((error: Error) => void) | null;
 	} = {
@@ -316,6 +317,7 @@ function makeService(
 		error: null,
 	};
 	const service = new SyncedFolderService({
+		scope: options.scope ?? { kind: "all-accessible" },
 		createBackend: (url, authToken) => {
 			calls.backend.push({ url, authToken });
 			return backend;
@@ -348,7 +350,6 @@ function makeService(
 		statInode: options.statInode ?? (() => 111),
 		isOffline: options.isOffline,
 		isPathAvailable: options.isPathAvailable,
-		mountFolderId: options.mountFolderId,
 		emit: (event) => events.push(event),
 		// No createWatcher → no chokidar; events are driven directly.
 	});
@@ -465,15 +466,45 @@ describe("SyncedFolderService routing", () => {
 			calls,
 			events,
 			{ subtreeDocs: { f_link: [mountedDocument] } },
-			{ mountFolderId: "f_link" },
+			{
+				scope: {
+					kind: "folder",
+					workspaceId: "ws_x",
+					folderId: "f_link",
+				},
+			},
 		);
 
 		await service.connect(CONNECT_INPUT);
 
 		expect(subscription.scope).toEqual({
 			kind: "folder",
+			workspaceId: "ws_x",
 			folderId: "f_link",
 		});
+	});
+
+	it("Workspace roots materialize and subscribe only to the selected Workspace", async () => {
+		const { service, fs, state, subscription } = makeService(
+			calls,
+			events,
+			{ docs: [doc1({ path: "Doc.md" })] },
+			{ scope: { kind: "workspace", workspaceId: "ws" } },
+		);
+
+		await service.connect(CONNECT_INPUT);
+
+		expect(subscription.scope).toEqual({
+			kind: "workspace",
+			workspaceId: "ws",
+		});
+		expect(await fs.readFile(`${SYNC_ROOT}/Doc.md`)).toBe("hello");
+		expect(await fs.readFileOrNull(`${SYNC_ROOT}/WS/Doc.md`)).toBeNull();
+
+		state.docs = [doc1({ path: "Doc.md", markdown: "workspace update" })];
+		subscription.callback?.();
+		await waitForCloudMaterialize();
+		expect(await fs.readFile(`${SYNC_ROOT}/Doc.md`)).toBe("workspace update");
 	});
 
 	it("cloud subscription: materializes markdown updates and suppresses the watcher echo", async () => {
@@ -1640,6 +1671,7 @@ describe("SyncedFolderService routing", () => {
 			subtreeDocs: {},
 		});
 		const service = new SyncedFolderService({
+			scope: { kind: "all-accessible" },
 			createBackend: () => backend,
 			fs,
 			now: () => NOW,
@@ -1844,7 +1876,13 @@ describe("SyncedFolderService routing", () => {
 			calls,
 			events,
 			{ subtreeDocs: { f_link: subtree } },
-			{ mountFolderId: "f_link" },
+			{
+				scope: {
+					kind: "folder",
+					workspaceId: "ws_x",
+					folderId: "f_link",
+				},
+			},
 		);
 		await service.connect(CONNECT_INPUT);
 
@@ -1896,7 +1934,13 @@ describe("SyncedFolderService routing", () => {
 			calls,
 			events,
 			{ subtreeDocs: { f_link: subtree } },
-			{ mountFolderId: "f_link" },
+			{
+				scope: {
+					kind: "folder",
+					workspaceId: "ws_x",
+					folderId: "f_link",
+				},
+			},
 		);
 		await service.connect(CONNECT_INPUT);
 

@@ -4,6 +4,25 @@ Build-state half of the roadmap. Track strategy/sequencing moved to the cloud br
 (`brain/cloud/synthesized/Track Strategy.md` when mounted) — split 2026-07-10 by the
 hubble-init apply run.
 
+**Local-agent availability Milestone 1 completed (2026-07-13):** projection scope
+and materialization behavior are frozen at code/test level. Sync, Convex subscriber,
+and desktop service now share explicit `all-accessible`, `workspace`, and `folder`
+scopes with stable keys. A Workspace root plans and materializes only its root
+documents, nested topology, and empty folders directly at the selected local root;
+it excludes every unrelated Workspace and shared item. Workspace subscriptions watch
+only that Workspace's folder/document queries. Existing all-accessible and folder
+projection paths remain covered by the compatibility suites, and Workspace mount
+identity mismatch pauses instead of rebinding an indexed root. Revalidation on the
+pinned `d0a2cc1` base restored dependencies from the local pnpm store; sync tests pass
+51/51, Convex-client tests 1/1, desktop tests 156/156, changed-file Biome passes, and
+`pnpm build:desktop` passes.
+
+**Next local-agent availability step:** begin TECH Milestone 2 at the versioned
+`local-availability.json` registry and idempotent `repo-mounts.json` migration, then
+generalize `ProjectionManager`, overlap validation, lifecycle/status APIs, and typed
+IPC around the frozen `ProjectionScope`. Do not start renderer onboarding until that
+lifecycle contract is complete.
+
 ## ➤ NEXT STEP (updated 2026-07-09, post-apply-run)
 
 **Apply-mode is built and has run for real once**: `567-platform/brain` was split into

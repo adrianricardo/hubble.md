@@ -50,7 +50,7 @@ const recoveryOperationKinds = new Set<PendingProjectionOperation["kind"]>([
 
 export class ProjectionManager {
 	#wholeWorkspace: ProjectionEngine;
-	#createMount: (folderId: string) => ProjectionEngine;
+	#createMount: (folderId: string, workspaceId: string) => ProjectionEngine;
 	#mounts = new Map<
 		string,
 		{ workspaceId: string; engine: ProjectionEngine }
@@ -58,7 +58,7 @@ export class ProjectionManager {
 
 	constructor(options: {
 		wholeWorkspace: ProjectionEngine;
-		createMount: (folderId: string) => ProjectionEngine;
+		createMount: (folderId: string, workspaceId: string) => ProjectionEngine;
 	}) {
 		this.#wholeWorkspace = options.wholeWorkspace;
 		this.#createMount = options.createMount;
@@ -102,7 +102,7 @@ export class ProjectionManager {
 		input: ConnectFolderInput,
 	): Promise<SyncedFolderStatus> {
 		await this.disconnectMount(folderId);
-		const engine = this.#createMount(folderId);
+		const engine = this.#createMount(folderId, workspaceId);
 		this.#mounts.set(folderId, { workspaceId, engine });
 		try {
 			return await engine.connect(input);

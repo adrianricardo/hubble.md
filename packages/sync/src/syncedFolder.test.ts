@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { Folder, SyncBackend, Workspace } from "./backend.js";
 import { contentHash, type FileSystem } from "./fs.js";
 import { liveDocumentBaseCacheRoot, readReconcileBase } from "./reconcile.js";
-import { materializeMountFolder, materializeSyncedFolder } from "./sync.js";
+import {
+	materializeMountFolder,
+	materializeSyncedFolder,
+	materializeWorkspaceRoot,
+	planWorkspaceRoot,
+} from "./sync.js";
 import {
 	diffSyncedFolderIndex,
 	loadSyncedFolderIndex,
@@ -22,16 +27,19 @@ import type {
 function createMemoryFs(initial: Record<string, string> = {}): FileSystem & {
 	readOnly: Map<string, boolean>;
 	writes: Array<{ path: string; content: string }>;
+	directories: Set<string>;
 } {
 	const files = new Map<string, string>(Object.entries(initial));
 	const readOnly = new Map<string, boolean>();
 	const writes: Array<{ path: string; content: string }> = [];
+	const directories = new Set<string>();
 	const unsupported = () => {
 		throw new Error("not supported in memory fs");
 	};
 	return {
 		readOnly,
 		writes,
+		directories,
 		async readFile(path) {
 			const content = files.get(path);
 			if (content === undefined) throw new Error(`ENOENT: ${path}`);
@@ -47,7 +55,9 @@ function createMemoryFs(initial: Record<string, string> = {}): FileSystem & {
 		async readFileOrNull(path) {
 			return files.get(path) ?? null;
 		},
-		async ensureDir() {},
+		async ensureDir(path) {
+			directories.add(path);
+		},
 		async setReadOnly(path, ro) {
 			readOnly.set(path, ro);
 		},
@@ -641,6 +651,115 @@ describe("materializeSyncedFolder", () => {
 		const base = await readReconcileBase(fs, SYNC_ROOT, "d_roadmap");
 		expect(base?.baseMarkdown).toBe("# Roadmap\n");
 		expect(base?.metadata.revision).toBe(3);
+	});
+});
+
+describe("materializeWorkspaceRoot", () => {
+	const WORKSPACE_ROOT = "/Hubble/Acme";
+
+	it("places only the selected Workspace at the root with explicit empty-folder topology", async () => {
+		const fs = createMemoryFs();
+		const backend = createBackend({
+			workspaces: [
+				{ _id: "ws_acme", name: "Acme" },
+				{ _id: "ws_other", name: "Other" },
+			],
+			folders: {
+				ws_acme: [
+					{
+						_id: "f_product",
+						name: "Product",
+						parentId: null,
+						workspaceId: "ws_acme",
+					},
+					{
+						_id: "f_empty",
+						name: "Empty",
+						parentId: "f_product",
+						workspaceId: "ws_acme",
+					},
+				],
+			},
+			documents: {
+				ws_acme: [
+					doc({ _id: "d_root", title: "Root", path: "Root.md" }),
+					doc({
+						_id: "d_nested",
+						title: "Roadmap",
+						path: null,
+						folderId: "f_product",
+						role: "viewer",
+						canWrite: false,
+					}),
+				],
+				ws_other: [doc({ _id: "d_other", title: "Secret" })],
+			},
+			shared: {
+				folders: [],
+				documents: [
+					sharedDoc({
+						_id: "d_shared",
+						title: "Shared",
+						workspaceId: "ws_other",
+					}),
+				],
+			},
+		});
+
+		const result = await materializeWorkspaceRoot(backend, fs, {
+			syncRoot: WORKSPACE_ROOT,
+			workspaceId: "ws_acme",
+		});
+
+		expect(result.written).toEqual([
+			`${WORKSPACE_ROOT}/Root.md`,
+			`${WORKSPACE_ROOT}/Product/Roadmap.md`,
+		]);
+		expect(result.written.some((path) => path.includes("Other"))).toBe(false);
+		expect(result.written.some((path) => path.includes("Shared with me"))).toBe(
+			false,
+		);
+		expect(fs.directories).toContain(`${WORKSPACE_ROOT}/Product/Empty`);
+		expect(result.topology).toEqual([
+			{
+				folderId: "f_product",
+				workspaceId: "ws_acme",
+				parentFolderId: null,
+				relativePath: "Product",
+			},
+			{
+				folderId: "f_empty",
+				workspaceId: "ws_acme",
+				parentFolderId: "f_product",
+				relativePath: "Product/Empty",
+			},
+		]);
+		expect(fs.readOnly.get(`${WORKSPACE_ROOT}/Product/Roadmap.md`)).toBe(true);
+	});
+
+	it("plans the same canonical paths without writing document bytes", async () => {
+		const backend = createBackend({
+			workspaces: [],
+			folders: { ws_acme: [] },
+			documents: {
+				ws_acme: [
+					doc({
+						_id: "d_path",
+						title: "Display title",
+						path: "admin/activity-log.md",
+					}),
+				],
+			},
+		});
+
+		const plan = await planWorkspaceRoot(backend, {
+			syncRoot: WORKSPACE_ROOT,
+			workspaceId: "ws_acme",
+		});
+
+		expect(Object.keys(plan)).toEqual([
+			`${WORKSPACE_ROOT}/admin/activity-log.md`,
+		]);
 	});
 });
 

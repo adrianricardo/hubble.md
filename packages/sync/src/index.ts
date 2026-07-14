@@ -47,6 +47,8 @@ export {
 } from "./projectionOperations.js";
 export type { ProjectionDiskComparison } from "./projectionPlan.js";
 export { compareProjectionPlanWithDisk } from "./projectionPlan.js";
+export type { ProjectionScope } from "./projectionScope.js";
+export { projectionScopeKey } from "./projectionScope.js";
 export type {
 	BackstopReason,
 	ChangedRange,
@@ -71,8 +73,10 @@ export {
 	LIVE_DOCUMENT_MARKDOWN_MAX_BYTES,
 	materializeMountFolder,
 	materializeSyncedFolder,
+	materializeWorkspaceRoot,
 	planMountFolder,
 	planSyncedFolder,
+	planWorkspaceRoot,
 	projectionFileName,
 	status,
 	sync,
