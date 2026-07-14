@@ -15,6 +15,7 @@ import {
 } from "./members";
 import {
 	type DocumentRole,
+	documentRole,
 	FOLDER_INHERITANCE_DEPTH_CAP,
 	folderRole,
 	requireDocumentWrite,
@@ -311,6 +312,66 @@ export const listSubtree = query({
 						: "",
 				}))
 				.sort((a, b) => b.updatedAt - a.updatedAt),
+		};
+	},
+});
+
+export const getContextCapabilities = query({
+	args: {
+		workspaceId: v.id("workspaces"),
+		folderId: v.optional(v.id("folders")),
+	},
+	handler: async (ctx, { workspaceId, folderId }) => {
+		const membershipRole = await workspaceRole(ctx, workspaceId);
+		if (membershipRole) {
+			return {
+				mode: "uniform" as const,
+				canWrite: true,
+				canShare: membershipRole === "owner" || membershipRole === "admin",
+			};
+		}
+		if (!folderId) throw new Error("Unauthorized");
+		const folder = await ctx.db.get(folderId);
+		if (
+			!folder ||
+			folder.deletedAt !== undefined ||
+			folder.workspaceId !== workspaceId
+		) {
+			throw new Error("Unauthorized");
+		}
+		const role = await folderRole(ctx, folderId);
+		if (!role) throw new Error("Unauthorized");
+		// A descendant can have a stronger direct share than the visible root, so
+		// row actions need per-node capabilities instead of inheriting one UI flag.
+		const subtree = await collectFolderSubtree(ctx, folderId);
+		const folders = subtree.root
+			? [subtree.root, ...subtree.descendants]
+			: subtree.descendants;
+		const folderRoles = await Promise.all(
+			folders.map((candidate) => folderRole(ctx, candidate._id)),
+		);
+		const documentRoles = await Promise.all(
+			subtree.documents.map((document) => documentRole(ctx, document._id)),
+		);
+		return {
+			mode: "per-node" as const,
+			canWrite: role === "owner" || role === "editor",
+			canShare: role === "owner",
+			writableFolderIds: folders.flatMap((candidate, index) => {
+				const candidateRole = folderRoles[index];
+				return candidateRole === "owner" || candidateRole === "editor"
+					? [candidate._id]
+					: [];
+			}),
+			shareableFolderIds: folders.flatMap((candidate, index) =>
+				folderRoles[index] === "owner" ? [candidate._id] : [],
+			),
+			writableDocumentIds: subtree.documents.flatMap((document, index) => {
+				const candidateRole = documentRoles[index];
+				return candidateRole === "owner" || candidateRole === "editor"
+					? [document._id]
+					: [];
+			}),
 		};
 	},
 });

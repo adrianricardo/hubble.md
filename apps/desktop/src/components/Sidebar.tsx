@@ -1,9 +1,12 @@
 import { useAuthToken } from "@convex-dev/auth/react";
 import {
 	CloudContentTree,
+	type CloudDocumentMoveRequest,
 	type CloudFolderAvailability,
+	type CloudTreeActionTarget,
 	type CloudTreeCapabilities,
 	cloudContextRootFolderId,
+	FolderShareDialog,
 } from "@hubble.md/cloud-ui";
 import { api } from "@hubble.md/sync-backend";
 import type { Id } from "@hubble.md/sync-backend/types";
@@ -21,6 +24,7 @@ import {
 	AuthLoading,
 	Unauthenticated,
 	useMutation,
+	useQuery,
 } from "convex/react";
 import {
 	type ReactNode,
@@ -63,6 +67,29 @@ import {
 } from "./localAgentAvailabilityModel";
 import { CloudContextSwitcher, useSelectedCloudContext } from "./SpaceSwitcher";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
+
+type RelocationImpact = {
+	gainingUserCount: number;
+	losingUserCount: number;
+	publicAccessChanged: boolean;
+	repoExposureChanged: boolean;
+	userChanges: Array<{
+		userId: string;
+		name: string | null;
+		email: string | null;
+		fromRole: string | null;
+		toRole: string | null;
+	}>;
+	userChangesTruncated: boolean;
+	publicAccessChange: { fromRole: string | null; toRole: string | null };
+	repositoryChanges: Array<{
+		change: "added" | "removed";
+		folderId: string;
+		folderPath: string;
+		repoName: string | null;
+		repoRemoteUrl: string | null;
+	}>;
+};
 
 export function Sidebar({
 	cloudEnabled,
@@ -261,14 +288,60 @@ function AuthenticatedCloudSidebar({
 	const authToken = useAuthToken();
 	const createDocument = useMutation(api.documents.create);
 	const createFolder = useMutation(api.folders.create);
+	const renameDocument = useMutation(api.documents.rename);
+	const renameFolder = useMutation(api.folders.rename);
+	const removeDocument = useMutation(api.documents.remove);
+	const removeFolder = useMutation(api.folders.remove);
+	const restoreDocument = useMutation(api.documents.restoreRemoved);
+	const restoreFolder = useMutation(api.folders.restoreRemoved);
+	const prepareDocumentRelocation = useMutation(
+		api.folders.prepareDocumentRelocation,
+	);
+	const confirmDocumentRelocation = useMutation(
+		api.folders.confirmDocumentRelocation,
+	);
+	const contextCapabilities = useQuery(
+		api.folders.getContextCapabilities,
+		context
+			? {
+					workspaceId: context.workspaceId as Id<"workspaces">,
+					folderId:
+						context.kind === "shared-folder"
+							? (context.folderId as Id<"folders">)
+							: undefined,
+				}
+			: "skip",
+	);
 	const folderNameInputId = useId();
+	const renameInputId = useId();
 	const [folderCreateTarget, setFolderCreateTarget] = useState<{
 		workspaceId: string;
 		parentId: string | null;
 	} | null>(null);
 	const [folderName, setFolderName] = useState("");
 	const [creatingFolder, setCreatingFolder] = useState(false);
-	const [focusFolderId, setFocusFolderId] = useState<string | null>(null);
+	const [focusTreeNodeId, setFocusTreeNodeId] = useState<string | null>(null);
+	const [renameTarget, setRenameTarget] =
+		useState<CloudTreeActionTarget | null>(null);
+	const [renameName, setRenameName] = useState("");
+	const [trashTarget, setTrashTarget] = useState<CloudTreeActionTarget | null>(
+		null,
+	);
+	const [shareTarget, setShareTarget] = useState<CloudTreeActionTarget | null>(
+		null,
+	);
+	const [moveRequest, setMoveRequest] =
+		useState<CloudDocumentMoveRequest | null>(null);
+	const [moveDestinationId, setMoveDestinationId] = useState<string | null>(
+		null,
+	);
+	const [moveReview, setMoveReview] = useState<{
+		fingerprint: string;
+		impact: RelocationImpact;
+	} | null>(null);
+	const [cloudActionBusy, setCloudActionBusy] = useState<
+		"rename" | "trash" | "move" | null
+	>(null);
 	const [availabilityRecords, setAvailabilityRecords] = useState<
 		LocalAvailabilityRecord[]
 	>([]);
@@ -326,17 +399,40 @@ function AuthenticatedCloudSidebar({
 		context?.kind === "shared-folder"
 			? sharedFolders?.find((folder) => folder.folderId === context.folderId)
 			: undefined;
-	const canCreate =
-		context?.kind === "workspace" ||
-		selectedSharedFolder?.role === "owner" ||
-		selectedSharedFolder?.role === "editor";
-	const treeCapabilities = useMemo<CloudTreeCapabilities>(
-		() => ({
-			canCreate,
-			canWriteFolder: () => canCreate,
-		}),
-		[canCreate],
-	);
+	const canCreate = contextCapabilities?.canWrite ?? false;
+	const treeCapabilities = useMemo<CloudTreeCapabilities>(() => {
+		if (!contextCapabilities) {
+			return {
+				canCreate: false,
+				canWriteFolder: () => false,
+				canWriteDocument: () => false,
+				canShareFolder: () => false,
+			};
+		}
+		if (contextCapabilities.mode === "uniform") {
+			return {
+				canCreate: contextCapabilities.canWrite,
+				canWriteFolder: () => contextCapabilities.canWrite,
+				canWriteDocument: () => contextCapabilities.canWrite,
+				canShareFolder: () => contextCapabilities.canShare,
+			};
+		}
+		const writableFolders = new Set<string>(
+			contextCapabilities.writableFolderIds,
+		);
+		const writableDocuments = new Set<string>(
+			contextCapabilities.writableDocumentIds,
+		);
+		const shareableFolders = new Set<string>(
+			contextCapabilities.shareableFolderIds,
+		);
+		return {
+			canCreate: contextCapabilities.canWrite,
+			canWriteFolder: (folderId) => writableFolders.has(folderId),
+			canWriteDocument: (documentId) => writableDocuments.has(documentId),
+			canShareFolder: (folderId) => shareableFolders.has(folderId),
+		};
+	}, [contextCapabilities]);
 	const openDocument = (documentId: string) => {
 		if (onOpenDocument) onOpenDocument(documentId);
 		else toast("Document opening is unavailable in this window");
@@ -376,7 +472,7 @@ function AuthenticatedCloudSidebar({
 				name,
 			});
 			setFolderCreateTarget(null);
-			setFocusFolderId(folderId);
+			setFocusTreeNodeId(folderId);
 			toast.success(`Folder “${name}” created`);
 		} catch (error) {
 			toast.error("Failed to create folder", {
@@ -384,6 +480,167 @@ function AuthenticatedCloudSidebar({
 			});
 		} finally {
 			setCreatingFolder(false);
+		}
+	};
+	const requestRename = (target: CloudTreeActionTarget) => {
+		setRenameTarget(target);
+		setRenameName(target.name);
+	};
+	const submitRename = async (event: React.FormEvent) => {
+		event.preventDefault();
+		const target = renameTarget;
+		const name = renameName.trim();
+		if (!target || !name || cloudActionBusy) return;
+		if (name === target.name) {
+			setRenameTarget(null);
+			setFocusTreeNodeId(target.id);
+			return;
+		}
+		setCloudActionBusy("rename");
+		try {
+			if (target.kind === "document") {
+				await renameDocument({
+					documentId: target.id as Id<"documents">,
+					title: name,
+					path: target.path ?? undefined,
+				});
+			} else {
+				await renameFolder({
+					folderId: target.id as Id<"folders">,
+					name,
+				});
+			}
+			setRenameTarget(null);
+			setFocusTreeNodeId(target.id);
+			toast.success(
+				`${target.kind === "document" ? "Document" : "Folder"} renamed`,
+			);
+		} catch (error) {
+			toast.error(`Could not rename the ${target.kind}`, {
+				description: error instanceof Error ? error.message : String(error),
+			});
+		} finally {
+			setCloudActionBusy(null);
+		}
+	};
+	const requestMove = (request: CloudDocumentMoveRequest) => {
+		setMoveRequest(request);
+		setMoveDestinationId(request.document.parentId);
+		setMoveReview(null);
+	};
+	const completeMove = (documentId: string) => {
+		setMoveRequest(null);
+		setMoveReview(null);
+		setFocusTreeNodeId(documentId);
+		toast.success("Document moved");
+	};
+	const prepareMove = async (event: React.FormEvent) => {
+		event.preventDefault();
+		if (!moveRequest || cloudActionBusy) return;
+		const document = moveRequest.document;
+		if (moveDestinationId === document.parentId) return;
+		setCloudActionBusy("move");
+		try {
+			const result = await prepareDocumentRelocation({
+				documentId: document.id as Id<"documents">,
+				folderId: moveDestinationId
+					? (moveDestinationId as Id<"folders">)
+					: undefined,
+				title: document.name,
+				path: document.path ?? "",
+			});
+			if (result.status === "completed") {
+				completeMove(document.id);
+			} else {
+				setMoveReview({
+					fingerprint: result.fingerprint,
+					impact: result.impact,
+				});
+			}
+		} catch (error) {
+			toast.error("Could not move the document", {
+				description: error instanceof Error ? error.message : String(error),
+			});
+		} finally {
+			setCloudActionBusy(null);
+		}
+	};
+	const confirmMove = async () => {
+		if (!moveRequest || !moveReview || cloudActionBusy) return;
+		const document = moveRequest.document;
+		setCloudActionBusy("move");
+		try {
+			const result = await confirmDocumentRelocation({
+				documentId: document.id as Id<"documents">,
+				folderId: moveDestinationId
+					? (moveDestinationId as Id<"folders">)
+					: undefined,
+				title: document.name,
+				path: document.path ?? "",
+				fingerprint: moveReview.fingerprint,
+			});
+			if (result.status === "completed") {
+				completeMove(document.id);
+			} else {
+				setMoveReview({
+					fingerprint: result.fingerprint,
+					impact: result.impact,
+				});
+				toast.info("The move’s impact changed", {
+					description:
+						"Review the updated access changes before approving again.",
+				});
+			}
+		} catch (error) {
+			toast.error("Could not approve the move", {
+				description: error instanceof Error ? error.message : String(error),
+			});
+		} finally {
+			setCloudActionBusy(null);
+		}
+	};
+	const confirmTrash = async () => {
+		const target = trashTarget;
+		if (!target || cloudActionBusy) return;
+		setCloudActionBusy("trash");
+		try {
+			if (target.kind === "document") {
+				await removeDocument({ documentId: target.id as Id<"documents"> });
+			} else {
+				await removeFolder({ folderId: target.id as Id<"folders"> });
+			}
+			setTrashTarget(null);
+			const toastId = toast(`${target.name} moved to Trash`, {
+				action: {
+					label: "Undo",
+					onClick: () => {
+						const restore =
+							target.kind === "document"
+								? restoreDocument({
+										documentId: target.id as Id<"documents">,
+									})
+								: restoreFolder({ folderId: target.id as Id<"folders"> });
+						void restore
+							.then(() => {
+								toast.dismiss(toastId);
+								setFocusTreeNodeId(target.id);
+								toast.success(`${target.name} restored`);
+							})
+							.catch((error) => {
+								toast.error(`Could not restore ${target.name}`, {
+									description:
+										error instanceof Error ? error.message : String(error),
+								});
+							});
+					},
+				},
+			});
+		} catch (error) {
+			toast.error(`Could not move ${target.name} to Trash`, {
+				description: error instanceof Error ? error.message : String(error),
+			});
+		} finally {
+			setCloudActionBusy(null);
 		}
 	};
 	const recordForFolder = (folderId: string) =>
@@ -589,12 +846,16 @@ function AuthenticatedCloudSidebar({
 						selectedDocumentId={activeDocumentId}
 						onSelectDocument={openDocument}
 						capabilities={treeCapabilities}
-						focusFolderId={focusFolderId}
-						onFocusFolderHandled={(folderId) => {
-							if (folderId === focusFolderId) setFocusFolderId(null);
+						focusNodeId={focusTreeNodeId}
+						onFocusNodeHandled={(nodeId) => {
+							if (nodeId === focusTreeNodeId) setFocusTreeNodeId(null);
 						}}
 						onCreateDocumentInFolder={createDocumentInFolder}
 						onRequestCreateFolder={(parentId) => requestCreateFolder(parentId)}
+						onRequestRename={requestRename}
+						onRequestMoveDocument={requestMove}
+						onRequestTrash={setTrashTarget}
+						onRequestShareFolder={setShareTarget}
 						localFolders={localFolders}
 						onRevealLocalFolder={(availability) =>
 							void desktopApi.revealFile(availability.localPath)
@@ -651,6 +912,176 @@ function AuthenticatedCloudSidebar({
 				</form>
 			</Modal>
 			<Modal
+				open={renameTarget !== null}
+				onOpenChange={(open) => {
+					if (!open && !cloudActionBusy) setRenameTarget(null);
+				}}
+				title={`Rename ${renameTarget?.kind ?? "item"}`}
+				description={
+					renameTarget?.kind === "document"
+						? "The document keeps its cloud identity and any explicit projected filename."
+						: "The folder keeps its cloud identity and contents."
+				}
+			>
+				<form onSubmit={submitRename} className="flex flex-col gap-3">
+					<label
+						htmlFor={renameInputId}
+						className="flex flex-col gap-1.5 text-xs font-medium text-foreground"
+					>
+						<span>Name</span>
+						<Input
+							id={renameInputId}
+							value={renameName}
+							onChange={(event) => setRenameName(event.currentTarget.value)}
+							onFocus={(event) => event.currentTarget.select()}
+							autoFocus
+						/>
+					</label>
+					<div className="flex justify-end gap-2 [padding-block-start:0.25rem]">
+						<Button
+							type="button"
+							variant="ghost"
+							disabled={cloudActionBusy !== null}
+							onClick={() => setRenameTarget(null)}
+						>
+							Cancel
+						</Button>
+						<Button
+							type="submit"
+							disabled={!renameName.trim() || cloudActionBusy !== null}
+						>
+							{cloudActionBusy === "rename" ? "Renaming…" : "Rename"}
+						</Button>
+					</div>
+				</form>
+			</Modal>
+			<Modal
+				open={moveRequest !== null}
+				onOpenChange={(open) => {
+					if (!open && !cloudActionBusy) {
+						setMoveRequest(null);
+						setMoveReview(null);
+					}
+				}}
+				title={
+					moveReview
+						? `Review move: ${moveRequest?.document.name ?? "document"}`
+						: `Move “${moveRequest?.document.name ?? "document"}”`
+				}
+				description={
+					moveReview
+						? "This changes who or what can access the document. Nothing moves until you approve."
+						: "Choose a destination in the current cloud context."
+				}
+			>
+				{moveReview ? (
+					<div className="flex flex-col gap-4">
+						<RelocationImpactSummary impact={moveReview.impact} />
+						<div className="flex justify-end gap-2">
+							<Button
+								variant="outline"
+								disabled={cloudActionBusy !== null}
+								onClick={() => {
+									setMoveRequest(null);
+									setMoveReview(null);
+								}}
+							>
+								Cancel move
+							</Button>
+							<Button
+								disabled={cloudActionBusy !== null}
+								onClick={() => void confirmMove()}
+							>
+								{cloudActionBusy === "move"
+									? "Checking impact…"
+									: "Approve move"}
+							</Button>
+						</div>
+					</div>
+				) : (
+					<form onSubmit={prepareMove} className="flex flex-col gap-3">
+						<label className="flex flex-col gap-1.5 text-xs font-medium text-foreground">
+							<span>Destination</span>
+							<select
+								value={moveDestinationId ?? ""}
+								onChange={(event) =>
+									setMoveDestinationId(event.currentTarget.value || null)
+								}
+								className="w-full rounded-sm border border-border bg-background text-xs text-foreground outline-none focus:border-ring [padding-block:0.5rem] [padding-inline:0.625rem]"
+							>
+								{moveRequest?.destinations.map((destination) => (
+									<option
+										key={destination.folderId ?? "root"}
+										value={destination.folderId ?? ""}
+									>
+										{"\u00a0".repeat(destination.depth * 2)}
+										{destination.name}
+									</option>
+								))}
+							</select>
+						</label>
+						<div className="flex justify-end gap-2 [padding-block-start:0.25rem]">
+							<Button
+								type="button"
+								variant="ghost"
+								disabled={cloudActionBusy !== null}
+								onClick={() => setMoveRequest(null)}
+							>
+								Cancel
+							</Button>
+							<Button
+								type="submit"
+								disabled={
+									cloudActionBusy !== null ||
+									moveDestinationId === moveRequest?.document.parentId
+								}
+							>
+								{cloudActionBusy === "move" ? "Checking…" : "Move"}
+							</Button>
+						</div>
+					</form>
+				)}
+			</Modal>
+			<Modal
+				open={trashTarget !== null}
+				onOpenChange={(open) => {
+					if (!open && !cloudActionBusy) setTrashTarget(null);
+				}}
+				title={`Move “${trashTarget?.name ?? "item"}” to Trash?`}
+				description={
+					trashTarget?.kind === "folder"
+						? "The folder and its visible contents leave this view. They remain recoverable from Trash."
+						: "The document leaves this view and remains recoverable from Trash."
+				}
+			>
+				<div className="flex justify-end gap-2">
+					<Button
+						variant="ghost"
+						disabled={cloudActionBusy !== null}
+						onClick={() => setTrashTarget(null)}
+					>
+						Cancel
+					</Button>
+					<Button
+						variant="destructive"
+						disabled={cloudActionBusy !== null}
+						onClick={() => void confirmTrash()}
+					>
+						{cloudActionBusy === "trash" ? "Moving…" : "Move to Trash"}
+					</Button>
+				</div>
+			</Modal>
+			{shareTarget?.kind === "folder" ? (
+				<FolderShareDialog
+					folderId={shareTarget.id as Id<"folders">}
+					folderName={shareTarget.name}
+					open
+					onOpenChange={(open) => {
+						if (!open) setShareTarget(null);
+					}}
+				/>
+			) : null}
+			<Modal
 				open={stopTarget !== null}
 				onOpenChange={(open) => {
 					if (!open && !stopping) setStopTarget(null);
@@ -695,6 +1126,69 @@ function AuthenticatedCloudSidebar({
 					</div>
 				</div>
 			</Modal>
+		</div>
+	);
+}
+
+function relocationRoleLabel(role: string | null) {
+	return role ? role[0]?.toLocaleUpperCase() + role.slice(1) : "No access";
+}
+
+function RelocationImpactSummary({ impact }: { impact: RelocationImpact }) {
+	return (
+		<div className="flex flex-col gap-3 text-xs" aria-live="polite">
+			{impact.userChanges.length > 0 ? (
+				<section aria-labelledby="cloud-move-people-heading">
+					<h3 id="cloud-move-people-heading" className="m-0 font-medium">
+						People
+					</h3>
+					<ul className="m-0 flex list-disc flex-col gap-1 [padding-block-start:0.375rem] [padding-inline-start:1.25rem]">
+						{impact.userChanges.map((change) => (
+							<li key={change.userId}>
+								{change.name ?? change.email ?? "Unknown collaborator"}:{" "}
+								{relocationRoleLabel(change.fromRole)} →{" "}
+								{relocationRoleLabel(change.toRole)}
+							</li>
+						))}
+						{impact.userChangesTruncated ? (
+							<li>Additional people are affected</li>
+						) : null}
+					</ul>
+				</section>
+			) : impact.gainingUserCount > 0 || impact.losingUserCount > 0 ? (
+				<p className="m-0">
+					{impact.gainingUserCount} gain access; {impact.losingUserCount} lose
+					access.
+				</p>
+			) : null}
+			{impact.publicAccessChanged ? (
+				<p className="m-0">
+					Public link: {relocationRoleLabel(impact.publicAccessChange.fromRole)}{" "}
+					→ {relocationRoleLabel(impact.publicAccessChange.toRole)}
+				</p>
+			) : null}
+			{impact.repositoryChanges.length > 0 ? (
+				<section aria-labelledby="cloud-move-repositories-heading">
+					<h3 id="cloud-move-repositories-heading" className="m-0 font-medium">
+						Linked repositories
+					</h3>
+					<ul className="m-0 flex list-disc flex-col gap-1 [padding-block-start:0.375rem] [padding-inline-start:1.25rem]">
+						{impact.repositoryChanges.map((repository) => (
+							<li key={`${repository.change}:${repository.folderId}`}>
+								{repository.change === "added" ? "Added to" : "Removed from"}{" "}
+								{repository.repoName ??
+									repository.repoRemoteUrl ??
+									"repository"}{" "}
+								<span className="text-muted-foreground">
+									({repository.folderPath})
+								</span>
+							</li>
+						))}
+					</ul>
+				</section>
+			) : impact.repoExposureChanged ? (
+				<p className="m-0">Linked repository exposure changes.</p>
+			) : null}
 		</div>
 	);
 }

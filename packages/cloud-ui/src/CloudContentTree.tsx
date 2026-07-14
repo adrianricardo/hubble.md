@@ -7,12 +7,15 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import MingcuteAddLine from "~icons/mingcute/add-line";
 import MingcuteComputerLine from "~icons/mingcute/computer-line";
 import MingcuteCopy2Line from "~icons/mingcute/copy-2-line";
+import MingcuteDelete2Line from "~icons/mingcute/delete-2-line";
+import MingcuteEditLine from "~icons/mingcute/edit-line";
 import MingcuteFileLine from "~icons/mingcute/file-line";
 import MingcuteFolderLine from "~icons/mingcute/folder-line";
 import MingcuteFolderOpenLine from "~icons/mingcute/folder-open-line";
 import MingcuteMore2Line from "~icons/mingcute/more-2-line";
 import MingcuteMoveLine from "~icons/mingcute/move-line";
 import MingcuteRightLine from "~icons/mingcute/right-line";
+import MingcuteShareForwardLine from "~icons/mingcute/share-forward-line";
 import MingcuteUnlinkLine from "~icons/mingcute/unlink-line";
 
 export type CloudContentContext =
@@ -21,10 +24,23 @@ export type CloudContentContext =
 
 export type CloudTreeCapabilities = {
 	canCreate: boolean;
+	canWriteDocument: (documentId: string) => boolean;
 	canWriteFolder: (folderId: string) => boolean;
+	canShareFolder: (folderId: string) => boolean;
 };
 
 export type CloudTreeCreateAction = "create-document" | "create-folder";
+
+export type CloudTreeAction =
+	| CloudTreeCreateAction
+	| "rename"
+	| "move"
+	| "trash"
+	| "share"
+	| "reveal-local"
+	| "copy-local-path"
+	| "relocate-local"
+	| "stop-local";
 
 export function cloudContextRootFolderId(
 	context: CloudContentContext,
@@ -47,6 +63,7 @@ type DocumentInput = {
 	id: string;
 	title: string;
 	folderId: string | null;
+	path?: string | null;
 };
 
 export type CloudContentNode =
@@ -54,9 +71,43 @@ export type CloudContentNode =
 			kind: "folder";
 			id: string;
 			name: string;
+			parentId: string | null;
 			children: CloudContentNode[];
 	  }
-	| { kind: "document"; id: string; name: string };
+	| {
+			kind: "document";
+			id: string;
+			name: string;
+			folderId: string | null;
+			path: string | null;
+	  };
+
+export type CloudTreeActionTarget =
+	| {
+			kind: "folder";
+			id: string;
+			name: string;
+			parentId: string | null;
+			path: null;
+	  }
+	| {
+			kind: "document";
+			id: string;
+			name: string;
+			parentId: string | null;
+			path: string | null;
+	  };
+
+export type CloudMoveDestination = {
+	folderId: string | null;
+	name: string;
+	depth: number;
+};
+
+export type CloudDocumentMoveRequest = {
+	document: Extract<CloudTreeActionTarget, { kind: "document" }>;
+	destinations: CloudMoveDestination[];
+};
 
 export type CloudFolderAvailability = {
 	folderId: string;
@@ -75,8 +126,9 @@ export type CloudFolderAvailability = {
 export function cloudTreeItemAccessibleLabel(
 	name: string,
 	availability?: CloudFolderAvailability,
+	hasActions = false,
 ): string {
-	if (!availability) return name;
+	if (!availability) return hasActions ? `${name}. Actions available.` : name;
 	const state =
 		availability.status === "connected"
 			? `Available at ${availability.localPath}`
@@ -85,7 +137,34 @@ export function cloudTreeItemAccessibleLabel(
 				: availability.status === "disconnected"
 					? `${availability.localPath}, not connected`
 					: `${availability.localPath}, ${availability.status}`;
-	return `${name}. ${state}. Local availability actions available.`;
+	return `${name}. ${state}.${hasActions ? " Actions available." : ""}`;
+}
+
+export function cloudTreeActions(
+	node: Pick<CloudContentNode, "kind" | "id">,
+	capabilities: CloudTreeCapabilities,
+	hasDirectLocalAvailability = false,
+): CloudTreeAction[] {
+	const actions: CloudTreeAction[] = [];
+	if (node.kind === "document") {
+		if (capabilities.canWriteDocument(node.id)) {
+			actions.push("rename", "move", "trash");
+		}
+		return actions;
+	}
+	if (capabilities.canWriteFolder(node.id)) {
+		actions.push("create-document", "create-folder", "rename", "trash");
+	}
+	if (capabilities.canShareFolder(node.id)) actions.push("share");
+	if (hasDirectLocalAvailability) {
+		actions.push(
+			"reveal-local",
+			"copy-local-path",
+			"relocate-local",
+			"stop-local",
+		);
+	}
+	return actions;
 }
 
 export type CloudDocumentSearchResult = {
@@ -144,6 +223,7 @@ export function buildCloudContentTree(
 					kind: "folder",
 					id: folder.id,
 					name: folder.name,
+					parentId: folder.parentId,
 					children: visit(folder.id),
 				}),
 			)
@@ -154,6 +234,8 @@ export function buildCloudContentTree(
 					kind: "document",
 					id: document.id,
 					name: document.title,
+					folderId: document.folderId,
+					path: document.path ?? null,
 				}),
 			)
 			.sort(compareNames);
@@ -168,7 +250,7 @@ type VisibleNode = {
 	parentId: string | null;
 };
 
-type AvailabilityActionRefs = {
+type TreeActionRefs = {
 	trigger: HTMLButtonElement | null;
 	firstItem: HTMLDivElement | null;
 };
@@ -204,15 +286,68 @@ export function cloudFolderAncestorIds(
 	return null;
 }
 
+export function cloudNodeAncestorIds(
+	nodes: CloudContentNode[],
+	nodeId: string,
+): string[] | null {
+	for (const node of nodes) {
+		if (node.id === nodeId) return [];
+		if (node.kind !== "folder") continue;
+		const descendants = cloudNodeAncestorIds(node.children, nodeId);
+		if (descendants) return [node.id, ...descendants];
+	}
+	return null;
+}
+
+export function cloudMoveDestinations(
+	nodes: CloudContentNode[],
+	rootFolderId: string | null,
+	rootName = rootFolderId ? "Shared folder root" : "Space root",
+): CloudMoveDestination[] {
+	const destinations: CloudMoveDestination[] = [
+		{ folderId: rootFolderId, name: rootName, depth: 0 },
+	];
+	const visit = (items: CloudContentNode[], depth: number) => {
+		for (const item of items) {
+			if (item.kind !== "folder") continue;
+			destinations.push({ folderId: item.id, name: item.name, depth });
+			visit(item.children, depth + 1);
+		}
+	};
+	visit(nodes, 1);
+	return destinations;
+}
+
+export function nextCloudTreeFocusId(
+	previousIds: readonly string[],
+	missingId: string,
+	nextIds: readonly string[],
+): string | null {
+	if (nextIds.length === 0) return null;
+	const previousIndex = previousIds.indexOf(missingId);
+	if (previousIndex < 0) return nextIds[0] ?? null;
+	for (let distance = 1; distance < previousIds.length; distance++) {
+		const after = previousIds[previousIndex + distance];
+		if (after && nextIds.includes(after)) return after;
+		const before = previousIds[previousIndex - distance];
+		if (before && nextIds.includes(before)) return before;
+	}
+	return nextIds[0] ?? null;
+}
+
 export function CloudContentTree({
 	context,
 	selectedDocumentId,
 	onSelectDocument,
 	capabilities,
-	focusFolderId,
-	onFocusFolderHandled,
+	focusNodeId,
+	onFocusNodeHandled,
 	onCreateDocumentInFolder,
 	onRequestCreateFolder,
+	onRequestRename,
+	onRequestMoveDocument,
+	onRequestTrash,
+	onRequestShareFolder,
 	localFolders = [],
 	onRevealLocalFolder,
 	onCopyLocalPath,
@@ -223,10 +358,14 @@ export function CloudContentTree({
 	selectedDocumentId: string | null;
 	onSelectDocument: (documentId: string) => void;
 	capabilities: CloudTreeCapabilities;
-	focusFolderId?: string | null;
-	onFocusFolderHandled?: (folderId: string) => void;
+	focusNodeId?: string | null;
+	onFocusNodeHandled?: (nodeId: string) => void;
 	onCreateDocumentInFolder?: (folderId: string) => void | Promise<void>;
 	onRequestCreateFolder?: (parentId: string) => void;
+	onRequestRename?: (target: CloudTreeActionTarget) => void;
+	onRequestMoveDocument?: (request: CloudDocumentMoveRequest) => void;
+	onRequestTrash?: (target: CloudTreeActionTarget) => void;
+	onRequestShareFolder?: (target: CloudTreeActionTarget) => void;
 	localFolders?: readonly CloudFolderAvailability[];
 	onRevealLocalFolder?: (availability: CloudFolderAvailability) => void;
 	onCopyLocalPath?: (availability: CloudFolderAvailability) => void;
@@ -254,8 +393,9 @@ export function CloudContentTree({
 	const [search, setSearch] = useState("");
 	const deferredSearch = useDeferredValue(search);
 	const itemRefs = useRef(new Map<string, HTMLDivElement>());
-	const actionRefs = useRef(new Map<string, AvailabilityActionRefs>());
-	const handledFocusFolderId = useRef<string | null>(null);
+	const actionRefs = useRef(new Map<string, TreeActionRefs>());
+	const handledFocusNodeId = useRef<string | null>(null);
+	const previousVisibleIds = useRef<string[]>([]);
 
 	const nodes = useMemo(() => {
 		if (context.kind === "workspace") {
@@ -270,6 +410,7 @@ export function CloudContentTree({
 					id: document._id,
 					title: document.title,
 					folderId: document.folderId ?? null,
+					path: document.path ?? null,
 				})),
 				null,
 			);
@@ -286,12 +427,22 @@ export function CloudContentTree({
 				id: document._id,
 				title: document.title,
 				folderId: document.folderId,
+				path: document.path,
 			})),
 			context.folderId,
 		);
 	}, [context, sharedSubtree, workspaceDocuments, workspaceFolders]);
 
-	const visible = nodes ? visibleNodes(nodes, expanded) : [];
+	const visible = useMemo(
+		() => (nodes ? visibleNodes(nodes, expanded) : []),
+		[nodes, expanded],
+	);
+	const moveRootFolderId =
+		context.kind === "workspace" ? null : context.folderId;
+	const moveDestinations = useMemo(
+		() => (nodes ? cloudMoveDestinations(nodes, moveRootFolderId) : []),
+		[moveRootFolderId, nodes],
+	);
 	const searchResults = useMemo(
 		() => (nodes ? searchCloudContent(nodes, deferredSearch) : []),
 		[deferredSearch, nodes],
@@ -305,19 +456,15 @@ export function CloudContentTree({
 			? availabilityByFolder.get(context.folderId)
 			: undefined;
 	useEffect(() => {
-		if (
-			!nodes ||
-			!focusFolderId ||
-			handledFocusFolderId.current === focusFolderId
-		)
+		if (!nodes || !focusNodeId || handledFocusNodeId.current === focusNodeId)
 			return;
-		const ancestors = cloudFolderAncestorIds(nodes, focusFolderId);
+		const ancestors = cloudNodeAncestorIds(nodes, focusNodeId);
 		if (!ancestors) return;
-		handledFocusFolderId.current = focusFolderId;
+		handledFocusNodeId.current = focusNodeId;
 		setSearch("");
 		setExpanded((current) => new Set([...current, ...ancestors]));
-		setPendingFocusId(focusFolderId);
-	}, [focusFolderId, nodes]);
+		setPendingFocusId(focusNodeId);
+	}, [focusNodeId, nodes]);
 	useEffect(() => {
 		if (!pendingFocusId) return;
 		const element = itemRefs.current.get(pendingFocusId);
@@ -326,8 +473,23 @@ export function CloudContentTree({
 		element.focus();
 		element.scrollIntoView({ block: "nearest" });
 		setPendingFocusId(null);
-		onFocusFolderHandled?.(pendingFocusId);
-	}, [onFocusFolderHandled, pendingFocusId]);
+		onFocusNodeHandled?.(pendingFocusId);
+	}, [onFocusNodeHandled, pendingFocusId]);
+	useEffect(() => {
+		const nextIds = visible.map(({ node }) => node.id);
+		if (focusedId && !nextIds.includes(focusedId)) {
+			const fallback = nextCloudTreeFocusId(
+				previousVisibleIds.current,
+				focusedId,
+				nextIds,
+			);
+			setFocusedId(fallback);
+			if (fallback) {
+				requestAnimationFrame(() => itemRefs.current.get(fallback)?.focus());
+			}
+		}
+		previousVisibleIds.current = nextIds;
+	}, [focusedId, visible]);
 	const focusItem = (id: string) => {
 		setFocusedId(id);
 		itemRefs.current.get(id)?.focus();
@@ -341,10 +503,10 @@ export function CloudContentTree({
 			return next;
 		});
 	};
-	const setActionRef = <Key extends keyof AvailabilityActionRefs>(
+	const setActionRef = <Key extends keyof TreeActionRefs>(
 		id: string,
 		key: Key,
-		element: AvailabilityActionRefs[Key],
+		element: TreeActionRefs[Key],
 	) => {
 		const refs = actionRefs.current.get(id) ?? {
 			trigger: null,
@@ -501,6 +663,51 @@ export function CloudContentTree({
 						const createActions = isFolder
 							? cloudTreeCreateActions(node.id, capabilities)
 							: [];
+						const target: CloudTreeActionTarget =
+							node.kind === "folder"
+								? {
+										kind: "folder",
+										id: node.id,
+										name: node.name,
+										parentId: node.parentId,
+										path: null,
+									}
+								: {
+										kind: "document",
+										id: node.id,
+										name: node.name,
+										parentId: node.folderId,
+										path: node.path,
+									};
+						const actions = cloudTreeActions(
+							node,
+							capabilities,
+							availability !== undefined,
+						).filter((action) => {
+							switch (action) {
+								case "create-document":
+									return onCreateDocumentInFolder !== undefined;
+								case "create-folder":
+									return onRequestCreateFolder !== undefined;
+								case "rename":
+									return onRequestRename !== undefined;
+								case "move":
+									return onRequestMoveDocument !== undefined;
+								case "trash":
+									return onRequestTrash !== undefined;
+								case "share":
+									return onRequestShareFolder !== undefined;
+								case "reveal-local":
+									return onRevealLocalFolder !== undefined;
+								case "copy-local-path":
+									return onCopyLocalPath !== undefined;
+								case "relocate-local":
+									return onRelocateLocalFolder !== undefined;
+								case "stop-local":
+									return onStopLocalFolder !== undefined;
+							}
+							return false;
+						});
 						return (
 							<div
 								key={node.id}
@@ -508,8 +715,9 @@ export function CloudContentTree({
 								aria-label={cloudTreeItemAccessibleLabel(
 									node.name,
 									availability,
+									actions.length > 0,
 								)}
-								aria-haspopup={availability ? "menu" : undefined}
+								aria-haspopup={actions.length > 0 ? "menu" : undefined}
 								aria-level={depth}
 								aria-expanded={isFolder ? isOpen : undefined}
 								aria-selected={isSelected}
@@ -532,6 +740,13 @@ export function CloudContentTree({
 									else itemRefs.current.delete(node.id);
 								}}
 								onFocus={() => setFocusedId(node.id)}
+								onContextMenu={(event) => {
+									if (actions.length === 0) return;
+									event.preventDefault();
+									focusItem(node.id);
+									if (node.kind === "document") onSelectDocument(node.id);
+									actionRefs.current.get(node.id)?.trigger?.click();
+								}}
 								onClick={(event) => {
 									if (
 										(event.target as HTMLElement).closest("[data-tree-actions]")
@@ -606,8 +821,10 @@ export function CloudContentTree({
 										) : null}
 									</span>
 								) : null}
-								{availability ? (
-									<AvailabilityActions
+								{actions.length > 0 ? (
+									<CloudTreeActionsMenu
+										actions={actions}
+										target={target}
 										availability={availability}
 										triggerRef={(element) => {
 											setActionRef(node.id, "trigger", element);
@@ -619,6 +836,21 @@ export function CloudContentTree({
 										onCopyPath={onCopyLocalPath}
 										onRelocate={onRelocateLocalFolder}
 										onStop={onStopLocalFolder}
+										onCreateDocument={onCreateDocumentInFolder}
+										onCreateFolder={(folderId) => {
+											toggleFolder(folderId, true);
+											onRequestCreateFolder?.(folderId);
+										}}
+										onRename={onRequestRename}
+										onMoveDocument={(document) =>
+											onRequestMoveDocument?.({
+												document,
+												destinations: moveDestinations,
+											})
+										}
+										onTrash={onRequestTrash}
+										onShare={onRequestShareFolder}
+										onClose={() => itemRefs.current.get(node.id)?.focus()}
 									/>
 								) : null}
 							</div>
@@ -627,6 +859,188 @@ export function CloudContentTree({
 				</div>
 			)}
 		</div>
+	);
+}
+
+function CloudTreeActionsMenu({
+	actions,
+	target,
+	availability,
+	triggerRef,
+	firstItemRef,
+	onCreateDocument,
+	onCreateFolder,
+	onRename,
+	onMoveDocument,
+	onTrash,
+	onShare,
+	onReveal,
+	onCopyPath,
+	onRelocate,
+	onStop,
+	onClose,
+}: {
+	actions: CloudTreeAction[];
+	target: CloudTreeActionTarget;
+	availability?: CloudFolderAvailability;
+	triggerRef: (element: HTMLButtonElement | null) => void;
+	firstItemRef: (element: HTMLDivElement | null) => void;
+	onCreateDocument?: (folderId: string) => void | Promise<void>;
+	onCreateFolder?: (folderId: string) => void;
+	onRename?: (target: CloudTreeActionTarget) => void;
+	onMoveDocument?: (
+		target: Extract<CloudTreeActionTarget, { kind: "document" }>,
+	) => void;
+	onTrash?: (target: CloudTreeActionTarget) => void;
+	onShare?: (target: CloudTreeActionTarget) => void;
+	onReveal?: (availability: CloudFolderAvailability) => void;
+	onCopyPath?: (availability: CloudFolderAvailability) => void;
+	onRelocate?: (availability: CloudFolderAvailability) => void;
+	onStop?: (availability: CloudFolderAvailability) => void;
+	onClose: () => void;
+}) {
+	const firstAction = actions[0];
+	const hasLocalActions = actions.some(
+		(action) =>
+			action === "reveal-local" ||
+			action === "copy-local-path" ||
+			action === "relocate-local" ||
+			action === "stop-local",
+	);
+	const itemRef = (action: CloudTreeAction) =>
+		action === firstAction ? firstItemRef : undefined;
+	return (
+		<Menu.Root
+			onOpenChange={(open) => {
+				if (!open) requestAnimationFrame(onClose);
+			}}
+		>
+			<Menu.Trigger
+				render={
+					<Button
+						ref={triggerRef}
+						data-tree-actions
+						tabIndex={-1}
+						variant="ghost"
+						size="icon-xs"
+						aria-label={`Actions for ${target.name}`}
+						title="Actions"
+						className="shrink-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 hover:opacity-100 focus-visible:opacity-100 motion-reduce:transition-none"
+					/>
+				}
+			>
+				<MingcuteMore2Line className="size-3.5" />
+			</Menu.Trigger>
+			<Menu.Portal>
+				<Menu.Positioner align="end" side="bottom" sideOffset={4}>
+					<Menu.Popup className="z-50 w-52 origin-(--transform-origin) rounded-sm border border-border bg-popover p-1 text-popover-foreground shadow-overlay outline-hidden transition-[transform,opacity] data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95">
+						{actions.includes("create-document") ? (
+							<Menu.Item
+								ref={itemRef("create-document")}
+								className={availabilityActionClass}
+								onClick={() => void onCreateDocument?.(target.id)}
+							>
+								<MingcuteAddLine className="size-3.5" />
+								New document
+							</Menu.Item>
+						) : null}
+						{actions.includes("create-folder") ? (
+							<Menu.Item
+								ref={itemRef("create-folder")}
+								className={availabilityActionClass}
+								onClick={() => onCreateFolder?.(target.id)}
+							>
+								<MingcuteFolderLine className="size-3.5" />
+								New folder
+							</Menu.Item>
+						) : null}
+						{actions.includes("rename") ? (
+							<Menu.Item
+								ref={itemRef("rename")}
+								className={availabilityActionClass}
+								onClick={() => onRename?.(target)}
+							>
+								<MingcuteEditLine className="size-3.5" />
+								Rename
+							</Menu.Item>
+						) : null}
+						{actions.includes("move") && target.kind === "document" ? (
+							<Menu.Item
+								ref={itemRef("move")}
+								className={availabilityActionClass}
+								onClick={() => onMoveDocument?.(target)}
+							>
+								<MingcuteMoveLine className="size-3.5" />
+								Move…
+							</Menu.Item>
+						) : null}
+						{actions.includes("share") ? (
+							<Menu.Item
+								ref={itemRef("share")}
+								className={availabilityActionClass}
+								onClick={() => onShare?.(target)}
+							>
+								<MingcuteShareForwardLine className="size-3.5" />
+								Share…
+							</Menu.Item>
+						) : null}
+						{actions.includes("trash") ? (
+							<Menu.Item
+								ref={itemRef("trash")}
+								className={`${availabilityActionClass} text-destructive data-highlighted:text-destructive`}
+								onClick={() => onTrash?.(target)}
+							>
+								<MingcuteDelete2Line className="size-3.5" />
+								Move to Trash
+							</Menu.Item>
+						) : null}
+						{hasLocalActions ? (
+							<Menu.Separator className="my-1 h-px bg-border" />
+						) : null}
+						{availability && actions.includes("reveal-local") ? (
+							<Menu.Item
+								ref={itemRef("reveal-local")}
+								className={availabilityActionClass}
+								onClick={() => onReveal?.(availability)}
+							>
+								<MingcuteFolderOpenLine className="size-3.5" />
+								Reveal in file browser
+							</Menu.Item>
+						) : null}
+						{availability && actions.includes("copy-local-path") ? (
+							<Menu.Item
+								ref={itemRef("copy-local-path")}
+								className={availabilityActionClass}
+								onClick={() => onCopyPath?.(availability)}
+							>
+								<MingcuteCopy2Line className="size-3.5" />
+								Copy local path
+							</Menu.Item>
+						) : null}
+						{availability && actions.includes("relocate-local") ? (
+							<Menu.Item
+								ref={itemRef("relocate-local")}
+								className={availabilityActionClass}
+								onClick={() => onRelocate?.(availability)}
+							>
+								<MingcuteMoveLine className="size-3.5" />
+								Relocate local availability…
+							</Menu.Item>
+						) : null}
+						{availability && actions.includes("stop-local") ? (
+							<Menu.Item
+								ref={itemRef("stop-local")}
+								className={availabilityActionClass}
+								onClick={() => onStop?.(availability)}
+							>
+								<MingcuteUnlinkLine className="size-3.5" />
+								Stop making available…
+							</Menu.Item>
+						) : null}
+					</Menu.Popup>
+				</Menu.Positioner>
+			</Menu.Portal>
+		</Menu.Root>
 	);
 }
 

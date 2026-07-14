@@ -108,6 +108,97 @@ async function shareFolder(
 	);
 }
 
+describe("folder context capabilities", () => {
+	test("matches member and inherited folder authorization", async () => {
+		const t = testInstance();
+		const {
+			ownerId,
+			guestId,
+			strangerId,
+			workspaceId,
+			rootFolderId,
+			childFolderId,
+			rootDocId,
+			childDocId,
+		} = await setupFolderTree(t);
+		await shareFolder(t, rootFolderId, guestId, "editor");
+
+		await expect(
+			asUser(t, ownerId).query(api.folders.getContextCapabilities, {
+				workspaceId,
+			}),
+		).resolves.toEqual({ mode: "uniform", canWrite: true, canShare: true });
+		await expect(
+			asUser(t, guestId).query(api.folders.getContextCapabilities, {
+				workspaceId,
+				folderId: rootFolderId,
+			}),
+		).resolves.toEqual({
+			mode: "per-node",
+			canWrite: true,
+			canShare: false,
+			writableFolderIds: [rootFolderId, childFolderId],
+			shareableFolderIds: [],
+			writableDocumentIds: [rootDocId, childDocId],
+		});
+		await expect(
+			asUser(t, strangerId).query(api.folders.getContextCapabilities, {
+				workspaceId,
+				folderId: rootFolderId,
+			}),
+		).rejects.toThrow(/Unauthorized/);
+	});
+
+	test("lets an inherited folder owner manage sharing without membership", async () => {
+		const t = testInstance();
+		const {
+			guestId,
+			workspaceId,
+			rootFolderId,
+			childFolderId,
+			rootDocId,
+			childDocId,
+		} = await setupFolderTree(t);
+		await shareFolder(t, rootFolderId, guestId, "owner");
+
+		await expect(
+			asUser(t, guestId).query(api.folders.getContextCapabilities, {
+				workspaceId,
+				folderId: rootFolderId,
+			}),
+		).resolves.toEqual({
+			mode: "per-node",
+			canWrite: true,
+			canShare: true,
+			writableFolderIds: [rootFolderId, childFolderId],
+			shareableFolderIds: [rootFolderId, childFolderId],
+			writableDocumentIds: [rootDocId, childDocId],
+		});
+	});
+
+	test("preserves stronger capabilities on a descendant of a read-only root", async () => {
+		const t = testInstance();
+		const { guestId, workspaceId, rootFolderId, childFolderId, childDocId } =
+			await setupFolderTree(t);
+		await shareFolder(t, rootFolderId, guestId, "viewer");
+		await shareFolder(t, childFolderId, guestId, "owner");
+
+		await expect(
+			asUser(t, guestId).query(api.folders.getContextCapabilities, {
+				workspaceId,
+				folderId: rootFolderId,
+			}),
+		).resolves.toMatchObject({
+			mode: "per-node",
+			canWrite: false,
+			canShare: false,
+			writableFolderIds: [childFolderId],
+			shareableFolderIds: [childFolderId],
+			writableDocumentIds: [childDocId],
+		});
+	});
+});
+
 describe("folder inheritance", () => {
 	test("inherited role flows down the subtree to nested documents", async () => {
 		const t = testInstance();

@@ -3,8 +3,12 @@ import {
 	buildCloudContentTree,
 	cloudContextRootFolderId,
 	cloudFolderAncestorIds,
+	cloudMoveDestinations,
+	cloudNodeAncestorIds,
+	cloudTreeActions,
 	cloudTreeCreateActions,
 	cloudTreeItemAccessibleLabel,
+	nextCloudTreeFocusId,
 	searchCloudContent,
 } from "./CloudContentTree";
 
@@ -28,17 +32,39 @@ describe("buildCloudContentTree", () => {
 				kind: "folder",
 				id: "folder-a",
 				name: "Alpha",
+				parentId: null,
 				children: [
 					{
 						kind: "folder",
 						id: "nested",
 						name: "Nested",
-						children: [{ kind: "document", id: "nested-doc", name: "Brief" }],
+						parentId: "folder-a",
+						children: [
+							{
+								kind: "document",
+								id: "nested-doc",
+								name: "Brief",
+								folderId: "nested",
+								path: null,
+							},
+						],
 					},
 				],
 			},
-			{ kind: "folder", id: "folder-b", name: "Zulu", children: [] },
-			{ kind: "document", id: "root-doc", name: "Root note" },
+			{
+				kind: "folder",
+				id: "folder-b",
+				name: "Zulu",
+				parentId: null,
+				children: [],
+			},
+			{
+				kind: "document",
+				id: "root-doc",
+				name: "Root note",
+				folderId: null,
+				path: null,
+			},
 		]);
 	});
 
@@ -50,8 +76,20 @@ describe("buildCloudContentTree", () => {
 				"shared",
 			),
 		).toEqual([
-			{ kind: "folder", id: "child", name: "Child", children: [] },
-			{ kind: "document", id: "doc", name: "Shared note" },
+			{
+				kind: "folder",
+				id: "child",
+				name: "Child",
+				parentId: "shared",
+				children: [],
+			},
+			{
+				kind: "document",
+				id: "doc",
+				name: "Shared note",
+				folderId: "shared",
+				path: null,
+			},
 		]);
 	});
 
@@ -73,7 +111,9 @@ describe("buildCloudContentTree", () => {
 describe("cloud tree create controls", () => {
 	const writable = {
 		canCreate: true,
+		canWriteDocument: (documentId: string) => documentId !== "read-only",
 		canWriteFolder: (folderId: string) => folderId !== "read-only",
+		canShareFolder: (folderId: string) => folderId === "owned",
 	};
 
 	it("maps the current context root without exposing the shared root as a row", () => {
@@ -102,7 +142,9 @@ describe("cloud tree create controls", () => {
 		expect(
 			cloudTreeCreateActions(null, {
 				canCreate: false,
+				canWriteDocument: () => false,
 				canWriteFolder: () => false,
+				canShareFolder: () => false,
 			}),
 		).toEqual([]);
 	});
@@ -119,6 +161,53 @@ describe("cloud tree create controls", () => {
 		);
 		expect(cloudFolderAncestorIds(tree, "created")).toEqual(["root", "parent"]);
 		expect(cloudFolderAncestorIds(tree, "missing")).toBeNull();
+		expect(cloudNodeAncestorIds(tree, "created")).toEqual(["root", "parent"]);
+	});
+
+	it("derives row menus from kind, capability, and direct availability", () => {
+		expect(cloudTreeActions({ kind: "document", id: "doc" }, writable)).toEqual(
+			["rename", "move", "trash"],
+		);
+		expect(
+			cloudTreeActions({ kind: "document", id: "read-only" }, writable),
+		).toEqual([]);
+		expect(cloudTreeActions({ kind: "folder", id: "owned" }, writable)).toEqual(
+			["create-document", "create-folder", "rename", "trash", "share"],
+		);
+		expect(
+			cloudTreeActions({ kind: "folder", id: "folder" }, writable, true),
+		).toEqual([
+			"create-document",
+			"create-folder",
+			"rename",
+			"trash",
+			"reveal-local",
+			"copy-local-path",
+			"relocate-local",
+			"stop-local",
+		]);
+	});
+
+	it("keeps move destinations inside the current context and restores nearby focus", () => {
+		const tree = buildCloudContentTree(
+			[
+				{ id: "child", name: "Child", parentId: "shared" },
+				{ id: "nested", name: "Nested", parentId: "child" },
+			],
+			[],
+			"shared",
+		);
+		expect(cloudMoveDestinations(tree, "shared")).toEqual([
+			{ folderId: "shared", name: "Shared folder root", depth: 0 },
+			{ folderId: "child", name: "Child", depth: 1 },
+			{ folderId: "nested", name: "Nested", depth: 2 },
+		]);
+		expect(
+			nextCloudTreeFocusId(["before", "removed", "after"], "removed", [
+				"before",
+				"after",
+			]),
+		).toBe("after");
 	});
 });
 
@@ -131,8 +220,9 @@ describe("cloudTreeItemAccessibleLabel", () => {
 				localPath: "/repo/brain/cloud",
 				status: "connected",
 			}),
-		).toBe(
-			"Projects. Available at /repo/brain/cloud. Local availability actions available.",
+		).toBe("Projects. Available at /repo/brain/cloud.");
+		expect(cloudTreeItemAccessibleLabel("Projects", undefined, true)).toBe(
+			"Projects. Actions available.",
 		);
 		expect(
 			cloudTreeItemAccessibleLabel("Projects", {

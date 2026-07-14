@@ -335,7 +335,7 @@ function FolderRow({
 	);
 }
 
-function FolderShareDialog({
+export function FolderShareDialog({
 	folderId,
 	folderName,
 	open,
