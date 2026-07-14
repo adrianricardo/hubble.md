@@ -38,10 +38,11 @@ and deferred product candidates are recorded in
 `specs/upstream-selected-improvements/TECH.md`. No product code was ported, and the
 candidate queue remains intact until implementation is verified and landed.
 
-**Selected improvements Milestones 1 and 2 completed (implementation sessions 1–2,
-2026-07-14):** commits `6d95b76` through `845db06` land every selected correctness,
-native-text, persistence/sync, and editor-rhythm slice as coherent local commits with
-the required `Upstream-commit` trailers. The correctness boundary now covers UTF-8
+**Selected improvements Milestones 1–3 completed (implementation sessions 1–3,
+2026-07-14):** commits `6d95b76` through `edd2f71` land every selected correctness,
+native-text, persistence/sync, editor-rhythm, and cloud-context creation slice as
+coherent local commits with the required `Upstream-commit` trailers. The correctness
+boundary now covers UTF-8
 Electron saves and delayed watcher echoes, storage exceptions, complete adjacent-link
 identity, accumulated list changes, schema-valid mixed image/text projections, rich
 clipboard anchors, caret spellcheck/native text actions, retained failed asset
@@ -58,15 +59,29 @@ fixtures passed at 560, 900, and 1440 pixels in light and dark on both surfaces;
 test cloud document touched while discovering the schema gap was restored and
 verified before acceptance continued.
 
-The Milestone 1 package matrix passes editor 79/79, UI 20/20, cloud UI 5/5, sync
-53/53, and desktop 177/177. Web tests pass 4/4, changed-file Biome and diff checks
-pass, and `pnpm build:desktop` passes after Milestone 2. Repository-wide `pnpm check`
+The cloud-authoritative current-context header now pairs its existing document action
+with a capability-gated New folder control. Writable folder rows expose compact New
+document and New folder callbacks without introducing a filesystem tree or bypassing
+the existing multi-member document destination dialog. Shared-root creation targets
+the invisible cloud folder root, viewer/commenter contexts remain gated, backend
+authorization stays authoritative, and successful folder creation clears search,
+expands ancestors, scrolls the reactive row into view, and restores tree focus. A
+non-mutating real Electron/CDP pass confirmed the root and row controls, accessible
+names/tooltips, focused name dialog, parent expansion, and coexistence with direct
+local-availability actions in the populated Hubble Product Brain context.
+
+The current package matrix passes editor 79/79, UI 20/20, cloud UI 8/8, sync 53/53,
+and desktop 177/177. Web tests pass 4/4 from the prior editor-rhythm milestone;
+changed-file Biome and diff checks pass, and `pnpm build:desktop` passes after
+simplify/comments/review-readiness. Repository-wide `pnpm check`
 still reports only pre-existing/mounted formatting diagnostics under
 `brain/cloud/.hubble/**`, `convex/tsconfig.json`, and `skills-lock.json`, plus existing
-storyboard CSS specificity warnings. **Next:** begin Milestone 3 in
-`specs/upstream-selected-improvements/TECH.md` with capability-aware current-context
-New folder controls and folder-row New document/New folder callbacks and tests; do not
-start the Milestone 4 general row menu until the create flow is verified.
+storyboard CSS specificity warnings. **Next:** begin Milestone 4 in
+`specs/upstream-selected-improvements/TECH.md` by refactoring the availability-only
+ellipsis into a general capability-derived row action menu. Start with document
+Rename, safe prepared Move, and Move to Trash plus folder create/rename/share/Trash
+and direct-only local actions; preserve roving focus and do not add the deferred
+low-level folder move UI.
 
 ## ➤ NEXT STEP (updated 2026-07-13, cross-device checkpoint prioritized)
 
