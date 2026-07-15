@@ -64,6 +64,7 @@ import { LocalAgentAvailabilityOnboarding } from "./LocalAgentAvailabilityOnboar
 import {
 	directScopeKey,
 	findDirectAvailability,
+	healthyAvailabilityPath,
 } from "./localAgentAvailabilityModel";
 import { CloudContextSwitcher, useSelectedCloudContext } from "./SpaceSwitcher";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
@@ -98,6 +99,7 @@ export function Sidebar({
 	onOpenLiveDocument,
 	onOpenSettings,
 	onFocusedPathChange,
+	onLocalAvailabilityPathChange,
 }: {
 	cloudEnabled?: boolean;
 	footer?: ReactNode;
@@ -105,6 +107,9 @@ export function Sidebar({
 	onOpenLiveDocument?: (documentId: string) => void;
 	onOpenSettings?: () => void;
 	onFocusedPathChange?: (path: string | null) => void;
+	onLocalAvailabilityPathChange?: (
+		availability: { scopeKey: string; path: string } | null,
+	) => void;
 }) {
 	const workspace = useStoreValue(workspaceStore);
 	const sidebarOpen = useStoreValue(sidebarOpenStore);
@@ -121,6 +126,7 @@ export function Sidebar({
 					activeLiveDocumentId={activeLiveDocumentId}
 					onOpenLiveDocument={onOpenLiveDocument}
 					onOpenSettings={onOpenSettings}
+					onLocalAvailabilityPathChange={onLocalAvailabilityPathChange}
 					className="flex min-h-0 flex-1 flex-col overflow-hidden"
 				/>
 				{footer ? (
@@ -232,11 +238,15 @@ function CloudSidebarSection({
 	activeLiveDocumentId,
 	onOpenLiveDocument,
 	onOpenSettings,
+	onLocalAvailabilityPathChange,
 	className,
 }: {
 	activeLiveDocumentId?: string | null;
 	onOpenLiveDocument?: (documentId: string) => void;
 	onOpenSettings?: () => void;
+	onLocalAvailabilityPathChange?: (
+		availability: { scopeKey: string; path: string } | null,
+	) => void;
 	className?: string;
 }) {
 	return (
@@ -269,6 +279,7 @@ function CloudSidebarSection({
 					activeDocumentId={activeLiveDocumentId ?? null}
 					onOpenDocument={onOpenLiveDocument}
 					onOpenSettings={onOpenSettings}
+					onLocalAvailabilityPathChange={onLocalAvailabilityPathChange}
 				/>
 			</Authenticated>
 		</div>
@@ -279,10 +290,14 @@ function AuthenticatedCloudSidebar({
 	activeDocumentId,
 	onOpenDocument,
 	onOpenSettings,
+	onLocalAvailabilityPathChange,
 }: {
 	activeDocumentId: string | null;
 	onOpenDocument?: (documentId: string) => void;
 	onOpenSettings?: () => void;
+	onLocalAvailabilityPathChange?: (
+		availability: { scopeKey: string; path: string } | null,
+	) => void;
 }) {
 	const { spaces, sharedFolders, context } = useSelectedCloudContext();
 	const authToken = useAuthToken();
@@ -399,6 +414,33 @@ function AuthenticatedCloudSidebar({
 		context?.kind === "shared-folder"
 			? sharedFolders?.find((folder) => folder.folderId === context.folderId)
 			: undefined;
+	const selectedSpace =
+		context?.kind === "workspace"
+			? spaces?.find((space) => space._id === context.workspaceId)
+			: undefined;
+	const directScope = context
+		? context.kind === "workspace"
+			? ({ kind: "workspace", workspaceId: context.workspaceId } as const)
+			: ({
+					kind: "folder",
+					workspaceId: context.workspaceId,
+					folderId: context.folderId,
+				} as const)
+		: null;
+	const matchingAvailability = directScope
+		? findDirectAvailability(availabilityRecords, directScope)
+		: null;
+	const healthyAvailability = healthyAvailabilityPath(matchingAvailability);
+	const healthyScopeKey = healthyAvailability?.scopeKey ?? null;
+	const healthyPath = healthyAvailability?.path ?? null;
+	useEffect(() => {
+		onLocalAvailabilityPathChange?.(
+			healthyScopeKey && healthyPath
+				? { scopeKey: healthyScopeKey, path: healthyPath }
+				: null,
+		);
+		return () => onLocalAvailabilityPathChange?.(null);
+	}, [healthyPath, healthyScopeKey, onLocalAvailabilityPathChange]);
 	const canCreate = contextCapabilities?.canWrite ?? false;
 	const treeCapabilities = useMemo<CloudTreeCapabilities>(() => {
 		if (!contextCapabilities) {
@@ -762,22 +804,6 @@ function AuthenticatedCloudSidebar({
 			<p className="text-[11px] text-sidebar-foreground/70">Loading content…</p>
 		);
 	}
-	const selectedSpace =
-		context?.kind === "workspace"
-			? spaces.find((space) => space._id === context.workspaceId)
-			: undefined;
-	const directScope = context
-		? context.kind === "workspace"
-			? ({ kind: "workspace", workspaceId: context.workspaceId } as const)
-			: ({
-					kind: "folder",
-					workspaceId: context.workspaceId,
-					folderId: context.folderId,
-				} as const)
-		: null;
-	const matchingAvailability = directScope
-		? findDirectAvailability(availabilityRecords, directScope)
-		: null;
 	const legacyMirror =
 		availabilityRecords.find((record) => record.incompatible) ?? null;
 	const displayName = selectedSpace?.name ?? selectedSharedFolder?.name ?? "";

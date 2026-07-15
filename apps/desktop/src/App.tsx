@@ -119,9 +119,9 @@ const HMR_REV = (() => {
 const HTML_APPS_CALLOUT_DISMISSED_PREFIX =
 	"hubble:html-apps-callout-dismissed:";
 
-function isHtmlAppsCalloutDismissed(workspacePath: string) {
+function isHtmlAppsCalloutDismissed(scopeKey: string) {
 	return Boolean(
-		localStorage.getItem(HTML_APPS_CALLOUT_DISMISSED_PREFIX + workspacePath),
+		localStorage.getItem(HTML_APPS_CALLOUT_DISMISSED_PREFIX + scopeKey),
 	);
 }
 
@@ -197,6 +197,10 @@ function AppContent() {
 	const [dismissedVersion, setDismissedVersion] = useState<string | null>(null);
 	const [htmlAppsDialogOpen, setHtmlAppsDialogOpen] = useState(false);
 	const [htmlAppsCalloutVisible, setHtmlAppsCalloutVisible] = useState(false);
+	const [localAgentAvailability, setLocalAgentAvailability] = useState<{
+		scopeKey: string;
+		path: string;
+	} | null>(null);
 	const [activeLiveDocumentId, setActiveLiveDocumentId] = useState<
 		string | null
 	>(null);
@@ -241,30 +245,35 @@ function AppContent() {
 	}, [refreshPendingOperations]);
 
 	const dismissHtmlAppsCallout = useCallback(() => {
-		if (workspacePath) {
+		if (localAgentAvailability) {
 			localStorage.setItem(
-				HTML_APPS_CALLOUT_DISMISSED_PREFIX + workspacePath,
+				HTML_APPS_CALLOUT_DISMISSED_PREFIX + localAgentAvailability.scopeKey,
 				"1",
 			);
 		}
 		setHtmlAppsCalloutVisible(false);
-	}, [workspacePath]);
+	}, [localAgentAvailability]);
 
-	// Show the HTML Apps callout when a folder is open, the Hubble skills are
-	// not installed there, and it has not been dismissed for that folder.
+	// Skills are useful only when the selected cloud context has an exact,
+	// healthy local projection that an agent can actually reach.
 	useEffect(() => {
-		if (!workspacePath || isHtmlAppsCalloutDismissed(workspacePath)) {
+		if (
+			!localAgentAvailability ||
+			isHtmlAppsCalloutDismissed(localAgentAvailability.scopeKey)
+		) {
 			setHtmlAppsCalloutVisible(false);
 			return;
 		}
 		let active = true;
-		void hasHubbleSkillsInstalled(workspacePath).then((installed) => {
-			if (active) setHtmlAppsCalloutVisible(!installed);
-		});
+		void hasHubbleSkillsInstalled(localAgentAvailability.path).then(
+			(installed) => {
+				if (active) setHtmlAppsCalloutVisible(!installed);
+			},
+		);
 		return () => {
 			active = false;
 		};
-	}, [workspacePath]);
+	}, [localAgentAvailability]);
 	const readyVersion =
 		updateState?.status === "ready"
 			? (updateState.availableVersion ?? "__unknown__")
@@ -608,6 +617,7 @@ function AppContent() {
 					onOpenLiveDocument={openLiveDocument}
 					onOpenSettings={openSettings}
 					onFocusedPathChange={setFocusedSidebarPath}
+					onLocalAvailabilityPathChange={setLocalAgentAvailability}
 					footer={
 						updateState?.status === "ready" && showUpdateCallout ? (
 							<SidebarUpdateCallout
@@ -702,7 +712,7 @@ function AppContent() {
 			<HtmlAppsDialog
 				open={htmlAppsDialogOpen}
 				onOpenChange={setHtmlAppsDialogOpen}
-				workspacePath={workspacePath ?? null}
+				workspacePath={localAgentAvailability?.path ?? null}
 			/>
 			<ProjectionMoveReviewDialog
 				operation={pendingMove}

@@ -926,6 +926,11 @@ async function performRepoLink(input: unknown): Promise<RepoLinkResult> {
 		folderId: parsed.folderId,
 		workspaceId: parsed.workspaceId,
 	};
+	const scopeKey = projectionScopeKey(scope);
+	sendToRenderer("desktop:local-availability:progress", {
+		scopeKey,
+		phase: "verifying",
+	});
 	await assertLocalAvailabilityAvailable(
 		{ scope, localRoot: mountPath },
 		backend,
@@ -971,6 +976,10 @@ async function performRepoLink(input: unknown): Promise<RepoLinkResult> {
 		brainSeeded = true;
 	}
 
+	sendToRenderer("desktop:local-availability:progress", {
+		scopeKey,
+		phase: "materializing",
+	});
 	// Materialize the subtree at the mount + start the per-mount engine.
 	await projectionManager.connectMount(scope, {
 		syncRoot: mountPath,

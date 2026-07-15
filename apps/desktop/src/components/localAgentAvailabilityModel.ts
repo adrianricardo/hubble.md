@@ -24,6 +24,18 @@ export function findDirectAvailability(
 	return records.find((record) => record.scopeKey === scopeKey) ?? null;
 }
 
+export function healthyAvailabilityPath(
+	availability: LocalAvailabilityRecord | null,
+): { scopeKey: string; path: string } | null {
+	if (
+		availability?.state !== "connected" &&
+		availability?.state !== "syncing"
+	) {
+		return null;
+	}
+	return { scopeKey: availability.scopeKey, path: availability.localRoot };
+}
+
 export function availabilityJourneyState(
 	availability: LocalAvailabilityRecord | null,
 	legacyMirror: LocalAvailabilityRecord | null,
@@ -46,12 +58,25 @@ export function availabilitySuggestedPath(
 	homeDir: string,
 	displayName: string,
 ): string {
-	const segment = displayName
-		.replace(/[/\\:*?"<>|]/g, " ")
-		.replace(/\s+/g, " ")
-		.trim()
-		.replace(/^[. ]+|[. ]+$/g, "");
-	return `${homeDir.replace(/[/\\]+$/g, "")}/Hubble/${segment || "Hubble Space"}`;
+	const segment = sanitizeAvailabilitySegment(displayName);
+	return `${homeDir.replace(/[/\\]+$/g, "")}/Hubble/${segment}`;
+}
+
+export function sanitizeAvailabilitySegment(displayName: string): string {
+	return (
+		displayName
+			.replace(/[/\\:*?"<>|]/g, " ")
+			.replace(/\s+/g, " ")
+			.trim()
+			.replace(/^[. ]+|[. ]+$/g, "") || "Hubble Space"
+	);
+}
+
+export function repoAvailabilitySuggestedPath(
+	repoRoot: string,
+	folderName: string,
+): string {
+	return `${repoRoot.replace(/[/\\]+$/g, "")}/${sanitizeAvailabilitySegment(folderName)}`;
 }
 
 export function agentInstructions(

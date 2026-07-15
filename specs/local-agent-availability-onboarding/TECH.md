@@ -4,6 +4,12 @@
 > [`d0a2cc1`](https://github.com/adrianricardo/hubble.md/tree/d0a2cc16bf29d943d9074c1942e7ef600d548844)
 > on 2026-07-13. Re-run the revalidation gate immediately before implementation.
 
+> **Milestone 4 revalidation:** revalidated against
+> `9d8cf8d243b695bfbab5692fe1131445ee341556` on 2026-07-14. The generalized
+> scope/registry/manager/IPC architecture below remains current. Renderer ownership
+> moved to the contextual onboarding, while Settings became management-only; see
+> [`runs/2026-07-14-milestone-4-implementation.md`](./runs/2026-07-14-milestone-4-implementation.md).
+
 ## Context
 
 The observable contract is [PRODUCT.md](./PRODUCT.md). It supplements the cloud

@@ -282,8 +282,44 @@ AX/live-region evidence is the maximum this host permits.
 Both temporary cloud folders (`M3 Empty Acceptance 2026-07-13` and the viewer fixture),
 the isolated profile, and every registry-named acceptance root were removed after all
 projection processes stopped. Desktop tests pass 166/166 and `pnpm build:desktop`
-passes. **Next local-agent availability step:** begin TECH Milestone 4 in a fresh
-session; no Milestone 4 work was started during packaged acceptance.
+passes.
+
+**Local-agent availability Milestone 4 implementation completed; packaged acceptance
+pending (2026-07-14):** repository-link creation now lives in the selected cloud
+context instead of a second Settings form. Member Spaces select or create one cloud
+folder before choosing a Git repository; eligible shared-folder contexts are
+preselected. The flow resolves a selected child to its Git root, derives a bounded
+Markdown destination inside it, previews scope/access/Git exclusion/repository
+boundary/non-overwriting `BRAIN.md` behavior, reports verification/materialization,
+and ends in the shared path/reveal/copy/agent-instructions completion. Read-only
+contexts preserve standalone availability while explaining why repo association needs
+edit access. Settings now manages existing generalized repo availability records.
+
+HTML Apps guidance is gated by the selected context's exact healthy scope and uses
+that record's path; the legacy open-folder path no longer qualifies. Non-mutating real
+Electron/CDP acceptance passed viewer restriction, member folder choice/create,
+contextual visibility, safe focus-target availability, and an exact `~/magic-test`
+skills command. Desktop tests pass 178/178, changed-file Biome and diff checks pass,
+and `pnpm build:desktop` passes after simplify/comments/review-readiness. Run record:
+`specs/local-agent-availability-onboarding/runs/2026-07-14-milestone-4-implementation.md`.
+
+**Next local-agent availability step:** run the remaining packaged Milestone 4 gate
+with an expendable cloud folder and scratch Git repo, including child-directory root
+resolution, real materialization/external edit/relaunch/Settings management, cleanup,
+and physical keyboard + VoiceOver speech for both journeys. No backend deployment or
+fixture mutation occurred in the implementation pass. After that gate, the feature is
+complete and the roadmap can return to the cross-device findings and Phase 6 recovery
+priority decision.
+
+**Autopilot revalidation (2026-07-15):** the current working tree still passes all 172
+desktop tests that do not require a Unix socket; the six CLI-server cases remain
+blocked by the managed sandbox's `listen EPERM`. Focused onboarding tests, desktop
+TypeScript, changed-file Biome, `git diff --check`, and a production Electron/Vite
+build pass. A fresh ad-hoc-signed arm64 `.app` was produced and passes strict codesign
+verification. This host aborts both packaged and development Electron before a
+renderer starts, so CDP cannot bind and no new keyboard/VoiceOver or mutating fixture
+acceptance is claimed. The remaining packaged gate above is unchanged, and the
+repo-only renderer IPC compatibility shims remain until that parity is proven.
 
 ## ➤ NEXT STEP (updated 2026-07-09, post-apply-run)
 

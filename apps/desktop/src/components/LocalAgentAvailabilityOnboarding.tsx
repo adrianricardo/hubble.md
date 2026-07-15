@@ -19,6 +19,7 @@ import {
 	directScopeKey,
 	setupProgressLabel,
 } from "./localAgentAvailabilityModel";
+import { RepoAvailabilitySetup } from "./RepoAvailabilitySetup";
 
 type SetupPhase =
 	| "preview"
@@ -54,12 +55,14 @@ export function LocalAgentAvailabilityOnboarding({
 		displayName,
 	);
 	const [dialogOpen, setDialogOpen] = useState(false);
+	const [journey, setJourney] = useState<"standalone" | "repo">("standalone");
 	const [phase, setPhase] = useState<SetupPhase>("preview");
 	const [selectedPath, setSelectedPath] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [completion, setCompletion] = useState<LocalAvailabilityRecord | null>(
 		null,
 	);
+	const [completionName, setCompletionName] = useState(displayName);
 	const [instructionsVisible, setInstructionsVisible] = useState(false);
 	const [retrying, setRetrying] = useState(false);
 	const chooseButtonRef = useRef<HTMLButtonElement>(null);
@@ -80,10 +83,20 @@ export function LocalAgentAvailabilityOnboarding({
 	);
 
 	const openSetup = () => {
+		setJourney("standalone");
 		setPhase("preview");
 		setSelectedPath(null);
 		setError(null);
 		setCompletion(null);
+		setInstructionsVisible(false);
+		setDialogOpen(true);
+	};
+	const openRepoSetup = () => {
+		setJourney("repo");
+		setPhase("preview");
+		setError(null);
+		setCompletion(null);
+		setCompletionName(displayName);
 		setInstructionsVisible(false);
 		setDialogOpen(true);
 	};
@@ -113,6 +126,7 @@ export function LocalAgentAvailabilityOnboarding({
 			onAvailabilityChanged(record);
 			if (record.state === "connected" || record.state === "syncing") {
 				setCompletion(record);
+				setCompletionName(displayName);
 				setPhase("complete");
 			} else {
 				setError(
@@ -171,10 +185,13 @@ export function LocalAgentAvailabilityOnboarding({
 		}
 	};
 
-	const copyInstructions = async (record: LocalAvailabilityRecord) => {
+	const copyInstructions = async (
+		record: LocalAvailabilityRecord,
+		name = displayName,
+	) => {
 		try {
 			await navigator.clipboard.writeText(
-				agentInstructions(displayName, record.localRoot),
+				agentInstructions(name, record.localRoot),
 			);
 			toast.success("Agent instructions copied");
 		} catch {
@@ -304,7 +321,7 @@ export function LocalAgentAvailabilityOnboarding({
 					<Button size="sm" onClick={openSetup}>
 						Make available on this Mac
 					</Button>
-					<Button variant="ghost" size="sm" onClick={onOpenSettings}>
+					<Button variant="ghost" size="sm" onClick={openRepoSetup}>
 						Link to a code repository
 					</Button>
 				</div>
@@ -315,21 +332,49 @@ export function LocalAgentAvailabilityOnboarding({
 				onOpenChange={(open) => {
 					if (!open && !busy) setDialogOpen(false);
 				}}
-				initialFocus={chooseButtonRef}
+				initialFocus={
+					journey === "standalone"
+						? chooseButtonRef
+						: () =>
+								document.querySelector<HTMLButtonElement>(
+									"[data-repo-availability-cancel]",
+								)
+				}
 				title={
 					phase === "complete"
 						? "Ready for local agents"
-						: `Make “${displayName}” available`
+						: journey === "repo"
+							? "Link cloud content to a repository"
+							: `Make “${displayName}” available`
 				}
-				description="Create one exact, synchronized Markdown folder on this Mac."
+				description={
+					journey === "repo"
+						? "Connect one cloud folder to one Git repository without exposing unrelated repository files."
+						: "Create one exact, synchronized Markdown folder on this Mac."
+				}
 			>
 				{phase === "complete" && completion ? (
 					<div className="flex flex-col gap-3" aria-live="polite">
 						<div className="flex items-center gap-2 text-sm font-medium text-foreground">
 							<MingcuteCheckCircleLine className="size-5 text-emerald-600 dark:text-emerald-400" />
-							<span>“{displayName}” is available on this Mac.</span>
+							<span>“{completionName}” is available on this Mac.</span>
 						</div>
 						<PathBlock path={completion.localRoot} />
+						{completion.association === "repo" &&
+						completion.gitExclusion.status === "manual" ? (
+							<output className="block rounded-sm border border-amber-500/35 bg-amber-500/10 [padding-block:0.5rem] [padding-inline:0.625rem]">
+								<p className="m-0 text-[11px] font-medium text-foreground">
+									Add this pattern to the repository’s .gitignore
+								</p>
+								<code className="break-all text-[10px] text-foreground">
+									{completion.gitExclusion.pattern}
+								</code>
+								<p className="m-0 text-[10px] text-muted-foreground [padding-block-start:0.2rem]">
+									Sync is connected, but Hubble could not update
+									.git/info/exclude.
+								</p>
+							</output>
+						) : null}
 						<div className="flex flex-wrap gap-2">
 							<Button
 								variant="outline"
@@ -355,12 +400,14 @@ export function LocalAgentAvailabilityOnboarding({
 						{instructionsVisible ? (
 							<div className="flex flex-col gap-2 rounded-sm border border-border bg-muted/50 [padding-block:0.625rem] [padding-inline:0.625rem]">
 								<p className="m-0 whitespace-pre-wrap text-[11px] leading-relaxed text-foreground">
-									{agentInstructions(displayName, completion.localRoot)}
+									{agentInstructions(completionName, completion.localRoot)}
 								</p>
 								<Button
 									variant="outline"
 									size="sm"
-									onClick={() => void copyInstructions(completion)}
+									onClick={() =>
+										void copyInstructions(completion, completionName)
+									}
 								>
 									Copy instructions
 								</Button>
@@ -370,6 +417,21 @@ export function LocalAgentAvailabilityOnboarding({
 							<Button onClick={() => setDialogOpen(false)}>Done</Button>
 						</div>
 					</div>
+				) : journey === "repo" ? (
+					<RepoAvailabilitySetup
+						contextScope={scope}
+						contextName={displayName}
+						contextDetail={contextDetail}
+						capability={capability}
+						authToken={authToken}
+						onComplete={(record) => {
+							onAvailabilityChanged(record);
+							setCompletion(record);
+							setCompletionName(record.displayName);
+							setPhase("complete");
+						}}
+						onCancel={() => setDialogOpen(false)}
+					/>
 				) : (
 					<div className="flex flex-col gap-3">
 						<div className="grid gap-2 rounded-sm border border-border bg-muted/35 [padding-block:0.625rem] [padding-inline:0.625rem]">

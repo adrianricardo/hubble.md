@@ -6,6 +6,8 @@ import {
 	availabilitySuggestedPath,
 	directScopeKey,
 	findDirectAvailability,
+	healthyAvailabilityPath,
+	repoAvailabilitySuggestedPath,
 	setupProgressLabel,
 } from "./localAgentAvailabilityModel";
 
@@ -106,6 +108,26 @@ describe("local agent availability onboarding", () => {
 		expect(
 			availabilitySuggestedPath("/Users/me/", " Product: Launch / 2026 "),
 		).toBe("/Users/me/Hubble/Product Launch 2026");
+		expect(
+			repoAvailabilitySuggestedPath(
+				"/Users/me/code/project/",
+				"Product: Brain",
+			),
+		).toBe("/Users/me/code/project/Product Brain");
+	});
+
+	it("promotes skills only for a healthy exact-scope path", () => {
+		expect(healthyAvailabilityPath(availability())).toEqual({
+			scopeKey: "workspace:space-1",
+			path: "/Users/me/Hubble/Product Space",
+		});
+		expect(
+			healthyAvailabilityPath(availability({ state: "syncing" })),
+		).not.toBeNull();
+		expect(
+			healthyAvailabilityPath(availability({ state: "offline" })),
+		).toBeNull();
+		expect(healthyAvailabilityPath(null)).toBeNull();
 	});
 
 	it("names progress and agent handoff details in text", () => {
