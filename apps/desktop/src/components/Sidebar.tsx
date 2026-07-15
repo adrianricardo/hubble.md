@@ -42,6 +42,7 @@ import MingcuteFolderLine from "~icons/mingcute/folder-line";
 import { desktopConvexUrl } from "../convex";
 import { desktopApi } from "../desktopApi";
 import type {
+	AuthorityTransferOperation,
 	FolderAuthorityPlacement,
 	LocalAvailabilityRecord,
 } from "../desktopApi/types";
@@ -131,7 +132,157 @@ function useAuthorityPreview() {
 		setTarget(null);
 		window.setTimeout(() => returnFocusRef.current?.focus(), 0);
 	};
-	return { target, open, close };
+	const replace = (nextTarget: AuthorityPreviewTarget) => setTarget(nextTarget);
+	return { target, open, replace, close };
+}
+
+function authorityPreviewKey(target: AuthorityPreviewTarget) {
+	return target.direction === "git-to-cloud"
+		? `${target.direction}:${target.intent}:${target.folderPath}`
+		: `${target.direction}:${target.intent}:${target.folderId}`;
+}
+
+function AuthorityTransferRecoveryNotice() {
+	const authToken = useAuthToken();
+	const [online, setOnline] = useState(() => navigator.onLine);
+	const [operations, setOperations] = useState<AuthorityTransferOperation[]>(
+		[],
+	);
+	const [busyId, setBusyId] = useState<string | null>(null);
+	const [error, setError] = useState<string | null>(null);
+	const refresh = useCallback(() => {
+		void desktopApi.listAuthorityTransferOperations().then(setOperations);
+	}, []);
+	useEffect(refresh, [refresh]);
+	useEffect(() => {
+		const update = () => setOnline(navigator.onLine);
+		window.addEventListener("online", update);
+		window.addEventListener("offline", update);
+		return () => {
+			window.removeEventListener("online", update);
+			window.removeEventListener("offline", update);
+		};
+	}, []);
+	const operation = operations.find(
+		(candidate) =>
+			candidate.phase !== "draft" &&
+			candidate.phase !== "completed" &&
+			candidate.phase !== "cancelled",
+	);
+	if (!operation) return null;
+	const resume = async () => {
+		if (!authToken || !desktopConvexUrl || busyId) return;
+		setBusyId(operation.id);
+		setError(null);
+		try {
+			if (
+				operation.direction === "git-to-cloud" &&
+				operation.source.kind === "git" &&
+				operation.destination?.kind === "cloud" &&
+				operation.previewFingerprint &&
+				operation.audienceFingerprint &&
+				operation.intent !== "export-copy"
+			) {
+				const folderPath = joinAuthorityPath(
+					operation.source.repoRoot,
+					operation.source.relativePath,
+				);
+				const result = await desktopApi.moveGitFolderToCloud({
+					operationId: operation.id,
+					folderPath,
+					workspaceId: operation.destination.workspaceId,
+					parentFolderId: operation.destination.parentFolderId,
+					deploymentUrl: desktopConvexUrl,
+					authToken,
+					expectedPreviewFingerprint: operation.previewFingerprint,
+					expectedAudienceFingerprint: operation.audienceFingerprint,
+					intent: operation.intent,
+					requestedShares: operation.requestedShares ?? [],
+				});
+				if (result.status !== "completed") {
+					throw new Error(
+						result.status === "stale"
+							? "The move changed. Open the folder action and review it again."
+							: result.message,
+					);
+				}
+			} else if (
+				operation.direction === "cloud-to-git" &&
+				operation.source.kind === "cloud" &&
+				operation.destination?.kind === "git" &&
+				operation.previewFingerprint &&
+				operation.destinationPreviewFingerprint
+			) {
+				const result = await desktopApi.moveCloudFolderToGit({
+					operationId: operation.id,
+					cloudFolderId: operation.source.folderId,
+					repositoryPath: operation.destination.repoRoot,
+					relativePath: operation.destination.relativePath,
+					placementId: operation.sourcePlacement?.id ?? null,
+					deploymentUrl: desktopConvexUrl,
+					authToken,
+					expectedCloudPreviewFingerprint: operation.previewFingerprint,
+					expectedDestinationFingerprint:
+						operation.destinationPreviewFingerprint,
+					intent: operation.intent === "export-copy" ? "export-copy" : "move",
+				});
+				if (result.status !== "completed") {
+					throw new Error(
+						result.status === "stale"
+							? "The move changed. Open the folder action and review it again."
+							: result.message,
+					);
+				}
+			} else {
+				throw new Error("This older move needs a fresh folder preview");
+			}
+			toast.success(
+				operation.intent === "export-copy"
+					? "Git copy exported"
+					: "Folder move completed",
+			);
+			refresh();
+		} catch (cause) {
+			setError(cause instanceof Error ? cause.message : String(cause));
+		} finally {
+			refresh();
+			setBusyId(null);
+		}
+	};
+	return (
+		<output
+			aria-live="polite"
+			className="flex flex-col gap-1.5 border-b border-sidebar-border bg-sidebar-accent/35 text-[11px] [padding-block:0.5rem] [padding-inline:0.625rem]"
+		>
+			<span className="font-medium text-sidebar-foreground">
+				{operation.intent === "export-copy" ? "Git export" : "Folder move"}:{" "}
+				{operation.phase.replace("-", " ")}
+			</span>
+			<span className="break-all text-sidebar-foreground/70">
+				{operation.source.kind === "git"
+					? joinAuthorityPath(
+							operation.source.repoRoot,
+							operation.source.relativePath,
+						)
+					: operation.source.folderId}
+			</span>
+			{error ? <span role="alert">{error}</span> : null}
+			{!online ? <span>Reconnect to resume this cloud operation.</span> : null}
+			<Button
+				type="button"
+				size="sm"
+				variant="outline"
+				disabled={!online || !authToken || !desktopConvexUrl || busyId !== null}
+				onClick={() => void resume()}
+			>
+				{busyId
+					? "Resuming…"
+					: operation.intent === "export-copy"
+						? "Resume export"
+						: "Resume move"}
+			</Button>
+		</output>
+	);
 }
 
 type MixedAuthorityEntries = {
@@ -277,12 +428,17 @@ export function Sidebar({
 	const { workspacePath, files, folders, pinnedNotes, sortMode } = workspace;
 	const pinnedSet = new Set(pinnedNotes);
 	const authorityPreview = useAuthorityPreview();
+	const [completedShareTarget, setCompletedShareTarget] = useState<{
+		folderId: string;
+		name: string;
+	} | null>(null);
 
 	if (!sidebarOpen) return null;
 	const collapseSidebar = () => setSidebarOpen(false);
 	if (cloudEnabled && contentContext.kind === "cloud") {
 		return (
 			<SidebarFrame onCollapse={collapseSidebar}>
+				<AuthorityTransferRecoveryNotice />
 				<CloudSidebarSection
 					activeLiveDocumentId={activeLiveDocumentId}
 					onOpenLiveDocument={onOpenLiveDocument}
@@ -301,6 +457,7 @@ export function Sidebar({
 	if (!workspacePath) {
 		return (
 			<SidebarFrame onCollapse={collapseSidebar}>
+				{cloudEnabled ? <AuthorityTransferRecoveryNotice /> : null}
 				<div className="flex min-h-0 flex-1 flex-col items-start justify-center gap-3 [padding-inline:0.75rem] text-sm">
 					<div className="flex flex-col gap-1">
 						<p className="font-medium text-sidebar-foreground">
@@ -372,14 +529,17 @@ export function Sidebar({
 				sortMode={sortMode}
 				storageScope={workspacePath}
 				header={
-					<div className="flex min-w-0 items-center gap-2">
-						<WorkspaceSwitcher cloudAvailable={Boolean(cloudEnabled)} />
-						<span
-							className="shrink-0 rounded-sm border border-sidebar-border [padding-block:0.0625rem] [padding-inline:0.3rem] text-[9px] font-semibold uppercase tracking-wide text-sidebar-foreground/60"
-							title="Stored directly in Git"
-						>
-							Git
-						</span>
+					<div className="flex min-w-0 flex-col">
+						<div className="flex min-w-0 items-center gap-2">
+							<WorkspaceSwitcher cloudAvailable={Boolean(cloudEnabled)} />
+							<span
+								className="shrink-0 rounded-sm border border-sidebar-border [padding-block:0.0625rem] [padding-inline:0.3rem] text-[9px] font-semibold uppercase tracking-wide text-sidebar-foreground/60"
+								title="Stored directly in Git"
+							>
+								Git
+							</span>
+						</div>
+						{cloudEnabled ? <AuthorityTransferRecoveryNotice /> : null}
 					</div>
 				}
 				footer={footer}
@@ -467,8 +627,24 @@ export function Sidebar({
 			)}
 			{authorityPreview.target ? (
 				<AuthorityMovePreviewDialog
+					key={authorityPreviewKey(authorityPreview.target)}
 					target={authorityPreview.target}
 					onClose={authorityPreview.close}
+					onReverse={authorityPreview.replace}
+					onManageShare={(folderId, name) => {
+						authorityPreview.close();
+						setCompletedShareTarget({ folderId, name });
+					}}
+				/>
+			) : null}
+			{completedShareTarget ? (
+				<FolderShareDialog
+					folderId={completedShareTarget.folderId as Id<"folders">}
+					folderName={completedShareTarget.name}
+					open
+					onOpenChange={(open) => {
+						if (!open) setCompletedShareTarget(null);
+					}}
 				/>
 			) : null}
 		</>
@@ -692,6 +868,7 @@ function AuthenticatedCloudSidebar({
 				canWriteDocument: () => false,
 				canShareFolder: () => false,
 				canMoveFolderToGit: () => false,
+				canExportFolderCopy: () => false,
 			};
 		}
 		if (contextCapabilities.mode === "uniform") {
@@ -701,6 +878,7 @@ function AuthenticatedCloudSidebar({
 				canWriteDocument: () => contextCapabilities.canWrite,
 				canShareFolder: () => contextCapabilities.canShare,
 				canMoveFolderToGit: () => contextCapabilities.canShare,
+				canExportFolderCopy: () => true,
 			};
 		}
 		const writableFolders = new Set<string>(
@@ -712,12 +890,16 @@ function AuthenticatedCloudSidebar({
 		const shareableFolders = new Set<string>(
 			contextCapabilities.shareableFolderIds,
 		);
+		const readableFolders = new Set<string>(
+			contextCapabilities.readableFolderIds,
+		);
 		return {
 			canCreate: contextCapabilities.canWrite,
 			canWriteFolder: (folderId) => writableFolders.has(folderId),
 			canWriteDocument: (documentId) => writableDocuments.has(documentId),
 			canShareFolder: (folderId) => shareableFolders.has(folderId),
 			canMoveFolderToGit: (folderId) => shareableFolders.has(folderId),
+			canExportFolderCopy: (folderId) => readableFolders.has(folderId),
 		};
 	}, [contextCapabilities]);
 	const openDocument = (documentId: string) => {
@@ -1142,6 +1324,20 @@ function AuthenticatedCloudSidebar({
 									}
 								: undefined
 						}
+						onRequestExportFolderCopy={
+							context
+								? (target) => {
+										if (target.kind !== "folder") return;
+										authorityPreview.open({
+											direction: "cloud-to-git",
+											intent: "export-copy",
+											workspaceId: context.workspaceId,
+											folderId: target.id,
+											name: target.name,
+										});
+									}
+								: undefined
+						}
 						localFolders={localFolders}
 						onRevealLocalFolder={(availability) =>
 							void desktopApi.revealFile(availability.localPath)
@@ -1154,8 +1350,20 @@ function AuthenticatedCloudSidebar({
 					/>
 					{authorityPreview.target ? (
 						<AuthorityMovePreviewDialog
+							key={authorityPreviewKey(authorityPreview.target)}
 							target={authorityPreview.target}
 							onClose={authorityPreview.close}
+							onReverse={authorityPreview.replace}
+							onManageShare={(folderId, name) => {
+								authorityPreview.close();
+								setShareTarget({
+									kind: "folder",
+									id: folderId,
+									name,
+									parentId: null,
+									path: null,
+								});
+							}}
 						/>
 					) : null}
 				</>

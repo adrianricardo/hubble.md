@@ -389,6 +389,7 @@ export const getContextCapabilities = query({
 			shareableFolderIds: folders.flatMap((candidate, index) =>
 				folderRoles[index] === "owner" ? [candidate._id] : [],
 			),
+			readableFolderIds: folders.map((candidate) => candidate._id),
 			writableDocumentIds: subtree.documents.flatMap((document, index) => {
 				const candidateRole = documentRoles[index];
 				return candidateRole === "owner" || candidateRole === "editor"

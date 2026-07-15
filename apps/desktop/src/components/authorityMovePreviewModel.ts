@@ -21,6 +21,29 @@ export function previewChanged(
 	);
 }
 
+export function parseShareRecipients(
+	value: string,
+	role: "editor" | "commenter" | "viewer",
+) {
+	const candidates = value
+		.split(/[\n,]/)
+		.map((email) => email.trim().toLocaleLowerCase())
+		.filter(Boolean);
+	const invalid = candidates.filter(
+		(email) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email),
+	);
+	return {
+		shares: [
+			...new Map(
+				candidates
+					.filter((email) => !invalid.includes(email))
+					.map((email) => [email, { email, role }] as const),
+			).values(),
+		],
+		invalid,
+	};
+}
+
 export function canConfirmGitToCloud(input: {
 	online: boolean;
 	journaled: boolean;
@@ -31,6 +54,7 @@ export function canConfirmGitToCloud(input: {
 	authReady: boolean;
 	stale: boolean;
 	busy: boolean;
+	shareIntentReady: boolean;
 }): boolean {
 	return (
 		input.online &&
@@ -41,7 +65,8 @@ export function canConfirmGitToCloud(input: {
 		input.membersLoaded &&
 		input.authReady &&
 		!input.stale &&
-		!input.busy
+		!input.busy &&
+		input.shareIntentReady
 	);
 }
 

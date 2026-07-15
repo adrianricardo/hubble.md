@@ -16,6 +16,12 @@ import {
 } from "./documents";
 import { collectFolderSubtree, folderRelativePath } from "./folders";
 import {
+	findUserIdByEmail,
+	normalizeEmail,
+	upsertFolderInvite,
+} from "./members";
+import {
+	folderRole,
 	isFolderAuthorityActive,
 	requireWorkspaceMember,
 	workspaceRole,
@@ -24,6 +30,21 @@ import {
 const MAX_BATCH_ITEMS = 16;
 const MAX_BATCH_BYTES = 512 * 1024;
 const MAX_MANIFEST_ITEMS = 2_048;
+const MAX_REQUESTED_SHARES = 20;
+
+const requestedShareValidator = v.object({
+	email: v.string(),
+	role: v.union(
+		v.literal("editor"),
+		v.literal("commenter"),
+		v.literal("viewer"),
+	),
+});
+
+type RequestedShare = {
+	email: string;
+	role: "editor" | "commenter" | "viewer";
+};
 
 const stagedItemValidator = v.union(
 	v.object({
@@ -79,7 +100,22 @@ async function sha256(value: string | ArrayBuffer): Promise<string> {
 async function currentAudience(
 	ctx: AuthorityCtx,
 	workspaceId: Id<"workspaces">,
+	requestedShares: RequestedShare[] = [],
 ) {
+	if (requestedShares.length > MAX_REQUESTED_SHARES) {
+		throw new Error(
+			`Share supports at most ${MAX_REQUESTED_SHARES} recipients`,
+		);
+	}
+	const canonicalRequestedShares = [
+		...new Map(
+			requestedShares.map((share) => {
+				const email = normalizeEmail(share.email);
+				if (!email) throw new Error("Share recipient email is required");
+				return [email, { email, role: share.role }] as const;
+			}),
+		).values(),
+	].sort((left, right) => left.email.localeCompare(right.email));
 	const workspace = await ctx.db.get(workspaceId);
 	if (!workspace) throw new Error("Workspace not found");
 	const members = await ctx.db
@@ -117,6 +153,19 @@ async function currentAudience(
 			role: "owner",
 		});
 	}
+	const requestedAudience = await Promise.all(
+		canonicalRequestedShares.map(async (share) => {
+			const userId = await findUserIdByEmail(ctx, share.email);
+			const user = userId ? await ctx.db.get(userId) : null;
+			return {
+				kind: userId ? ("folderShare" as const) : ("invite" as const),
+				id: userId ?? `requested:${share.email}`,
+				email: share.email,
+				name: user?.name ?? null,
+				role: share.role,
+			};
+		}),
+	);
 	const audience = [
 		...memberAudience,
 		...invites.map((invite) => ({
@@ -126,11 +175,13 @@ async function currentAudience(
 			name: null,
 			role: invite.workspaceRole ?? "member",
 		})),
+		...requestedAudience,
 	].sort((left, right) =>
 		`${left.kind}:${left.id}`.localeCompare(`${right.kind}:${right.id}`),
 	);
 	return {
 		audience,
+		requestedShares: canonicalRequestedShares,
 		fingerprint: await sha256(
 			JSON.stringify(
 				audience.map(({ kind, id, email, role }) => ({
@@ -238,6 +289,7 @@ export const prepareGitFolderMove = mutation({
 		sourceFingerprint: v.string(),
 		destinationFingerprint: v.string(),
 		expectedAudienceFingerprint: v.string(),
+		requestedShares: v.optional(v.array(requestedShareValidator)),
 	},
 	handler: async (ctx, args) => {
 		const ownerId = await getAuthUserId(ctx);
@@ -258,7 +310,11 @@ export const prepareGitFolderMove = mutation({
 			throw new Error("Invalid manifest summary");
 		}
 		await assertDestinationAvailable(ctx, { ...args, rootName });
-		const audience = await currentAudience(ctx, args.workspaceId);
+		const audience = await currentAudience(
+			ctx,
+			args.workspaceId,
+			args.requestedShares,
+		);
 		if (audience.fingerprint !== args.expectedAudienceFingerprint) {
 			throw new Error("Authority move audience changed; refresh the preview");
 		}
@@ -302,6 +358,7 @@ export const prepareGitFolderMove = mutation({
 			sourceFingerprint: args.sourceFingerprint,
 			destinationFingerprint: args.destinationFingerprint,
 			audienceFingerprint: audience.fingerprint,
+			requestedShares: audience.requestedShares,
 			operationFingerprint: fingerprint,
 			recoveryState: "source",
 			createdAt: now,
@@ -334,12 +391,13 @@ export const getGitFolderMoveAudience = query({
 		workspaceId: v.id("workspaces"),
 		parentFolderId: v.optional(v.id("folders")),
 		rootName: v.string(),
+		requestedShares: v.optional(v.array(requestedShareValidator)),
 	},
 	handler: async (ctx, args) => {
 		await requireWorkspaceMember(ctx, args.workspaceId);
 		const rootName = normalizedRootName(args.rootName);
 		await assertDestinationAvailable(ctx, { ...args, rootName });
-		return currentAudience(ctx, args.workspaceId);
+		return currentAudience(ctx, args.workspaceId, args.requestedShares);
 	},
 });
 
@@ -642,6 +700,47 @@ export const cancelAuthorityTransferBatch = mutation({
 	},
 });
 
+async function applyRequestedFolderShares(
+	ctx: MutationCtx,
+	folderId: Id<"folders">,
+	shares: RequestedShare[],
+	invitedBy: Id<"users">,
+) {
+	for (const share of shares) {
+		const userId = await findUserIdByEmail(ctx, share.email);
+		if (!userId) {
+			await upsertFolderInvite(ctx, {
+				folderId,
+				email: share.email,
+				role: share.role,
+				invitedBy,
+			});
+			continue;
+		}
+		const existing = await ctx.db
+			.query("folderShares")
+			.withIndex("by_folder_user", (query) =>
+				query.eq("folderId", folderId).eq("userId", userId),
+			)
+			.unique();
+		if (existing) {
+			await ctx.db.patch(existing._id, {
+				role: share.role,
+				updatedAt: Date.now(),
+			});
+		} else {
+			const now = Date.now();
+			await ctx.db.insert("folderShares", {
+				folderId,
+				userId,
+				role: share.role,
+				createdAt: now,
+				updatedAt: now,
+			});
+		}
+	}
+}
+
 export const activateAuthorityFolder = mutation({
 	args: {
 		transferId: v.id("authorityTransfers"),
@@ -674,7 +773,11 @@ export const activateAuthorityFolder = mutation({
 			rootName: root.name,
 			exceptFolderId: root._id,
 		});
-		const audience = await currentAudience(ctx, transfer.workspaceId);
+		const audience = await currentAudience(
+			ctx,
+			transfer.workspaceId,
+			transfer.requestedShares,
+		);
 		const fingerprint = await operationFingerprint({
 			manifestHash: transfer.manifestHash,
 			sourceFingerprint: args.sourceFingerprint,
@@ -691,6 +794,12 @@ export const activateAuthorityFolder = mutation({
 		) {
 			throw new Error("Authority move preview is stale");
 		}
+		await applyRequestedFolderShares(
+			ctx,
+			root._id,
+			audience.requestedShares,
+			transfer.ownerId,
+		);
 		const now = Date.now();
 		await ctx.db.patch(root._id, {
 			authorityState: "active",
@@ -721,6 +830,63 @@ type CloudExportItem =
 			size: number;
 			storageId: Id<"_storage">;
 	  };
+
+type ExcludedCloudAuthorityRoot = {
+	folderId: Id<"folders">;
+	name: string;
+	relativePath: string;
+	authority: "git";
+};
+
+async function excludedCloudAuthorityRoots(
+	ctx: AuthorityCtx,
+	root: Doc<"folders">,
+): Promise<ExcludedCloudAuthorityRoot[]> {
+	const folders = await ctx.db
+		.query("folders")
+		.withIndex("by_workspace", (query) =>
+			query.eq("workspaceId", root.workspaceId),
+		)
+		.collect();
+	const children = new Map<string, Array<Doc<"folders">>>();
+	for (const folder of folders) {
+		if (folder.deletedAt !== undefined) continue;
+		const siblings = children.get(folder.parentId ?? "") ?? [];
+		siblings.push(folder);
+		children.set(folder.parentId ?? "", siblings);
+	}
+	const excluded: ExcludedCloudAuthorityRoot[] = [];
+	const queue: Array<{ folderId: Id<"folders">; path: string }> = [
+		{ folderId: root._id, path: "" },
+	];
+	const seen = new Set<Id<"folders">>();
+	while (queue.length > 0) {
+		const current = queue.shift();
+		if (!current || seen.has(current.folderId)) continue;
+		seen.add(current.folderId);
+		for (const child of children.get(current.folderId) ?? []) {
+			const relativePath = canonicalPath(
+				[current.path, child.name].filter(Boolean).join("/"),
+			);
+			if (child.authorityState === "archivedToGit") {
+				excluded.push({
+					folderId: child._id,
+					name: child.name,
+					relativePath,
+					authority: "git",
+				});
+				continue;
+			}
+			if (child.authorityState === "staging") {
+				throw new Error("Cloud folder contains an authority move in progress");
+			}
+			queue.push({ folderId: child._id, path: relativePath });
+		}
+	}
+	return excluded.sort((left, right) =>
+		left.relativePath.localeCompare(right.relativePath),
+	);
+}
 
 async function hasCloudMoveManagePermission(
 	ctx: AuthorityCtx,
@@ -762,6 +928,27 @@ async function requireCloudMoveManage(
 		throw new Error("Folder not found");
 	}
 	if (!(await hasCloudMoveManagePermission(ctx, root))) {
+		throw new Error("Unauthorized");
+	}
+	return root;
+}
+
+async function requireCloudExportRead(
+	ctx: AuthorityCtx,
+	folderId: Id<"folders">,
+): Promise<Doc<"folders">> {
+	const root = await ctx.db.get(folderId);
+	if (
+		!root ||
+		root.deletedAt !== undefined ||
+		!(await isFolderAuthorityActive(ctx, folderId))
+	) {
+		throw new Error("Folder not found");
+	}
+	if (
+		!(await workspaceRole(ctx, root.workspaceId)) &&
+		!(await folderRole(ctx, folderId))
+	) {
 		throw new Error("Unauthorized");
 	}
 	return root;
@@ -862,13 +1049,18 @@ async function cloudFolderSnapshot(
 	root: Doc<"folders">,
 ): Promise<{
 	items: CloudExportItem[];
+	excludedAuthorityRoots: ExcludedCloudAuthorityRoot[];
 	manifestHash: string;
 	markdownCount: number;
 	assetCount: number;
 	totalBytes: number;
 	historyRevisionCount: number;
 }> {
-	const { descendants, documents } = await collectFolderSubtree(ctx, root._id);
+	const [{ descendants, documents }, excludedAuthorityRoots] =
+		await Promise.all([
+			collectFolderSubtree(ctx, root._id),
+			excludedCloudAuthorityRoots(ctx, root),
+		]);
 	const folderById = new Map<Id<"folders">, Doc<"folders">>([[root._id, root]]);
 	for (const folder of descendants) folderById.set(folder._id, folder);
 	const items: CloudExportItem[] = [];
@@ -942,6 +1134,15 @@ async function cloudFolderSnapshot(
 				? asset.path.slice(assetPrefix.length)
 				: asset.path,
 		);
+		if (
+			excludedAuthorityRoots.some(
+				(boundary) =>
+					relativePath === boundary.relativePath ||
+					relativePath.startsWith(`${boundary.relativePath}/`),
+			)
+		) {
+			continue;
+		}
 		const metadata = await ctx.db.system.get("_storage", asset.storageId);
 		if (!metadata)
 			throw new Error(`Cloud asset is unavailable: ${relativePath}`);
@@ -969,15 +1170,19 @@ async function cloudFolderSnapshot(
 		}
 	}
 	const manifestHash = await sha256(
-		items
-			.map(
+		[
+			...items.map(
 				(item) =>
 					`${item.relativePath}:${item.kind}:${item.contentHash}:${item.size}`,
-			)
-			.join("\n"),
+			),
+			...excludedAuthorityRoots.map(
+				(boundary) => `nested-authority:${boundary.relativePath}`,
+			),
+		].join("\n"),
 	);
 	return {
 		items,
+		excludedAuthorityRoots,
 		manifestHash,
 		markdownCount: items.filter((item) => item.kind === "markdown").length,
 		assetCount: items.filter((item) => item.kind === "asset").length,
@@ -1026,6 +1231,7 @@ async function buildCloudFolderMovePreview(
 					size,
 				}),
 			),
+			excludedAuthorityRoots: snapshot.excludedAuthorityRoots,
 		},
 		audience,
 		history: {
@@ -1041,6 +1247,95 @@ async function buildCloudFolderMovePreview(
 export const getCloudFolderMovePreview = query({
 	args: { folderId: v.id("folders") },
 	handler: (ctx, { folderId }) => buildCloudFolderMovePreview(ctx, folderId),
+});
+
+async function buildCloudFolderExportCopyPreview(
+	ctx: AuthorityCtx,
+	folderId: Id<"folders">,
+) {
+	const root = await requireCloudExportRead(ctx, folderId);
+	const snapshot = await cloudFolderSnapshot(ctx, root);
+	const previewFingerprint = await sha256(
+		JSON.stringify({
+			folderId: root._id,
+			workspaceId: root.workspaceId,
+			manifestHash: snapshot.manifestHash,
+			historyRevisionCount: snapshot.historyRevisionCount,
+		}),
+	);
+	return {
+		root: {
+			folderId: root._id,
+			workspaceId: root.workspaceId,
+			parentFolderId: root.parentId ?? null,
+			name: root.name,
+		},
+		manifest: {
+			manifestHash: snapshot.manifestHash,
+			itemCount: snapshot.items.length,
+			markdownCount: snapshot.markdownCount,
+			assetCount: snapshot.assetCount,
+			totalBytes: snapshot.totalBytes,
+			items: snapshot.items.map(
+				({ relativePath, kind, contentHash, size }) => ({
+					relativePath,
+					kind,
+					contentHash,
+					size,
+				}),
+			),
+			excludedAuthorityRoots: snapshot.excludedAuthorityRoots,
+		},
+		history: {
+			documentCount: snapshot.markdownCount,
+			revisionCount: snapshot.historyRevisionCount,
+			becomesGitCommits: false as const,
+		},
+		previewFingerprint,
+	};
+}
+
+export const getCloudFolderExportCopyPreview = query({
+	args: { folderId: v.id("folders") },
+	handler: (ctx, { folderId }) =>
+		buildCloudFolderExportCopyPreview(ctx, folderId),
+});
+
+export const getCloudFolderExportCopyBatch = query({
+	args: {
+		folderId: v.id("folders"),
+		expectedPreviewFingerprint: v.string(),
+		afterPath: v.optional(v.string()),
+	},
+	handler: async (ctx, args) => {
+		const preview = await buildCloudFolderExportCopyPreview(ctx, args.folderId);
+		if (preview.previewFingerprint !== args.expectedPreviewFingerprint) {
+			throw new Error("Cloud folder changed; refresh the preview");
+		}
+		const root = await requireCloudExportRead(ctx, args.folderId);
+		const snapshot = await cloudFolderSnapshot(ctx, root);
+		const afterPath = args.afterPath;
+		const remaining = afterPath
+			? snapshot.items.filter((item) => item.relativePath > afterPath)
+			: snapshot.items;
+		const batch = remaining.slice(0, MAX_BATCH_ITEMS);
+		return {
+			items: await Promise.all(
+				batch.map(async (item) =>
+					item.kind === "markdown"
+						? item
+						: {
+								...item,
+								downloadUrl: await ctx.storage.getUrl(item.storageId),
+							},
+				),
+			),
+			nextPath:
+				batch.length === MAX_BATCH_ITEMS
+					? (batch[batch.length - 1]?.relativePath ?? null)
+					: null,
+		};
+	},
 });
 
 export const prepareCloudFolderMove = mutation({

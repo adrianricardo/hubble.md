@@ -58,7 +58,7 @@ const operationSchema = z
 	.object({
 		id: z.string().min(1),
 		direction: z.enum(["git-to-cloud", "cloud-to-git"]),
-		intent: z.enum(["move", "share"]),
+		intent: z.enum(["move", "share", "export-copy"]),
 		phase: z.enum([
 			"draft",
 			"validating",
@@ -86,6 +86,15 @@ const operationSchema = z
 		destinationWasEmpty: z.boolean().optional(),
 		completionFingerprint: z.string().min(1).nullable().optional(),
 		sourcePlacement: placementSchema.nullable().optional(),
+		requestedShares: z
+			.array(
+				z.object({
+					email: z.string().email(),
+					role: z.enum(["editor", "commenter", "viewer"]),
+				}),
+			)
+			.optional(),
+		audienceFingerprint: z.string().min(1).nullable().optional(),
 		lastError: z.string().nullable(),
 		createdAt: z.number().finite(),
 		updatedAt: z.number().finite(),

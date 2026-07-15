@@ -54,6 +54,10 @@ async function prepareOneMarkdown(
 	ownerId: Id<"users">,
 	workspaceId: Id<"workspaces">,
 	operationKey = "operation-1",
+	requestedShares: Array<{
+		email: string;
+		role: "editor" | "commenter" | "viewer";
+	}> = [],
 ) {
 	const markdown = "# Hidden until cutover\n";
 	const contentHash = await hash(markdown);
@@ -63,6 +67,7 @@ async function prepareOneMarkdown(
 	).query(api.authorityTransfers.getGitFolderMoveAudience, {
 		workspaceId,
 		rootName: "Moved notes",
+		requestedShares,
 	});
 	const prepared = await asUser(t, ownerId).mutation(
 		api.authorityTransfers.prepareGitFolderMove,
@@ -78,6 +83,7 @@ async function prepareOneMarkdown(
 			sourceFingerprint: "source-1",
 			destinationFingerprint: "destination-1",
 			expectedAudienceFingerprint,
+			requestedShares,
 		},
 	);
 	return { ...prepared, markdown, contentHash };
@@ -239,6 +245,91 @@ describe("Git-to-cloud authority staging", () => {
 				documentId: snapshot.document?._id as Id<"documents">,
 			}),
 		).resolves.toMatchObject({ markdown: prepared.markdown });
+	});
+
+	test("applies reviewed Share recipients atomically with activation", async () => {
+		const t = testInstance();
+		const { ownerId, workspaceId } = await setup(t);
+		const recipientId = await t.run((ctx) =>
+			ctx.db.insert("users", {
+				email: "recipient@example.com",
+				name: "Recipient",
+			}),
+		);
+		const requestedShares = [
+			{ email: "recipient@example.com", role: "editor" as const },
+			{ email: "pending@example.com", role: "viewer" as const },
+		];
+		const prepared = await prepareOneMarkdown(
+			t,
+			ownerId,
+			workspaceId,
+			"share-operation",
+			requestedShares,
+		);
+		expect(prepared.audience).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					kind: "folderShare",
+					email: "recipient@example.com",
+					role: "editor",
+				}),
+				expect.objectContaining({
+					kind: "invite",
+					email: "pending@example.com",
+					role: "viewer",
+				}),
+			]),
+		);
+		await asUser(t, ownerId).mutation(
+			api.authorityTransfers.stageAuthorityFolderBatch,
+			{
+				transferId: prepared.transferId,
+				items: [
+					{
+						kind: "markdown",
+						relativePath: "readme.md",
+						contentHash: prepared.contentHash,
+						size: new TextEncoder().encode(prepared.markdown).byteLength,
+						markdown: prepared.markdown,
+					},
+				],
+			},
+		);
+		const verified = await asUser(t, ownerId).mutation(
+			api.authorityTransfers.verifyAuthorityStaging,
+			{ transferId: prepared.transferId, manifestHash: "manifest-1" },
+		);
+		await asUser(t, ownerId).mutation(
+			api.authorityTransfers.activateAuthorityFolder,
+			{
+				transferId: prepared.transferId,
+				cutoverToken: verified.cutoverToken,
+				sourceFingerprint: "source-1",
+				destinationFingerprint: "destination-1",
+			},
+		);
+
+		const access = await t.run(async (ctx) => ({
+			share: await ctx.db
+				.query("folderShares")
+				.withIndex("by_folder_user", (query) =>
+					query
+						.eq("folderId", prepared.rootFolderId as Id<"folders">)
+						.eq("userId", recipientId),
+				)
+				.unique(),
+			invite: await ctx.db
+				.query("invites")
+				.withIndex("by_folder_email", (query) =>
+					query
+						.eq("folderId", prepared.rootFolderId as Id<"folders">)
+						.eq("email", "pending@example.com"),
+				)
+				.unique(),
+		}));
+		expect(access.share?.role).toBe("editor");
+		expect(access.invite?.folderRole).toBe("viewer");
 	});
 
 	test("verifies uploaded asset metadata and hides it with the staging root", async () => {
@@ -524,6 +615,16 @@ describe("Git-to-cloud authority staging", () => {
 			path: "Cloud notes/Guide/readme.md",
 			markdown: "# Exact cloud bytes\n",
 		});
+		const archivedChildId = await t.run(async (ctx) =>
+			ctx.db.insert("folders", {
+				workspaceId,
+				parentId: folderId,
+				name: "Independent Git project",
+				createdAt: 2,
+				updatedAt: 2,
+				authorityState: "archivedToGit",
+			}),
+		);
 		await t.run(async (ctx) => {
 			await ctx.db.insert("folderShares", {
 				folderId,
@@ -550,6 +651,13 @@ describe("Git-to-cloud authority staging", () => {
 				itemCount: 1,
 				markdownCount: 1,
 				assetCount: 0,
+				excludedAuthorityRoots: [
+					{
+						folderId: archivedChildId,
+						relativePath: "Independent Git project",
+						authority: "git",
+					},
+				],
 			},
 			audience: { publicLinkRole: "viewer" },
 			history: { documentCount: 1, revisionCount: 1 },
@@ -682,5 +790,18 @@ describe("Git-to-cloud authority staging", () => {
 				{ folderId },
 			),
 		).rejects.toThrow(/Unauthorized/);
+		const copyPreview = await asUser(t, memberId).query(
+			api.authorityTransfers.getCloudFolderExportCopyPreview,
+			{ folderId },
+		);
+		expect(copyPreview.manifest.markdownCount).toBe(1);
+		const copyBatch = await asUser(t, memberId).query(
+			api.authorityTransfers.getCloudFolderExportCopyBatch,
+			{
+				folderId,
+				expectedPreviewFingerprint: copyPreview.previewFingerprint,
+			},
+		);
+		expect(copyBatch.items).toHaveLength(1);
 	});
 });

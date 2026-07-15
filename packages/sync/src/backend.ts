@@ -106,6 +106,11 @@ export type AuthorityAudienceEntry = {
 	role: string;
 };
 
+export type AuthorityRequestedShare = {
+	email: string;
+	role: "editor" | "commenter" | "viewer";
+};
+
 export type CloudFolderMovePreview = {
 	root: {
 		folderId: string;
@@ -125,6 +130,12 @@ export type CloudFolderMovePreview = {
 			contentHash: string;
 			size: number;
 		}>;
+		excludedAuthorityRoots: Array<{
+			folderId: string;
+			name: string;
+			relativePath: string;
+			authority: "git";
+		}>;
 	};
 	audience: {
 		entries: AuthorityAudienceEntry[];
@@ -137,6 +148,13 @@ export type CloudFolderMovePreview = {
 		becomesGitCommits: false;
 	};
 	recovery: { kind: "cloudArchive"; expiresAt: number | null };
+	previewFingerprint: string;
+};
+
+export type CloudFolderExportCopyPreview = {
+	root: CloudFolderMovePreview["root"];
+	manifest: CloudFolderMovePreview["manifest"];
+	history: CloudFolderMovePreview["history"];
 	previewFingerprint: string;
 };
 
@@ -192,6 +210,14 @@ export type AuthorityStageItem =
 /** Backend-agnostic interface for sync operations. */
 export interface SyncBackend {
 	getCloudFolderMovePreview(folderId: string): Promise<CloudFolderMovePreview>;
+	getCloudFolderExportCopyPreview(
+		folderId: string,
+	): Promise<CloudFolderExportCopyPreview>;
+	getCloudFolderExportCopyBatch(args: {
+		folderId: string;
+		expectedPreviewFingerprint: string;
+		afterPath?: string;
+	}): Promise<{ items: CloudFolderExportItem[]; nextPath: string | null }>;
 	prepareCloudFolderMove(args: {
 		operationKey: string;
 		folderId: string;
@@ -224,6 +250,7 @@ export interface SyncBackend {
 		sourceFingerprint: string;
 		destinationFingerprint: string;
 		expectedAudienceFingerprint: string;
+		requestedShares?: AuthorityRequestedShare[];
 	}): Promise<PrepareGitFolderMoveResult>;
 	stageAuthorityFolderBatch(args: {
 		transferId: string;

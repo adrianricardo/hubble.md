@@ -161,8 +161,13 @@ async function scanFolder(input: {
 	nestedAuthorityRoots: string[];
 }): Promise<ScanResult> {
 	const files: ScannedFile[] = [];
-	const exclusions: AuthorityManifestExclusion[] = [];
 	const nestedRoots = input.nestedAuthorityRoots.map(normalizeAbsolute);
+	const exclusions: AuthorityManifestExclusion[] = nestedRoots.map((root) =>
+		exclusion(
+			toGitPath(path.relative(input.sourcePath, root)),
+			"nested-authority",
+		),
+	);
 
 	const visit = async (directory: string): Promise<void> => {
 		const entries = await fs.readdir(directory, { withFileTypes: true });
@@ -172,7 +177,6 @@ async function scanFolder(input: {
 				path.relative(input.sourcePath, absolutePath),
 			);
 			if (nestedRoots.some((root) => absolutePath === root)) {
-				exclusions.push(exclusion(relativePath, "nested-authority"));
 				continue;
 			}
 			const stat = await fs.lstat(absolutePath);

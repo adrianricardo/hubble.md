@@ -166,6 +166,8 @@ function fakeBackend(
 	};
 	return {
 		getCloudFolderMovePreview: notImpl,
+		getCloudFolderExportCopyPreview: notImpl,
+		getCloudFolderExportCopyBatch: notImpl,
 		prepareCloudFolderMove: notImpl,
 		getCloudFolderExportBatch: notImpl,
 		archiveAuthorityFolder: notImpl,

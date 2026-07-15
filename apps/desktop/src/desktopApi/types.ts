@@ -1,6 +1,7 @@
 import type {
 	AuthorityManifest,
 	AuthorityManifestSummary,
+	AuthorityRequestedShare,
 	LiveDocumentImportResult,
 	PendingProjectionOperation,
 	ProjectionScope,
@@ -75,7 +76,7 @@ export type AuthorityTransferPhase =
 export type AuthorityTransferOperation = {
 	id: string;
 	direction: "git-to-cloud" | "cloud-to-git";
-	intent: "move" | "share";
+	intent: "move" | "share" | "export-copy";
 	phase: AuthorityTransferPhase;
 	source:
 		| { kind: "git"; repoRoot: string; relativePath: string }
@@ -101,6 +102,8 @@ export type AuthorityTransferOperation = {
 	destinationWasEmpty?: boolean;
 	completionFingerprint?: string | null;
 	sourcePlacement?: FolderAuthorityPlacement | null;
+	requestedShares?: AuthorityRequestedShare[];
+	audienceFingerprint?: string | null;
 	lastError: string | null;
 	createdAt: number;
 	updatedAt: number;
@@ -153,6 +156,7 @@ export type GitToCloudAuthorityMoveInput = {
 	expectedPreviewFingerprint: string;
 	expectedAudienceFingerprint: string;
 	intent: "move" | "share";
+	requestedShares?: AuthorityRequestedShare[];
 };
 
 export type GitToCloudAuthorityMoveResult =
@@ -180,6 +184,7 @@ export type CloudToGitAuthorityMoveInput = {
 	authToken: string;
 	expectedCloudPreviewFingerprint: string;
 	expectedDestinationFingerprint: string;
+	intent: "move" | "export-copy";
 };
 
 export type CloudToGitAuthorityMoveResult =
@@ -187,8 +192,9 @@ export type CloudToGitAuthorityMoveResult =
 			status: "completed";
 			repoRoot: string;
 			destinationPath: string;
-			archiveFingerprint: string;
+			archiveFingerprint: string | null;
 			undoEligible: boolean;
+			cloudArchived: boolean;
 			workingTreeChanges: GitWorkingTreeChange[];
 	  }
 	| {
@@ -528,21 +534,6 @@ export type SyncedFolderImportInput = {
 	authToken: string;
 };
 
-export type CloudMarkdownImportInput = {
-	sourcePath: string;
-	deploymentUrl: string;
-	authToken: string;
-	workspaceId: string;
-	folderId?: string;
-	idempotencyKey: string;
-	mode: "copy" | "move";
-};
-
-export type CloudMarkdownImportResult = {
-	documentId: string;
-	connectedPath: string | null;
-};
-
 /** Pushed to the renderer over `desktop:live-sync:event` as the mirror changes. */
 export type ProjectionRootScope = {
 	scopeKey: string;
@@ -702,9 +693,6 @@ export type DesktopApi = {
 	importSyncedFolderMarkdown(
 		input: SyncedFolderImportInput,
 	): Promise<LiveDocumentImportResult>;
-	importMarkdownFile(
-		input: CloudMarkdownImportInput,
-	): Promise<CloudMarkdownImportResult>;
 	disconnectSyncedFolder(): Promise<SyncedFolderStatus>;
 	getSyncedFolderStatus(): Promise<SyncedFolderStatus>;
 	listPendingProjectionOperations(): Promise<PendingProjectionOperation[]>;

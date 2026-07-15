@@ -46,6 +46,7 @@ async function fixture() {
 			markdownCount: 1,
 			assetCount: 1,
 			totalBytes: Buffer.byteLength(markdown) + asset.byteLength,
+			excludedAuthorityRoots: [],
 			items: [
 				{
 					kind: "markdown",
@@ -164,10 +165,134 @@ function input(repoRoot: string): CloudToGitAuthorityMoveInput {
 		authToken: "token",
 		expectedCloudPreviewFingerprint: "cloud-preview-1",
 		expectedDestinationFingerprint: "git-preview-1",
+		intent: "move",
 	};
 }
 
 describe("CloudToGitAuthorityMoveCoordinator", () => {
+	test("exports a verified detached copy without archiving cloud authority", async () => {
+		const setup = await fixture();
+		const cloud = backend(setup.preview, setup.asset);
+		cloud.getCloudFolderExportCopyPreview = vi.fn(async () => ({
+			root: setup.preview.root,
+			manifest: setup.preview.manifest,
+			history: setup.preview.history,
+			previewFingerprint: setup.preview.previewFingerprint,
+		}));
+		cloud.getCloudFolderExportCopyBatch = vi.fn(async () => ({
+			items: [
+				{
+					...setup.preview.manifest.items[0],
+					kind: "markdown" as const,
+					documentId: "document-1",
+					markdown: "# Cloud source\n",
+				},
+				{
+					...setup.preview.manifest.items[1],
+					kind: "asset" as const,
+					storageId: "storage-1",
+					downloadUrl: "https://assets.example/image.png",
+				},
+			],
+			nextPath: null,
+		}));
+		const coordinator = new CloudToGitAuthorityMoveCoordinator({
+			backend: cloud,
+			transferStore: setup.transferStore,
+			placementStore: setup.placementStore,
+			inspectDestination: vi.fn(async () => setup.destination),
+			fetchBytes: vi.fn(async () => setup.asset),
+		});
+
+		const result = await coordinator.move({
+			...input(setup.repoRoot),
+			intent: "export-copy",
+		});
+
+		expect(result).toMatchObject({
+			status: "completed",
+			cloudArchived: false,
+			archiveFingerprint: null,
+		});
+		expect(cloud.prepareCloudFolderMove).not.toHaveBeenCalled();
+		expect(cloud.archiveAuthorityFolder).not.toHaveBeenCalled();
+		expect(
+			await fs.readFile(
+				path.join(setup.destination.destinationPath, "guide/readme.md"),
+				"utf8",
+			),
+		).toBe("# Cloud source\n");
+	});
+
+	test("finalizes a placed export copy after relaunch without exporting again", async () => {
+		const setup = await fixture();
+		const cloud = backend(setup.preview, setup.asset);
+		cloud.getCloudFolderExportCopyPreview = vi.fn(async () => ({
+			root: setup.preview.root,
+			manifest: setup.preview.manifest,
+			history: setup.preview.history,
+			previewFingerprint: setup.preview.previewFingerprint,
+		}));
+		cloud.getCloudFolderExportCopyBatch = vi.fn();
+		await fs.mkdir(path.join(setup.destination.destinationPath, "guide"), {
+			recursive: true,
+		});
+		await fs.writeFile(
+			path.join(setup.destination.destinationPath, "guide/readme.md"),
+			setup.markdown,
+		);
+		await fs.mkdir(
+			path.join(setup.destination.destinationPath, "guide/readme.assets"),
+			{ recursive: true },
+		);
+		await fs.writeFile(
+			path.join(
+				setup.destination.destinationPath,
+				"guide/readme.assets/image.png",
+			),
+			setup.asset,
+		);
+		await setup.transferStore.upsert({
+			id: "operation-cloud-1",
+			direction: "cloud-to-git",
+			intent: "export-copy",
+			phase: "cutting-over",
+			source: {
+				kind: "cloud",
+				workspaceId: "workspace-1",
+				folderId: "cloud-folder-1",
+			},
+			destination: {
+				kind: "git",
+				repoRoot: setup.repoRoot,
+				relativePath: "notes",
+			},
+			manifestSummary: null,
+			manifestHash: "manifest-1",
+			previewFingerprint: "cloud-preview-1",
+			destinationPreviewFingerprint: "git-preview-1",
+			lastError: null,
+			createdAt: 1,
+			updatedAt: 1,
+		});
+		const coordinator = new CloudToGitAuthorityMoveCoordinator({
+			backend: cloud,
+			transferStore: setup.transferStore,
+			placementStore: setup.placementStore,
+			inspectDestination: vi.fn(async () => setup.destination),
+		});
+
+		const result = await coordinator.move({
+			...input(setup.repoRoot),
+			intent: "export-copy",
+		});
+
+		expect(result).toMatchObject({ status: "completed", cloudArchived: false });
+		expect(cloud.getCloudFolderExportCopyBatch).not.toHaveBeenCalled();
+		expect(cloud.archiveAuthorityFolder).not.toHaveBeenCalled();
+		expect((await setup.transferStore.list())[0]?.phase).toBe("completed");
+	});
+
 	test("exports exact bytes before archive and leaves uncommitted Git files", async () => {
 		const setup = await fixture();
 		const cloud = backend(setup.preview, setup.asset);

@@ -23,6 +23,7 @@ export type {
 	AgentDocument,
 	AgentPatchIntent,
 	AuthorityAudienceEntry,
+	AuthorityRequestedShare,
 	AuthorityStageItem,
 	CloudFolderExportItem,
 	CloudFolderMovePreview,

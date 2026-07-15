@@ -3,30 +3,30 @@
 Build state and current next step. Track strategy lives in
 `brain/synthesized/track-strategy.md`.
 
-## ➔ CURRENT NEXT STEP (updated 2026-07-15, authority Milestone 5 paused in progress)
+## ➔ CURRENT NEXT STEP (updated 2026-07-15, authority code milestones complete)
 
-Resume the uncommitted Milestone 5 worktree and finish
-`specs/folder-authority-mobility/TECH.md` Milestone 5. The current draft names and
-excludes nested opposite-authority roots, carries normalized Share recipients through
-the reviewed audience fingerprint and atomic activation, adds a reader-authorized
-detached Git export distinct from manage-authorized authority moves, adds durable
-relaunch/offline resume UI, and adds reduced-motion/live-region hardening. Focused
-checks passed before the stopping request: sync-backend 86/86, Convex-client 3/3,
-cloud UI 10/10, and desktop 214/214. The frozen workspace install was restored after
-the root dependency links disappeared. Later recovery edits have not yet received the
-full milestone gate, so none of this draft is committed or claimed complete.
+Run the selective folder-authority packaged acceptance gate from
+`specs/folder-authority-mobility/TECH.md` Milestone 5 before removing legacy
+universal-cloud compatibility. Use a production-configured packaged desktop profile
+and scratch Git repositories for the non-mutating navigation, disclosure, relaunch,
+keyboard, VoiceOver, and reduced-motion matrix. Real move/share/export cutovers require
+fresh authorization for explicitly expendable non-production cloud fixtures; the
+completed implementation task prohibited cloud fixture mutation, so that evidence is
+not claimed.
 
-Start by reviewing the full dirty diff and running changed-file Biome plus the focused
-authority suites again. Then finish/test interrupted detached-export resume and the
-global recovery notice; complete the move/share/export completion actions (including
-reverse guidance and cloud Share management); verify recovery/archive-copy language,
-screen-reader announcements, keyboard focus, and reduced motion; remove remaining
-legacy universal-cloud prompts/import assumptions only after parity; run `pnpm check`
-and `pnpm build:desktop`; perform all non-mutating packaged acceptance available on
-this host; update this roadmap and the activity log; then commit Milestone 5 as one
-coherent verified commit. Expendable-cloud cutover acceptance remains blocked by the
-explicit no-cloud-fixture-mutation constraint and must not be attempted without fresh
-authorization. Do not deploy, push, or open a PR.
+The code/test milestone now names and excludes nested opposite-authority roots,
+fingerprints and atomically applies carried Share recipients, separates manage-only
+authority moves from reader-safe detached Git exports, resumes non-draft interrupted
+moves/exports after relaunch, disables retry offline, distinguishes retained archives
+from still-active cloud copies, and hardens literal announcements/focus/reduced motion.
+Automated validation passes sync-backend 86/86, sync 58/58, Convex-client 3/3, cloud
+UI 10/10, desktop 215/215, changed-file Biome, diff checks, and
+`pnpm build:desktop`. Repository-wide `pnpm check` continues to report only unrelated
+pre-existing formatting diagnostics and storyboard warnings. The direct Electron
+wrapper exits before CDP is available on this host, while the in-app browser helper is
+blocked by macOS code-signature validation, so packaged interaction evidence remains
+the honest next gate. Do not deploy, push, open a PR, or mutate cloud fixtures without
+new scope.
 
 Milestone 4 adds authoritative cloud Markdown/asset manifests, inherited access and
 public-link consequences, Hubble revision counts, archive fingerprints, active-only

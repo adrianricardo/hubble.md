@@ -814,3 +814,19 @@ acceptance roots. Desktop tests pass 166/166 and `pnpm build:desktop` passes. Mi
   simplify/comments/review-readiness, legacy cleanup, and milestone commit remain.
   The roadmap now names the exact restart sequence. No cloud fixture, deployment,
   push, or PR was changed.
+- 2026-07-15 — Completed selective folder authority TECH Milestone 5 at automated
+  code/test/build scope. Nested Git/cloud roots remain independent and are named in
+  previews; Share recipients and roles are covered by the audience fingerprint and
+  atomic activation; readable non-managers receive a detached verified Git export
+  instead of authority-moving controls; and non-draft moves/exports expose offline-safe
+  relaunch recovery, including an export interrupted after atomic placement. The UI
+  now distinguishes active cloud copies from recoverable archives and adds literal
+  progress/completion announcements plus reduced-motion transitions. Sync-backend
+  tests pass 86/86, sync 58/58, Convex-client 3/3, cloud UI 10/10, desktop 215/215,
+  changed-file Biome/diff checks pass, and `pnpm build:desktop` passes after
+  simplify/comments/review-readiness. Repository-wide `pnpm check` remains blocked
+  only by unrelated pre-existing formatting diagnostics and storyboard warnings.
+  Packaged interaction/cutover parity remains the next gate because Electron/CDP and
+  the in-app browser helper are unavailable on this host and the task explicitly
+  prohibited cloud fixture mutation. No deployment, push, PR, or cloud fixture was
+  changed.

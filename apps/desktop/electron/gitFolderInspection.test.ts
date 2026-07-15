@@ -121,6 +121,43 @@ describe("git folder inspection", () => {
 		);
 	});
 
+	it("names a cloud boundary even when no projected directory exists", async () => {
+		const root = await fixture();
+		const selected = path.join(root, "notes");
+		await mkdir(selected);
+		await writeFile(path.join(selected, "plan.md"), "Plan\n");
+		const runGit: ReadOnlyGitRunner = vi.fn(async (_cwd, args) => {
+			if (args[0] === "rev-parse") return `${root}\n`;
+			if (args[0] === "ls-files") return "notes/plan.md\0";
+			if (args[0] === "check-ignore" || args[0] === "status") return "";
+			throw new Error("Unexpected Git command");
+		});
+
+		const result = await inspectGitFolder(
+			selected,
+			[
+				{
+					id: "nested-cloud",
+					repoRoot: root,
+					relativePath: "notes/cloud-project",
+					workspaceId: "workspace-1",
+					cloudFolderId: "folder-1",
+					formerGitFingerprint: "old",
+					projection: null,
+					createdAt: 1,
+					updatedAt: 1,
+				},
+			],
+			runGit,
+		);
+
+		expect(result.manifest.exclusions).toContainEqual({
+			relativePath: "cloud-project",
+			reason: "nested-authority",
+			blocking: false,
+		});
+	});
+
 	it("reports occupied destinations without writing them", async () => {
 		const root = await fixture();
 		await mkdir(path.join(root, "existing"));

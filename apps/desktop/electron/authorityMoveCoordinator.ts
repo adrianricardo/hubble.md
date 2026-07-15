@@ -180,6 +180,8 @@ export class AuthorityMoveCoordinator {
 			manifestSummary: inspection.manifest.summary,
 			manifestHash: inspection.manifest.manifestHash,
 			previewFingerprint: inspection.previewFingerprint,
+			requestedShares: input.requestedShares ?? [],
+			audienceFingerprint: input.expectedAudienceFingerprint,
 			lastError: null,
 			createdAt: now,
 			updatedAt: now,
@@ -207,6 +209,7 @@ export class AuthorityMoveCoordinator {
 				sourceFingerprint: inspection.previewFingerprint,
 				destinationFingerprint,
 				expectedAudienceFingerprint: input.expectedAudienceFingerprint,
+				requestedShares: input.requestedShares ?? [],
 			});
 			operation = {
 				...operation,

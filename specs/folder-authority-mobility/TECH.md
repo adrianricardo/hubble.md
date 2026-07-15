@@ -446,6 +446,30 @@ acceptance. No deployment is required for this local milestone.
 4. Remove legacy universal-cloud prompts/import assumptions and compatibility APIs
    only after packaged parity.
 
+**Code/test completion — 2026-07-15.** Opposite-authority descendants are now named
+and excluded by stable placement/folder boundaries. The Share journey carries
+normalized recipients and roles through the reviewed audience fingerprint and applies
+known-user folder shares or pending invites in the same activation mutation. Users
+with folder-manage access retain the authority move; readable guests instead receive
+a detached, byte-verified Git export that leaves cloud authority, history, access,
+links, and placement unchanged. The local journal exposes non-draft interrupted work
+after relaunch, keeps retry disabled offline, and resumes move/export cutovers,
+including an export interrupted after atomic placement. Recovery/archive retention
+copy, live regions, explicit text consequences, focus return, and reduced-motion
+transitions are hardened.
+
+Automated validation passes sync-backend 86/86, sync 58/58, Convex-client 3/3,
+cloud UI 10/10, desktop 215/215, changed-file Biome, `git diff --check`, and
+`pnpm build:desktop`. Repository-wide `pnpm check` still fails only on unrelated
+pre-existing formatting diagnostics in editor/sync/backend test/config/lock files and
+warnings in the historical storyboard. The direct Electron wrapper still exits before
+exposing CDP on this host, and the installed in-app browser helper is rejected by
+macOS code-signature validation. Therefore packaged keyboard/VoiceOver/cross-surface
+acceptance and real cutovers remain an explicit gate. The task prohibits expendable
+cloud fixture mutation, so no live move/share/export was attempted. Legacy
+universal-cloud compatibility remains in place until that packaged parity gate passes,
+as required by step 4; it is not silently removed on automated evidence alone.
+
 ## PRODUCT invariant mapping
 
 | Invariant | Implementation proof |

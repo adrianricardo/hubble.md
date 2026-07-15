@@ -72,6 +72,21 @@ export function createConvexBackend(
 				folderId: folderId as Id<"folders">,
 			});
 		},
+		async getCloudFolderExportCopyPreview(folderId) {
+			return client.query(
+				api.authorityTransfers.getCloudFolderExportCopyPreview,
+				{ folderId: folderId as Id<"folders"> },
+			);
+		},
+		async getCloudFolderExportCopyBatch(args) {
+			return client.query(
+				api.authorityTransfers.getCloudFolderExportCopyBatch,
+				{
+					...args,
+					folderId: args.folderId as Id<"folders">,
+				},
+			);
+		},
 		async prepareCloudFolderMove(args) {
 			return client.mutation(api.authorityTransfers.prepareCloudFolderMove, {
 				...args,

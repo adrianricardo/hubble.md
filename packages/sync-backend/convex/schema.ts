@@ -179,6 +179,18 @@ export default defineSchema({
 		sourceFingerprint: v.string(),
 		destinationFingerprint: v.string(),
 		audienceFingerprint: v.string(),
+		requestedShares: v.optional(
+			v.array(
+				v.object({
+					email: v.string(),
+					role: v.union(
+						v.literal("editor"),
+						v.literal("commenter"),
+						v.literal("viewer"),
+					),
+				}),
+			),
+		),
 		operationFingerprint: v.string(),
 		cutoverToken: v.optional(v.string()),
 		recoveryState: v.union(

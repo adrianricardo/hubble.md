@@ -3,6 +3,7 @@ import {
 	canConfirmCloudToGit,
 	canConfirmGitToCloud,
 	displayFolderName,
+	parseShareRecipients,
 	previewChanged,
 	safeGitFolderName,
 } from "./authorityMovePreviewModel";
@@ -37,6 +38,7 @@ describe("authority move preview helpers", () => {
 			authReady: true,
 			stale: false,
 			busy: false,
+			shareIntentReady: true,
 		};
 		expect(canConfirmGitToCloud(ready)).toBe(true);
 		for (const key of [
@@ -54,6 +56,21 @@ describe("authority move preview helpers", () => {
 		);
 		expect(canConfirmGitToCloud({ ...ready, stale: true })).toBe(false);
 		expect(canConfirmGitToCloud({ ...ready, busy: true })).toBe(false);
+	});
+
+	it("normalizes and validates carried Share recipients", () => {
+		expect(
+			parseShareRecipients(
+				" Ada@Example.com, invalid, ada@example.com\nlin@example.com ",
+				"editor",
+			),
+		).toEqual({
+			shares: [
+				{ email: "ada@example.com", role: "editor" },
+				{ email: "lin@example.com", role: "editor" },
+			],
+			invalid: ["invalid"],
+		});
 	});
 
 	it("requires current cloud and Git previews before moving to Git", () => {

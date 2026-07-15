@@ -80,7 +80,10 @@ async function existingFilePaths(root: string): Promise<string[]> {
 	return paths.sort();
 }
 
-async function verifyExport(root: string, preview: CloudFolderMovePreview) {
+async function verifyExport(
+	root: string,
+	preview: Pick<CloudFolderMovePreview, "manifest">,
+) {
 	const expectedPaths = preview.manifest.items
 		.map((item) => item.relativePath)
 		.sort();
@@ -275,6 +278,32 @@ export class CloudToGitAuthorityMoveCoordinator {
 			throw new Error("Operation direction does not match cloud-to-Git move");
 		}
 		if (
+			input.intent === "export-copy" &&
+			prior?.intent === "export-copy" &&
+			(prior.phase === "cutting-over" ||
+				prior.phase === "needs-attention" ||
+				prior.phase === "completed")
+		) {
+			try {
+				const resumed = await this.#resumeExportCopy(prior);
+				if (resumed) return resumed;
+			} catch (cause) {
+				const message = cause instanceof Error ? cause.message : String(cause);
+				await this.#transferStore.upsert({
+					...prior,
+					phase: "needs-attention",
+					lastError: message,
+					updatedAt: this.#now(),
+				});
+				return {
+					status: "needs-attention",
+					message,
+					temporaryPath: prior.temporaryPath ?? null,
+				};
+			}
+		}
+		if (
+			input.intent === "move" &&
 			prior?.cloudTransferId &&
 			prior.destination?.kind === "git" &&
 			prior.previewFingerprint &&
@@ -300,7 +329,9 @@ export class CloudToGitAuthorityMoveCoordinator {
 		}
 
 		const [preview, destination] = await Promise.all([
-			this.#backend.getCloudFolderMovePreview(input.cloudFolderId),
+			input.intent === "export-copy"
+				? this.#backend.getCloudFolderExportCopyPreview(input.cloudFolderId)
+				: this.#backend.getCloudFolderMovePreview(input.cloudFolderId),
 			this.#inspectDestination({
 				repositoryPath: input.repositoryPath,
 				relativePath: input.relativePath,
@@ -327,7 +358,7 @@ export class CloudToGitAuthorityMoveCoordinator {
 		let operation: AuthorityTransferOperation = {
 			id: input.operationId,
 			direction: "cloud-to-git",
-			intent: "move",
+			intent: input.intent,
 			phase: "validating",
 			source: {
 				kind: "cloud",
@@ -364,6 +395,47 @@ export class CloudToGitAuthorityMoveCoordinator {
 		await this.#transferStore.upsert(operation);
 
 		try {
+			if (input.intent === "export-copy") {
+				operation = {
+					...operation,
+					phase: "staging",
+					updatedAt: this.#now(),
+				};
+				await this.#transferStore.upsert(operation);
+				await this.#exportCopy(
+					input.cloudFolderId,
+					preview.previewFingerprint,
+					operation.temporaryPath as string,
+				);
+				operation = {
+					...operation,
+					phase: "verifying",
+					updatedAt: this.#now(),
+				};
+				await this.#transferStore.upsert(operation);
+				await verifyExport(operation.temporaryPath as string, preview);
+				const currentPreview =
+					await this.#backend.getCloudFolderExportCopyPreview(
+						input.cloudFolderId,
+					);
+				const currentDestination = await this.#inspectDestination({
+					repositoryPath: destination.repoRoot,
+					relativePath: destination.relativePath,
+				});
+				if (
+					currentPreview.previewFingerprint !== preview.previewFingerprint ||
+					currentDestination.previewFingerprint !==
+						destination.previewFingerprint ||
+					currentDestination.collision !== "empty"
+				) {
+					return {
+						status: "stale",
+						cloudPreviewFingerprint: currentPreview.previewFingerprint,
+						destination: currentDestination,
+					};
+				}
+				return this.#placeExportCopy(operation, destination);
+			}
 			const prepared = await this.#backend.prepareCloudFolderMove({
 				operationKey: input.operationId,
 				folderId: input.cloudFolderId,
@@ -421,6 +493,30 @@ export class CloudToGitAuthorityMoveCoordinator {
 		}
 	}
 
+	async #exportCopy(
+		folderId: string,
+		expectedPreviewFingerprint: string,
+		temporaryPath: string,
+	) {
+		const existing = await fs.lstat(temporaryPath).catch(() => null);
+		if (existing && !existing.isDirectory()) {
+			throw new Error("Authority transfer temporary path is occupied");
+		}
+		await fs.mkdir(temporaryPath, { recursive: true });
+		let afterPath: string | undefined;
+		for (let page = 0; page < 129; page++) {
+			const batch = await this.#backend.getCloudFolderExportCopyBatch({
+				folderId,
+				expectedPreviewFingerprint,
+				afterPath,
+			});
+			await this.#writeExportBatch(batch.items, temporaryPath);
+			if (!batch.nextPath) return;
+			afterPath = batch.nextPath;
+		}
+		throw new Error("Cloud export exceeded its bounded page count");
+	}
+
 	async #export(transferId: string, temporaryPath: string) {
 		const existing = await fs.lstat(temporaryPath).catch(() => null);
 		if (existing && !existing.isDirectory()) {
@@ -433,24 +529,79 @@ export class CloudToGitAuthorityMoveCoordinator {
 				transferId,
 				afterPath,
 			});
-			for (const item of batch.items) {
-				const destination = safeItemPath(temporaryPath, item.relativePath);
-				await fs.mkdir(path.dirname(destination), { recursive: true });
-				let bytes: Uint8Array;
-				if (item.kind === "markdown") {
-					bytes = new TextEncoder().encode(item.markdown);
-				} else {
-					if (!item.downloadUrl) {
-						throw new Error(`Cloud asset is unavailable: ${item.relativePath}`);
-					}
-					bytes = await this.#fetchBytes(item.downloadUrl);
-				}
-				await fs.writeFile(destination, bytes);
-			}
+			await this.#writeExportBatch(batch.items, temporaryPath);
 			if (!batch.nextPath) return;
 			afterPath = batch.nextPath;
 		}
 		throw new Error("Cloud export exceeded its bounded page count");
+	}
+
+	async #writeExportBatch(
+		items: Awaited<
+			ReturnType<SyncBackend["getCloudFolderExportBatch"]>
+		>["items"],
+		temporaryPath: string,
+	) {
+		for (const item of items) {
+			const destination = safeItemPath(temporaryPath, item.relativePath);
+			await fs.mkdir(path.dirname(destination), { recursive: true });
+			let bytes: Uint8Array;
+			if (item.kind === "markdown") {
+				bytes = new TextEncoder().encode(item.markdown);
+			} else {
+				if (!item.downloadUrl) {
+					throw new Error(`Cloud asset is unavailable: ${item.relativePath}`);
+				}
+				bytes = await this.#fetchBytes(item.downloadUrl);
+			}
+			await fs.writeFile(destination, bytes);
+		}
+	}
+
+	async #placeExportCopy(
+		operation: AuthorityTransferOperation,
+		destination: GitDestinationInspection,
+	): Promise<CloudToGitAuthorityMoveResult> {
+		if (!operation.temporaryPath) {
+			throw new Error(
+				"Cloud export copy is missing its verified temporary tree",
+			);
+		}
+		operation = { ...operation, phase: "cutting-over", updatedAt: this.#now() };
+		await this.#transferStore.upsert(operation);
+		if (destination.destinationExists)
+			await fs.rmdir(destination.destinationPath);
+		await fs.mkdir(path.dirname(destination.destinationPath), {
+			recursive: true,
+		});
+		await fs.rename(operation.temporaryPath, destination.destinationPath);
+		const completionFingerprint = await directoryFingerprint(
+			destination.destinationPath,
+		);
+		await fs.rm(path.dirname(operation.temporaryPath), {
+			recursive: true,
+			force: true,
+		});
+		await this.#transferStore.upsert({
+			...operation,
+			phase: "completed",
+			completionFingerprint,
+			lastError: null,
+			updatedAt: this.#now(),
+		});
+		const completionInspection = await this.#inspectDestination({
+			repositoryPath: destination.repoRoot,
+			relativePath: destination.relativePath,
+		}).catch(() => null);
+		return {
+			status: "completed",
+			repoRoot: destination.repoRoot,
+			destinationPath: destination.destinationPath,
+			archiveFingerprint: null,
+			undoEligible: false,
+			cloudArchived: false,
+			workingTreeChanges: completionInspection?.workingTreeChanges ?? [],
+		};
 	}
 
 	async #cutOver(
@@ -523,6 +674,7 @@ export class CloudToGitAuthorityMoveCoordinator {
 			destinationPath: destination.destinationPath,
 			archiveFingerprint: archived.archiveFingerprint,
 			undoEligible: true,
+			cloudArchived: true,
 			workingTreeChanges: completionInspection?.workingTreeChanges ?? [],
 		};
 	}
@@ -587,6 +739,56 @@ export class CloudToGitAuthorityMoveCoordinator {
 			destinationPath,
 			archiveFingerprint: archived.archiveFingerprint,
 			undoEligible: true,
+			cloudArchived: true,
+			workingTreeChanges: completionInspection?.workingTreeChanges ?? [],
+		};
+	}
+
+	async #resumeExportCopy(
+		operation: AuthorityTransferOperation,
+	): Promise<CloudToGitAuthorityMoveResult | null> {
+		if (
+			operation.intent !== "export-copy" ||
+			operation.source.kind !== "cloud" ||
+			operation.destination?.kind !== "git" ||
+			!operation.previewFingerprint
+		) {
+			return null;
+		}
+		const destinationPath = path.join(
+			operation.destination.repoRoot,
+			operation.destination.relativePath,
+		);
+		const destinationExists = await fs
+			.lstat(destinationPath)
+			.then((stat) => stat.isDirectory())
+			.catch(() => false);
+		if (!destinationExists) return null;
+		const preview = await this.#backend.getCloudFolderExportCopyPreview(
+			operation.source.folderId,
+		);
+		if (preview.previewFingerprint !== operation.previewFingerprint)
+			return null;
+		await verifyExport(destinationPath, preview);
+		const completionFingerprint = await directoryFingerprint(destinationPath);
+		await this.#transferStore.upsert({
+			...operation,
+			phase: "completed",
+			completionFingerprint,
+			lastError: null,
+			updatedAt: this.#now(),
+		});
+		const completionInspection = await this.#inspectDestination({
+			repositoryPath: operation.destination.repoRoot,
+			relativePath: operation.destination.relativePath,
+		}).catch(() => null);
+		return {
+			status: "completed",
+			repoRoot: operation.destination.repoRoot,
+			destinationPath,
+			archiveFingerprint: null,
+			undoEligible: false,
+			cloudArchived: false,
 			workingTreeChanges: completionInspection?.workingTreeChanges ?? [],
 		};
 	}

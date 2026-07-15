@@ -38,7 +38,6 @@ import type {
 	AuthorityTransferOperation,
 	CancelCloudToGitAuthorityMoveInput,
 	CancelGitToCloudAuthorityMoveInput,
-	CloudMarkdownImportInput,
 	CloudToGitAuthorityMoveInput,
 	DesktopUpdateState,
 	DirectoryListing,
@@ -590,15 +589,6 @@ async function saveGrants() {
 	);
 }
 
-const cloudMarkdownImportSchema = z.object({
-	sourcePath: z.string().min(1),
-	deploymentUrl: z.string().min(1),
-	authToken: z.string().min(1),
-	workspaceId: z.string().min(1),
-	folderId: z.string().min(1).optional(),
-	idempotencyKey: z.string().min(1),
-	mode: z.enum(["copy", "move"]),
-});
 
 const gitToCloudAuthorityMoveSchema = z.object({
 	operationId: z.string().min(1),
@@ -626,6 +616,7 @@ const cloudToGitAuthorityMoveSchema = z.object({
 	authToken: authTokenSchema,
 	expectedCloudPreviewFingerprint: z.string().min(1),
 	expectedDestinationFingerprint: z.string().min(1),
+	intent: z.enum(["move", "export-copy"]),
 });
 const cancelCloudToGitAuthorityMoveSchema = z.object({
 	operationId: z.string().min(1),
@@ -739,68 +730,6 @@ async function projectionForImport(
 				scopeKey: mount.scopeKey,
 			}
 		: null;
-}
-
-async function performCloudMarkdownImport(input: CloudMarkdownImportInput) {
-	const parsed = cloudMarkdownImportSchema.parse(input);
-	const sourcePath = assertGranted(parsed.sourcePath);
-	if (!/\.(md|markdown|mdown)$/i.test(sourcePath)) {
-		throw new Error("Hubble can bring in Markdown files only");
-	}
-	const markdown = await fs.readFile(sourcePath, "utf8");
-	assertLiveDocumentMarkdownWithinCap(markdown, "Markdown file");
-	const backend = createConvexBackend(parsed.deploymentUrl, parsed.authToken);
-	const projection = await projectionForImport(
-		backend,
-		parsed.workspaceId,
-		parsed.folderId,
-	);
-	if (parsed.mode === "move" && !projection) {
-		throw new Error(
-			"Make this destination available on this computer before moving the source. Import a copy works without local availability.",
-		);
-	}
-	const fileName = path.basename(sourcePath);
-	const imported = await backend.importLiveDocument({
-		workspaceId: parsed.workspaceId,
-		folderId: parsed.folderId,
-		path: fileName,
-		title: path.basename(fileName, path.extname(fileName)),
-		markdown,
-		idempotencyKey: parsed.idempotencyKey,
-		actor: "desktop-import",
-	});
-	if (projection?.kind === "all-accessible") {
-		await projectionManager.refreshWholeWorkspace();
-	} else if (projection) {
-		await projectionManager.refreshMount(projection.scopeKey);
-	}
-	const connectedPath = projectionManager.findDocumentPath(imported.documentId);
-	if (connectedPath) {
-		const cloudDocument = await backend.getDocumentForAgent(
-			imported.documentId,
-		);
-		const materialized = await fs.readFile(connectedPath, "utf8");
-		if (!cloudDocument || materialized !== cloudDocument.markdown) {
-			throw new Error(
-				"Hubble created the cloud document but could not verify its connected local copy. The source was left untouched.",
-			);
-		}
-	}
-	if (parsed.mode === "move") {
-		if (!connectedPath) {
-			throw new Error(
-				"Hubble created the cloud document but could not verify its connected local copy. The source was left untouched.",
-			);
-		}
-		if (path.resolve(connectedPath) !== path.resolve(sourcePath)) {
-			await fs.rm(sourcePath);
-		}
-	}
-	return {
-		documentId: imported.documentId,
-		connectedPath,
-	};
 }
 
 async function assertLocalAvailabilityAvailable(
@@ -2967,12 +2896,6 @@ function registerIpc() {
 				actor: "synced-folder-first-run-import",
 			});
 		},
-	);
-
-	ipcMain.handle(
-		"desktop:cloud:import-markdown",
-		(_event, input: CloudMarkdownImportInput) =>
-			performCloudMarkdownImport(input),
 	);
 
 	ipcMain.handle("desktop:live-sync:disconnect-folder", async () => {

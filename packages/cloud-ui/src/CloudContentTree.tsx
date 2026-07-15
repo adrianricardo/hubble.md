@@ -28,6 +28,7 @@ export type CloudTreeCapabilities = {
 	canWriteFolder: (folderId: string) => boolean;
 	canShareFolder: (folderId: string) => boolean;
 	canMoveFolderToGit?: (folderId: string) => boolean;
+	canExportFolderCopy?: (folderId: string) => boolean;
 };
 
 export type CloudTreeCreateAction = "create-document" | "create-folder";
@@ -39,6 +40,7 @@ export type CloudTreeAction =
 	| "trash"
 	| "share"
 	| "move-to-git"
+	| "export-copy"
 	| "reveal-local"
 	| "copy-local-path"
 	| "relocate-local"
@@ -159,6 +161,8 @@ export function cloudTreeActions(
 	}
 	if (capabilities.canShareFolder(node.id)) actions.push("share");
 	if (capabilities.canMoveFolderToGit?.(node.id)) actions.push("move-to-git");
+	else if (capabilities.canExportFolderCopy?.(node.id))
+		actions.push("export-copy");
 	if (hasDirectLocalAvailability) {
 		actions.push(
 			"reveal-local",
@@ -352,6 +356,7 @@ export function CloudContentTree({
 	onRequestTrash,
 	onRequestShareFolder,
 	onRequestMoveFolderToGit,
+	onRequestExportFolderCopy,
 	localFolders = [],
 	onRevealLocalFolder,
 	onCopyLocalPath,
@@ -371,6 +376,7 @@ export function CloudContentTree({
 	onRequestTrash?: (target: CloudTreeActionTarget) => void;
 	onRequestShareFolder?: (target: CloudTreeActionTarget) => void;
 	onRequestMoveFolderToGit?: (target: CloudTreeActionTarget) => void;
+	onRequestExportFolderCopy?: (target: CloudTreeActionTarget) => void;
 	localFolders?: readonly CloudFolderAvailability[];
 	onRevealLocalFolder?: (availability: CloudFolderAvailability) => void;
 	onCopyLocalPath?: (availability: CloudFolderAvailability) => void;
@@ -704,6 +710,8 @@ export function CloudContentTree({
 									return onRequestShareFolder !== undefined;
 								case "move-to-git":
 									return onRequestMoveFolderToGit !== undefined;
+								case "export-copy":
+									return onRequestExportFolderCopy !== undefined;
 								case "reveal-local":
 									return onRevealLocalFolder !== undefined;
 								case "copy-local-path":
@@ -858,6 +866,7 @@ export function CloudContentTree({
 										onTrash={onRequestTrash}
 										onShare={onRequestShareFolder}
 										onMoveToGit={onRequestMoveFolderToGit}
+										onExportCopy={onRequestExportFolderCopy}
 										onClose={() => itemRefs.current.get(node.id)?.focus()}
 									/>
 								) : null}
@@ -883,6 +892,7 @@ function CloudTreeActionsMenu({
 	onTrash,
 	onShare,
 	onMoveToGit,
+	onExportCopy,
 	onReveal,
 	onCopyPath,
 	onRelocate,
@@ -903,6 +913,7 @@ function CloudTreeActionsMenu({
 	onTrash?: (target: CloudTreeActionTarget) => void;
 	onShare?: (target: CloudTreeActionTarget) => void;
 	onMoveToGit?: (target: CloudTreeActionTarget) => void;
+	onExportCopy?: (target: CloudTreeActionTarget) => void;
 	onReveal?: (availability: CloudFolderAvailability) => void;
 	onCopyPath?: (availability: CloudFolderAvailability) => void;
 	onRelocate?: (availability: CloudFolderAvailability) => void;
@@ -943,7 +954,7 @@ function CloudTreeActionsMenu({
 			</Menu.Trigger>
 			<Menu.Portal>
 				<Menu.Positioner align="end" side="bottom" sideOffset={4}>
-					<Menu.Popup className="z-50 w-52 origin-(--transform-origin) rounded-sm border border-border bg-popover p-1 text-popover-foreground shadow-overlay outline-hidden transition-[transform,opacity] data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95">
+					<Menu.Popup className="z-50 w-52 origin-(--transform-origin) rounded-sm border border-border bg-popover p-1 text-popover-foreground shadow-overlay outline-hidden transition-[transform,opacity] motion-reduce:transition-none motion-reduce:data-open:animate-none motion-reduce:data-closed:animate-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95">
 						{actions.includes("create-document") ? (
 							<Menu.Item
 								ref={itemRef("create-document")}
@@ -1002,6 +1013,16 @@ function CloudTreeActionsMenu({
 							>
 								<MingcuteComputerLine className="size-3.5" />
 								Move to Git…
+							</Menu.Item>
+						) : null}
+						{actions.includes("export-copy") ? (
+							<Menu.Item
+								ref={itemRef("export-copy")}
+								className={availabilityActionClass}
+								onClick={() => onExportCopy?.(target)}
+							>
+								<MingcuteCopy2Line className="size-3.5" />
+								Export Git copy…
 							</Menu.Item>
 						) : null}
 						{actions.includes("trash") ? (

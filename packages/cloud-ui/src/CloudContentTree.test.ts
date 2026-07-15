@@ -115,6 +115,7 @@ describe("cloud tree create controls", () => {
 		canWriteFolder: (folderId: string) => folderId !== "read-only",
 		canShareFolder: (folderId: string) => folderId === "owned",
 		canMoveFolderToGit: (folderId: string) => folderId === "owned",
+		canExportFolderCopy: (folderId: string) => folderId === "readable",
 	};
 
 	it("maps the current context root without exposing the shared root as a row", () => {
@@ -193,6 +194,15 @@ describe("cloud tree create controls", () => {
 			"copy-local-path",
 			"relocate-local",
 			"stop-local",
+		]);
+		expect(
+			cloudTreeActions({ kind: "folder", id: "readable" }, writable),
+		).toEqual([
+			"create-document",
+			"create-folder",
+			"rename",
+			"trash",
+			"export-copy",
 		]);
 	});
 
