@@ -4,17 +4,21 @@ Date: 2026-07-14
 
 ## Result
 
-The authenticated Electron development app completed the available member Workspace,
-editor-shared-root, and direct-local-availability matrix against dev deployment
-`strong-setter-709`. The run found and fixed one focus defect: a document created from
+The authenticated Electron development app and packaged arm64 app completed the member
+Workspace, editor-shared-root, viewer-shared-root, and direct-local-availability
+matrix against dev deployment `strong-setter-709`. The run found and fixed one focus
+defect: a document created from
 a folder row opened and selected correctly but left tree focus on the prior row. Commit
 `5ddb7f5` now requests stable-ID tree focus for the returned document, and the repeated
 member and shared-editor flows focused the new reactive row after expanding its parent.
 
-One external gate remains before Milestone 5 can be called complete: the signed-in
-account exposes editor-shared roots but no viewer-shared root. Automated capability
-and backend coverage passes, but the viewer menu must still be inspected in a real
-authenticated context.
+Milestone 5 is complete. The owner-side `testshare` fixture became available to the
+signed-in packaged profile as a viewer-only shared root. Its empty context supplied a
+focused negative check: the packaged tree rendered no rows, row-action triggers, or
+menus; its context create controls were disabled; and no inaccessible Workspace
+ancestor or sibling appeared. The read-only local-agent availability guide remained a
+separate contextual onboarding surface outside the cloud tree, consistent with its
+existing exact-scope projection contract rather than a direct row action.
 
 The packaged profile became authenticated before implementation session 6 resumed.
 That pass completed the packaged member, signed-in web Trash/restore, representative
@@ -43,6 +47,12 @@ app bundle. No backend deployment occurred.
   `Shared folder root` move destination. It exposed writable create/rename/move/Trash
   actions, omitted Share and local actions, and never exposed Workspace ancestors or
   siblings.
+- The packaged `testshare` context identified `ado test's space · viewer`, rendered
+  the empty shared-root state with zero tree items, action triggers, or menus, and
+  disabled New document/New folder with `You can’t create in this context`. It exposed
+  no Rename, Move, Trash, Share, or direct-local row action and no Workspace ancestor
+  or sibling. The separate read-only local-agent onboarding card was confirmed outside
+  the cloud tree.
 - The directly available Hubble Brain folder retained Reveal, Copy path, Relocate, and
   Stop actions. Its `admin` descendant omitted those local actions. A real external
   Markdown edit to a temporary projected document reconciled into the open editor;
@@ -95,13 +105,16 @@ recorded here rather than hidden or followed by an unsafe rollback.
   authenticated packaged member menu/create flow, packaged-to-web reactive Trash and
   Undo, matching rich-document structure and light/dark rendering, and the native
   spelling/text-service menu. All session fixtures were removed or soft-trashed.
+- Session 7 added no product-code change, fixture mutation, or backend deployment.
+  CDP confirmed the actual packaged `file://` renderer, the authenticated viewer role,
+  disabled context creation, zero tree rows/action triggers/menus, and subtree
+  isolation for `testshare`.
 - Repository-wide `pnpm check` remains blocked by the recorded mounted
   `brain/cloud/.hubble/**` formatting, `convex/tsconfig.json`, `skills-lock.json`, and
   storyboard CSS specificity diagnostics; no changed product file failed.
 
 ## Exact next step
 
-Make a viewer-shared root available to the currently signed-in packaged profile (or
-sign in with a profile that already has one), then inspect its packaged tree and row
-menus. Confirm it exposes no create, rename, move, Trash, Share, or local-availability
-actions and no inaccessible ancestors/siblings. Do not redeploy the backend.
+None for this plan. All five milestones and the prescribed packaged acceptance matrix
+are complete; return to the repository roadmap's next independently prioritized build
+item.

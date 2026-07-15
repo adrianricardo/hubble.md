@@ -4,6 +4,17 @@ Build-state half of the roadmap. Track strategy/sequencing moved to the cloud br
 (`brain/cloud/synthesized/Track Strategy.md` when mounted) — split 2026-07-10 by the
 hubble-init apply run.
 
+## Desktop share-role selector stacking fixed (2026-07-14)
+
+Folder/document share-dialog role and link-access selectors now place their Base UI
+positioner portals above the shared modal layer, so the menu remains visible and
+interactive instead of opening behind the dialog. Real Electron/CDP acceptance on the
+reported `testshare` folder confirmed the viewer option was the topmost hit target and
+changed the role while the dialog stayed open. Cloud UI tests pass 10/10, changed-file
+Biome and diff checks pass, and `pnpm build:desktop` passes after
+simplify/comments/review-readiness. This focused fix does not change the current next
+step or require a backend deployment.
+
 ## Upstream intake process completed (2026-07-14)
 
 The fork now has a repo-owned selective upstream channel. Run `$upstream-intake` for
@@ -38,8 +49,8 @@ and deferred product candidates are recorded in
 `specs/upstream-selected-improvements/TECH.md`. No product code was ported, and the
 candidate queue remains intact until implementation is verified and landed.
 
-**Selected improvements Milestones 1–4 completed; Milestone 5 acceptance in progress
-(implementation sessions 1–6, 2026-07-14):** commits `6d95b76` through `2bb2e5d`
+**Selected improvements Milestones 1–5 completed
+(implementation sessions 1–7, 2026-07-14):** commits `6d95b76` through `2bb2e5d`
 land every selected correctness,
 native-text, persistence/sync, editor-rhythm, and cloud-context creation slice as
 coherent local commits with the required `Upstream-commit` trailers. The correctness
@@ -101,10 +112,13 @@ storyboard CSS specificity warnings. A fresh arm64 package also builds and opens
 now-authenticated packaged profile completed member menu/create, signed-in desktop/web
 reactive Trash/Undo, representative rich-document comparison in light/dark, and the
 macOS spelling/text-service menu. The temporary fixtures were removed or soft-trashed,
-and no backend deployment occurred. The only remaining external gate is that this
-account exposes no viewer-shared root. **Next:** make a viewer-shared root available
-to the signed-in package and confirm its tree exposes no write/share/local actions or
-inaccessible ancestors/siblings. Do not redeploy the backend.
+and no backend deployment occurred. A final packaged `file://` pass selected the
+viewer-only `testshare` root and confirmed disabled context creation, zero rendered
+tree rows/action triggers/menus, and no inaccessible Workspace ancestor or sibling.
+The separate read-only exact-scope local-agent onboarding card remained outside the
+cloud tree. No fixture mutation or backend deployment occurred in that final pass.
+The selected-upstream-improvements plan is complete; resume from the independently
+prioritized repository next step below.
 
 ## ➤ NEXT STEP (updated 2026-07-13, cross-device checkpoint prioritized)
 
