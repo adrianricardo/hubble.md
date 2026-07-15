@@ -3,21 +3,35 @@
 Build state and current next step. Track strategy lives in
 `brain/synthesized/track-strategy.md`.
 
-## ➔ CURRENT NEXT STEP (updated 2026-07-15, authority Milestone 1 complete)
+## ➔ CURRENT NEXT STEP (updated 2026-07-15, authority Milestone 2 complete)
 
-Implement `specs/folder-authority-mobility/TECH.md` Milestone 2: the placement model
-and inert authority-move previews. Add atomic device-local placement/operation state,
-pure mixed-tree composition, read-only Git/folder inspection, and exact consequence
-previews for eligible Git/cloud folder actions. Confirmation must remain unavailable
-until the matching lossless cutover exists; preview/cancel must perform zero source,
-cloud, availability, or authority mutation.
+Implement `specs/folder-authority-mobility/TECH.md` Milestone 3: the verified
+Git-to-cloud folder move. Revalidate the Convex boundary and read
+`convex/_generated/ai/guidelines.md`, then add hidden staging/active-only schema and
+queries, idempotent bounded topology/Markdown/asset ingestion, complete hash/count
+verification, local recovery rename, atomic activation/placement insertion, and
+restart-safe rollback or needs-attention behavior. Enable confirmation only after the
+whole lossless cutover gate exists. Do not deploy or use cloud fixtures without fresh
+authorization.
 
-Milestone 1 made Git/cloud an explicit persisted desktop content choice independent of
-Convex configuration. A cloud-configured real Electron run verified one direct Git
-root/marker, direct Markdown save, Git → Cloud → Git switching, and Git relaunch while
-preserving both selections. All 182 desktop tests, changed-file Biome/diff checks, and
-the desktop production build pass. No import, transfer, authority-registry,
-local-availability, or cloud-fixture mutation was used for the tracer bullet.
+Milestone 2 adds crash-safe versioned placement/transfer state, pure mixed-tree
+composition, deterministic Markdown/asset manifests, a fixed read-only Git command
+boundary, repository/destination inspection, and development-only Git/cloud folder
+preview actions. The previews name source/destination paths, exclusions, members and
+roles, direct shares/links, history and collaboration consequences, dirty/collision/
+offline/stale states, and retain keyboard focus. Inherited shared-folder audience and
+nested cloud destinations remain visibly blocked for Milestone 3's authoritative
+prepare API; there is no confirmation action in development and no production entry
+point.
+
+Real Electron/CDP acceptance inspected the tracked `specs/` subtree as 75 Markdown
+files and 16 folders, detected a temporary 76th file plus working-tree change as
+**Preview changed; review again**, cancelled without source/cloud changes, and
+returned focus to **Actions for specs**. The isolated profile was signed out, so the
+Cloud-to-Git live entry point was not exercised; capability/menu and preview models
+remain automated. The official desktop build passes, as do sync 58/58, cloud UI
+10/10, sync-backend 75/75, and desktop 194/194 tests. No cloud fixture, deployment,
+push, PR, availability root, source authority, or repository content remained changed.
 
 ## Desktop share-role selector stacking fixed (2026-07-14)
 

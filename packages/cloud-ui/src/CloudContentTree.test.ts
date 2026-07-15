@@ -114,6 +114,7 @@ describe("cloud tree create controls", () => {
 		canWriteDocument: (documentId: string) => documentId !== "read-only",
 		canWriteFolder: (folderId: string) => folderId !== "read-only",
 		canShareFolder: (folderId: string) => folderId === "owned",
+		canMoveFolderToGit: (folderId: string) => folderId === "owned",
 	};
 
 	it("maps the current context root without exposing the shared root as a row", () => {
@@ -172,7 +173,14 @@ describe("cloud tree create controls", () => {
 			cloudTreeActions({ kind: "document", id: "read-only" }, writable),
 		).toEqual([]);
 		expect(cloudTreeActions({ kind: "folder", id: "owned" }, writable)).toEqual(
-			["create-document", "create-folder", "rename", "trash", "share"],
+			[
+				"create-document",
+				"create-folder",
+				"rename",
+				"trash",
+				"share",
+				"move-to-git",
+			],
 		);
 		expect(
 			cloudTreeActions({ kind: "folder", id: "folder" }, writable, true),

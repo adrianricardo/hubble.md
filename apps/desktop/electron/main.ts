@@ -35,9 +35,11 @@ import electronUpdater from "electron-updater";
 import ignore from "ignore";
 import { z } from "zod/v4";
 import type {
+	AuthorityTransferOperation,
 	CloudMarkdownImportInput,
 	DesktopUpdateState,
 	DirectoryListing,
+	GitDestinationInspectionInput,
 	LiveSyncConnectInput,
 	LiveSyncReconcileInput,
 	LocalAvailabilityCreateInput,
@@ -66,7 +68,10 @@ import {
 	markdownAssetFolderPath,
 	withMarkdownExtension,
 } from "../src/lib/filePath";
+import { AuthorityTransferStore } from "./authorityTransferStore";
 import { type CliServer, startCliServer } from "./cliServer";
+import { FolderAuthorityStore } from "./folderAuthorityStore";
+import { inspectGitDestination, inspectGitFolder } from "./gitFolderInspection";
 import { LiveSyncService } from "./liveSync";
 import {
 	LocalAvailabilityStore,
@@ -593,10 +598,22 @@ function localAvailabilityPath(): string {
 	return path.join(app.getPath("userData"), "local-availability.json");
 }
 
+function folderAuthorityPath(): string {
+	return path.join(app.getPath("userData"), "folder-authority.json");
+}
+
+function authorityTransfersPath(): string {
+	return path.join(app.getPath("userData"), "authority-transfers.json");
+}
+
 const localAvailabilityStore = new LocalAvailabilityStore({
 	filePath: localAvailabilityPath(),
 	legacyRepoMountsPath: repoMountsPath(),
 });
+const folderAuthorityStore = new FolderAuthorityStore(folderAuthorityPath());
+const authorityTransferStore = new AuthorityTransferStore(
+	authorityTransfersPath(),
+);
 
 function toProjectionMount(mount: StoredLocalAvailability): ProjectionMount {
 	return {
@@ -2309,6 +2326,45 @@ function registerTextContextMenu(window: BrowserWindow) {
 }
 
 function registerIpc() {
+	ipcMain.handle("desktop:folder-authority:list", () =>
+		folderAuthorityStore.list(),
+	);
+	ipcMain.handle("desktop:authority-transfer:list", () =>
+		authorityTransferStore.list(),
+	);
+	ipcMain.handle(
+		"desktop:authority-transfer:save",
+		(_event, operation: AuthorityTransferOperation) =>
+			authorityTransferStore.upsert(operation),
+	);
+	ipcMain.handle(
+		"desktop:authority-transfer:cancel",
+		(_event, input: unknown) => {
+			const { operationId } = z
+				.object({ operationId: z.string().min(1) })
+				.parse(input);
+			return authorityTransferStore.cancel(operationId);
+		},
+	);
+	ipcMain.handle(
+		"desktop:git-authority:inspect-folder",
+		async (_event, input: unknown) => {
+			const folderPath = z.string().min(1).parse(input);
+			return inspectGitFolder(folderPath, await folderAuthorityStore.list());
+		},
+	);
+	ipcMain.handle(
+		"desktop:git-authority:inspect-destination",
+		(_event, input: GitDestinationInspectionInput) =>
+			inspectGitDestination(
+				z
+					.object({
+						repositoryPath: z.string().min(1),
+						relativePath: z.string().min(1),
+					})
+					.parse(input),
+			),
+	);
 	ipcMain.handle(
 		"desktop:list-directory",
 		async (_event, { path: dirPath }) => {

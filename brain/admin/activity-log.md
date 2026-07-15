@@ -1,5 +1,26 @@
 # Brain Activity Log
 
+## 2026-07-15 — Selective folder authority Milestone 2 completed
+
+- Added atomic versioned device-local placement and authority-transfer stores, pure
+  mixed Git/cloud tree composition, deterministic Markdown/asset manifests, and
+  read-only Git/repository inspection with a fixed command allowlist, path
+  canonicalization, exclusions, dirty-state snapshots, collisions, and fingerprints.
+- Added development-only **Move to Hubble Cloud…**, **Share…**, and permission-gated
+  **Move to Git…** previews. They name paths, content/exclusions, exact available
+  member/share/link roles, Git/history/web/realtime consequences, offline/stale/
+  collision states, and never expose confirmation or a production entry point before
+  the transactional backend exists. Inherited guest audience gaps remain explicitly
+  blocked for the Milestone 3 prepare API.
+- Real Electron/CDP acceptance inspected tracked `specs/` content, detected and
+  refreshed a temporary working-tree change as stale, cancelled without source/cloud
+  mutation, and restored focus to the invoking folder action. The isolated profile
+  was signed out, so Cloud-to-Git live interaction was not claimed; automated
+  capability/menu coverage passes.
+- Verification: `pnpm build:desktop`; sync 58/58, cloud UI 10/10, sync-backend 75/75,
+  and desktop 194/194 tests; changed-file Biome and diff checks. No deployment, cloud
+  fixture, push, PR, availability root, or lasting acceptance file was created.
+
 ## 2026-07-15 — Selective folder authority Milestone 1 completed
 
 - Added a persisted Git/cloud desktop content discriminator while retaining the

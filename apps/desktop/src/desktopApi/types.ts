@@ -1,4 +1,6 @@
 import type {
+	AuthorityManifest,
+	AuthorityManifestSummary,
 	LiveDocumentImportResult,
 	PendingProjectionOperation,
 	ProjectionScope,
@@ -46,6 +48,88 @@ export type FolderEntry = FileEntry;
 export type DirectoryListing = {
 	files: FileEntry[];
 	folders: FolderEntry[];
+};
+
+export type FolderAuthorityPlacement = {
+	id: string;
+	repoRoot: string;
+	relativePath: string;
+	workspaceId: string;
+	cloudFolderId: string;
+	formerGitFingerprint: string;
+	projection: { scopeKey: string; localPath: string } | null;
+	createdAt: number;
+	updatedAt: number;
+};
+
+export type AuthorityTransferPhase =
+	| "draft"
+	| "validating"
+	| "staging"
+	| "verifying"
+	| "cutting-over"
+	| "needs-attention"
+	| "completed"
+	| "cancelled";
+
+export type AuthorityTransferOperation = {
+	id: string;
+	direction: "git-to-cloud" | "cloud-to-git";
+	intent: "move" | "share";
+	phase: AuthorityTransferPhase;
+	source:
+		| { kind: "git"; repoRoot: string; relativePath: string }
+		| { kind: "cloud"; workspaceId: string; folderId: string };
+	destination:
+		| { kind: "git"; repoRoot: string; relativePath: string }
+		| {
+				kind: "cloud";
+				workspaceId: string;
+				parentFolderId: string | null;
+		  }
+		| null;
+	manifestSummary: AuthorityManifestSummary | null;
+	manifestHash: string | null;
+	previewFingerprint: string | null;
+	lastError: string | null;
+	createdAt: number;
+	updatedAt: number;
+};
+
+export type GitWorkingTreeChange = {
+	path: string;
+	status: string;
+};
+
+export type GitFolderInspection = {
+	sourcePath: string;
+	repoRoot: string;
+	repoName: string;
+	repoRemoteUrl: string | null;
+	relativePath: string;
+	manifest: AuthorityManifest;
+	trackedFileCount: number;
+	workingTreeChanges: GitWorkingTreeChange[];
+	workingTreeChangesTruncated: boolean;
+	previewFingerprint: string;
+	confirmationBlocked: boolean;
+};
+
+export type GitDestinationInspection = {
+	repoRoot: string;
+	repoName: string;
+	repoRemoteUrl: string | null;
+	destinationPath: string;
+	relativePath: string;
+	collision: "empty" | "occupied";
+	workingTreeChanges: GitWorkingTreeChange[];
+	workingTreeChangesTruncated: boolean;
+	previewFingerprint: string;
+};
+
+export type GitDestinationInspectionInput = {
+	repositoryPath: string;
+	relativePath: string;
 };
 
 export type HtmlAppFileEntry = {
@@ -424,6 +508,18 @@ export type DesktopApi = {
 	platform: DesktopPlatform;
 	homeDir: string;
 	listDirectory(path: string): Promise<DirectoryListing>;
+	listFolderAuthorityPlacements(): Promise<FolderAuthorityPlacement[]>;
+	listAuthorityTransferOperations(): Promise<AuthorityTransferOperation[]>;
+	saveAuthorityTransferOperation(
+		operation: AuthorityTransferOperation,
+	): Promise<void>;
+	cancelAuthorityTransferOperation(
+		operationId: string,
+	): Promise<AuthorityTransferOperation>;
+	inspectGitAuthorityFolder(path: string): Promise<GitFolderInspection>;
+	inspectGitAuthorityDestination(
+		input: GitDestinationInspectionInput,
+	): Promise<GitDestinationInspection>;
 	listHtmlAppFiles(
 		workspacePath: string,
 		glob: string,

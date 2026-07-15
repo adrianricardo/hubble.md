@@ -348,6 +348,20 @@ Checkpoint: fixtures prove exact/nested selection, exclusions, Git history langu
 audience detail, repository path validation, collaborator/link impact, inert cancel,
 and zero source/cloud mutation.
 
+**Completed 2026-07-15.** Device-local placement and operation envelopes use
+fsync-and-rename writes; pure authority-tree and manifest models are deterministic;
+and Electron inspection permits only `rev-parse`, `status`, `ls-files`, and
+`check-ignore`. Development builds expose inert previews from eligible Git/cloud
+folder menus, with no production entry point or confirmation control. Git-to-cloud is
+limited to Workspace-root destinations so its member/role/link audience is exact.
+Cloud-to-Git shows Workspace members and direct shares/links; when a shared-folder
+guest's inherited ancestor audience cannot be proven by existing queries, the preview
+names that gap and remains blocked for Milestone 3's authoritative prepare check.
+Real Electron acceptance covered tracked/nested content, exclusions, stale refresh,
+working-tree language, cancel, and return focus without cloud/source mutation. The
+signed-out isolated profile prevented live Cloud-to-Git entry-point acceptance, which
+remains covered at the capability/menu/model level.
+
 ### Milestone 3 — Verified Git-to-cloud folder move
 
 1. Add schema/index migration, hidden staging APIs, active-only query/permission

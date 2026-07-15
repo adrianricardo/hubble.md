@@ -27,6 +27,7 @@ export type CloudTreeCapabilities = {
 	canWriteDocument: (documentId: string) => boolean;
 	canWriteFolder: (folderId: string) => boolean;
 	canShareFolder: (folderId: string) => boolean;
+	canMoveFolderToGit?: (folderId: string) => boolean;
 };
 
 export type CloudTreeCreateAction = "create-document" | "create-folder";
@@ -37,6 +38,7 @@ export type CloudTreeAction =
 	| "move"
 	| "trash"
 	| "share"
+	| "move-to-git"
 	| "reveal-local"
 	| "copy-local-path"
 	| "relocate-local"
@@ -156,6 +158,7 @@ export function cloudTreeActions(
 		actions.push("create-document", "create-folder", "rename", "trash");
 	}
 	if (capabilities.canShareFolder(node.id)) actions.push("share");
+	if (capabilities.canMoveFolderToGit?.(node.id)) actions.push("move-to-git");
 	if (hasDirectLocalAvailability) {
 		actions.push(
 			"reveal-local",
@@ -348,6 +351,7 @@ export function CloudContentTree({
 	onRequestMoveDocument,
 	onRequestTrash,
 	onRequestShareFolder,
+	onRequestMoveFolderToGit,
 	localFolders = [],
 	onRevealLocalFolder,
 	onCopyLocalPath,
@@ -366,6 +370,7 @@ export function CloudContentTree({
 	onRequestMoveDocument?: (request: CloudDocumentMoveRequest) => void;
 	onRequestTrash?: (target: CloudTreeActionTarget) => void;
 	onRequestShareFolder?: (target: CloudTreeActionTarget) => void;
+	onRequestMoveFolderToGit?: (target: CloudTreeActionTarget) => void;
 	localFolders?: readonly CloudFolderAvailability[];
 	onRevealLocalFolder?: (availability: CloudFolderAvailability) => void;
 	onCopyLocalPath?: (availability: CloudFolderAvailability) => void;
@@ -697,6 +702,8 @@ export function CloudContentTree({
 									return onRequestTrash !== undefined;
 								case "share":
 									return onRequestShareFolder !== undefined;
+								case "move-to-git":
+									return onRequestMoveFolderToGit !== undefined;
 								case "reveal-local":
 									return onRevealLocalFolder !== undefined;
 								case "copy-local-path":
@@ -850,6 +857,7 @@ export function CloudContentTree({
 										}
 										onTrash={onRequestTrash}
 										onShare={onRequestShareFolder}
+										onMoveToGit={onRequestMoveFolderToGit}
 										onClose={() => itemRefs.current.get(node.id)?.focus()}
 									/>
 								) : null}
@@ -874,6 +882,7 @@ function CloudTreeActionsMenu({
 	onMoveDocument,
 	onTrash,
 	onShare,
+	onMoveToGit,
 	onReveal,
 	onCopyPath,
 	onRelocate,
@@ -893,6 +902,7 @@ function CloudTreeActionsMenu({
 	) => void;
 	onTrash?: (target: CloudTreeActionTarget) => void;
 	onShare?: (target: CloudTreeActionTarget) => void;
+	onMoveToGit?: (target: CloudTreeActionTarget) => void;
 	onReveal?: (availability: CloudFolderAvailability) => void;
 	onCopyPath?: (availability: CloudFolderAvailability) => void;
 	onRelocate?: (availability: CloudFolderAvailability) => void;
@@ -982,6 +992,16 @@ function CloudTreeActionsMenu({
 							>
 								<MingcuteShareForwardLine className="size-3.5" />
 								Share…
+							</Menu.Item>
+						) : null}
+						{actions.includes("move-to-git") ? (
+							<Menu.Item
+								ref={itemRef("move-to-git")}
+								className={availabilityActionClass}
+								onClick={() => onMoveToGit?.(target)}
+							>
+								<MingcuteComputerLine className="size-3.5" />
+								Move to Git…
 							</Menu.Item>
 						) : null}
 						{actions.includes("trash") ? (

@@ -60,6 +60,11 @@ import {
 	sidebarOpenStore,
 	workspaceStore,
 } from "../store/state";
+import {
+	AuthorityMovePreviewDialog,
+	type AuthorityPreviewTarget,
+} from "./AuthorityMovePreviewDialog";
+import { displayFolderName } from "./authorityMovePreviewModel";
 import { CloudDocumentCreateButton } from "./CloudDocumentCreateButton";
 import { LocalAgentAvailabilityOnboarding } from "./LocalAgentAvailabilityOnboarding";
 import {
@@ -93,6 +98,39 @@ type RelocationImpact = {
 	}>;
 };
 
+const authorityPreviewsEnabled = import.meta.env.DEV;
+const authorityPreviewMenuSettleMs = 50;
+
+function currentMenuTrigger(): HTMLElement | null {
+	const active = document.activeElement;
+	if (
+		active instanceof HTMLElement &&
+		active.getAttribute("aria-label")?.startsWith("Actions for ")
+	) {
+		return active;
+	}
+	const menu = active?.closest<HTMLElement>("[role=menu]");
+	const triggerId = menu?.getAttribute("aria-labelledby");
+	return triggerId ? document.getElementById(triggerId) : null;
+}
+
+function useAuthorityPreview() {
+	const [target, setTarget] = useState<AuthorityPreviewTarget | null>(null);
+	const returnFocusRef = useRef<HTMLElement | null>(null);
+	const open = (nextTarget: AuthorityPreviewTarget) => {
+		returnFocusRef.current = currentMenuTrigger();
+		window.setTimeout(
+			() => setTarget(nextTarget),
+			authorityPreviewMenuSettleMs,
+		);
+	};
+	const close = () => {
+		setTarget(null);
+		window.setTimeout(() => returnFocusRef.current?.focus(), 0);
+	};
+	return { target, open, close };
+}
+
 export function Sidebar({
 	cloudEnabled,
 	footer,
@@ -118,6 +156,7 @@ export function Sidebar({
 	const currentPath = useStoreValue(currentPathStore);
 	const { workspacePath, files, folders, pinnedNotes, sortMode } = workspace;
 	const pinnedSet = new Set(pinnedNotes);
+	const authorityPreview = useAuthorityPreview();
 
 	if (!sidebarOpen) return null;
 	const collapseSidebar = () => setSidebarOpen(false);
@@ -188,61 +227,93 @@ export function Sidebar({
 	};
 
 	return (
-		<SharedSidebar
-			files={files.map((file) => ({
-				path: file.path,
-				modifiedAt: file.modified_at,
-				pinned: pinnedSet.has(file.path),
-			}))}
-			folders={folders.map((folder) => ({
-				path: folder.path,
-				modifiedAt: folder.modified_at,
-			}))}
-			currentPath={currentPath ?? null}
-			sortMode={sortMode}
-			storageScope={workspacePath}
-			header={
-				<div className="flex min-w-0 items-center gap-2">
-					<WorkspaceSwitcher cloudAvailable={Boolean(cloudEnabled)} />
-					<span
-						className="shrink-0 rounded-sm border border-sidebar-border [padding-block:0.0625rem] [padding-inline:0.3rem] text-[9px] font-semibold uppercase tracking-wide text-sidebar-foreground/60"
-						title="Stored directly in Git"
-					>
-						Git
-					</span>
-				</div>
-			}
-			footer={footer}
-			getDisplayPath={relativePath}
-			onCollapse={collapseSidebar}
-			onSortModeChange={setSortMode}
-			onSelectFile={(path) => void loadPath(path)}
-			onRevealFile={(path) => void desktopApi.revealFile(path)}
-			onCopyFilePath={(path) => void copyFilePath(path)}
-			onRevealFolder={(folderId) =>
-				void desktopApi.revealFile(absolutePath(folderId))
-			}
-			onFocusedItemChange={(item: SidebarFocusedItem) => {
-				if (!item) {
-					onFocusedPathChange?.(null);
-					return;
+		<>
+			<SharedSidebar
+				files={files.map((file) => ({
+					path: file.path,
+					modifiedAt: file.modified_at,
+					pinned: pinnedSet.has(file.path),
+				}))}
+				folders={folders.map((folder) => ({
+					path: folder.path,
+					modifiedAt: folder.modified_at,
+				}))}
+				currentPath={currentPath ?? null}
+				sortMode={sortMode}
+				storageScope={workspacePath}
+				header={
+					<div className="flex min-w-0 items-center gap-2">
+						<WorkspaceSwitcher cloudAvailable={Boolean(cloudEnabled)} />
+						<span
+							className="shrink-0 rounded-sm border border-sidebar-border [padding-block:0.0625rem] [padding-inline:0.3rem] text-[9px] font-semibold uppercase tracking-wide text-sidebar-foreground/60"
+							title="Stored directly in Git"
+						>
+							Git
+						</span>
+					</div>
 				}
-				onFocusedPathChange?.(
-					item.kind === "file" ? item.path : absolutePath(item.folderId),
-				);
-			}}
-			revealLabel={revealFileLabel(desktopApi.platform)}
-			onRenameFile={(path, nextName) => void renameMarkdownFile(path, nextName)}
-			onDeleteFile={(path) => void deleteMarkdownFile(path)}
-			onTogglePinnedFile={(path) => void togglePinnedNote(path)}
-			onCreateFile={(folderId) =>
-				createMarkdownFileInFolder(absolutePath(folderId))
-			}
-			onDeleteFolder={(folderId) => void deleteFolder(absolutePath(folderId))}
-			onMoveItem={({ item, targetFolderId }) =>
-				void moveSidebarItem(item, absolutePath(targetFolderId))
-			}
-		/>
+				footer={footer}
+				getDisplayPath={relativePath}
+				onCollapse={collapseSidebar}
+				onSortModeChange={setSortMode}
+				onSelectFile={(path) => void loadPath(path)}
+				onRevealFile={(path) => void desktopApi.revealFile(path)}
+				onCopyFilePath={(path) => void copyFilePath(path)}
+				onRevealFolder={(folderId) =>
+					void desktopApi.revealFile(absolutePath(folderId))
+				}
+				onFocusedItemChange={(item: SidebarFocusedItem) => {
+					if (!item) {
+						onFocusedPathChange?.(null);
+						return;
+					}
+					onFocusedPathChange?.(
+						item.kind === "file" ? item.path : absolutePath(item.folderId),
+					);
+				}}
+				revealLabel={revealFileLabel(desktopApi.platform)}
+				onRenameFile={(path, nextName) =>
+					void renameMarkdownFile(path, nextName)
+				}
+				onDeleteFile={(path) => void deleteMarkdownFile(path)}
+				onTogglePinnedFile={(path) => void togglePinnedNote(path)}
+				onCreateFile={(folderId) =>
+					createMarkdownFileInFolder(absolutePath(folderId))
+				}
+				onDeleteFolder={(folderId) => void deleteFolder(absolutePath(folderId))}
+				onMoveFolderToCloud={
+					authorityPreviewsEnabled && cloudEnabled
+						? (folderId) =>
+								authorityPreview.open({
+									direction: "git-to-cloud",
+									intent: "move",
+									folderPath: absolutePath(folderId),
+									name: displayFolderName(folderId),
+								})
+						: undefined
+				}
+				onShareFolder={
+					authorityPreviewsEnabled && cloudEnabled
+						? (folderId) =>
+								authorityPreview.open({
+									direction: "git-to-cloud",
+									intent: "share",
+									folderPath: absolutePath(folderId),
+									name: displayFolderName(folderId),
+								})
+						: undefined
+				}
+				onMoveItem={({ item, targetFolderId }) =>
+					void moveSidebarItem(item, absolutePath(targetFolderId))
+				}
+			/>
+			{authorityPreview.target ? (
+				<AuthorityMovePreviewDialog
+					target={authorityPreview.target}
+					onClose={authorityPreview.close}
+				/>
+			) : null}
+		</>
 	);
 }
 
@@ -357,6 +428,7 @@ function AuthenticatedCloudSidebar({
 	const [shareTarget, setShareTarget] = useState<CloudTreeActionTarget | null>(
 		null,
 	);
+	const authorityPreview = useAuthorityPreview();
 	const [moveRequest, setMoveRequest] =
 		useState<CloudDocumentMoveRequest | null>(null);
 	const [moveDestinationId, setMoveDestinationId] = useState<string | null>(
@@ -461,6 +533,7 @@ function AuthenticatedCloudSidebar({
 				canWriteFolder: () => false,
 				canWriteDocument: () => false,
 				canShareFolder: () => false,
+				canMoveFolderToGit: () => false,
 			};
 		}
 		if (contextCapabilities.mode === "uniform") {
@@ -469,6 +542,8 @@ function AuthenticatedCloudSidebar({
 				canWriteFolder: () => contextCapabilities.canWrite,
 				canWriteDocument: () => contextCapabilities.canWrite,
 				canShareFolder: () => contextCapabilities.canShare,
+				canMoveFolderToGit: () =>
+					authorityPreviewsEnabled && contextCapabilities.canShare,
 			};
 		}
 		const writableFolders = new Set<string>(
@@ -485,6 +560,8 @@ function AuthenticatedCloudSidebar({
 			canWriteFolder: (folderId) => writableFolders.has(folderId),
 			canWriteDocument: (documentId) => writableDocuments.has(documentId),
 			canShareFolder: (folderId) => shareableFolders.has(folderId),
+			canMoveFolderToGit: (folderId) =>
+				authorityPreviewsEnabled && shareableFolders.has(folderId),
 		};
 	}, [contextCapabilities]);
 	const openDocument = (documentId: string) => {
@@ -895,6 +972,21 @@ function AuthenticatedCloudSidebar({
 						onRequestMoveDocument={requestMove}
 						onRequestTrash={setTrashTarget}
 						onRequestShareFolder={setShareTarget}
+						onRequestMoveFolderToGit={
+							authorityPreviewsEnabled && context
+								? (target) => {
+										if (target.kind !== "folder") return;
+										authorityPreview.open({
+											direction: "cloud-to-git",
+											intent: "move",
+											workspaceId: context.workspaceId,
+											folderId: target.id,
+											name: target.name,
+											includeWorkspaceMembers: context.kind === "workspace",
+										});
+									}
+								: undefined
+						}
 						localFolders={localFolders}
 						onRevealLocalFolder={(availability) =>
 							void desktopApi.revealFile(availability.localPath)
@@ -905,6 +997,12 @@ function AuthenticatedCloudSidebar({
 						}
 						onStopLocalFolder={(availability) => void requestStop(availability)}
 					/>
+					{authorityPreview.target ? (
+						<AuthorityMovePreviewDialog
+							target={authorityPreview.target}
+							onClose={authorityPreview.close}
+						/>
+					) : null}
 				</>
 			) : (
 				<p className="m-0 text-[11px] text-muted-foreground [padding-block:0.5rem] [padding-inline:0.5rem]">

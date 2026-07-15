@@ -28,6 +28,7 @@ import {
 } from "react";
 import MingcuteAzSortAscendingLettersLine from "~icons/mingcute/az-sort-ascending-letters-line";
 import MingcuteCheckLine from "~icons/mingcute/check-line";
+import MingcuteCloudLine from "~icons/mingcute/cloud-line";
 import MingcuteCopy2Line from "~icons/mingcute/copy-2-line";
 import MingcuteDeleteLine from "~icons/mingcute/delete-line";
 import MingcuteEditLine from "~icons/mingcute/edit-line";
@@ -36,6 +37,7 @@ import MingcuteMore2Line from "~icons/mingcute/more-2-line";
 import MingcutePinFill from "~icons/mingcute/pin-fill";
 import MingcutePinLine from "~icons/mingcute/pin-line";
 import MingcuteRightLine from "~icons/mingcute/right-line";
+import MingcuteShareForwardLine from "~icons/mingcute/share-forward-line";
 import MingcuteSortDescendingLine from "~icons/mingcute/sort-descending-line";
 import {
 	dirname,
@@ -137,6 +139,8 @@ export function Sidebar({
 	onTogglePinnedFile,
 	onCreateFile,
 	onDeleteFolder,
+	onMoveFolderToCloud,
+	onShareFolder,
 	onMoveItem,
 }: {
 	files: SidebarFile[];
@@ -164,6 +168,8 @@ export function Sidebar({
 	onTogglePinnedFile?: (path: string) => void;
 	onCreateFile?: (folderId: string | null) => Promise<string | null>;
 	onDeleteFolder?: (folderId: string) => void;
+	onMoveFolderToCloud?: (folderId: string) => void;
+	onShareFolder?: (folderId: string) => void;
 	onMoveItem?: (input: SidebarMoveItemInput) => Promise<void> | void;
 }) {
 	const navRef = useRef<HTMLDivElement>(null);
@@ -635,7 +641,11 @@ export function Sidebar({
 									)}
 									<div className="absolute inset-y-0 end-0.5 flex items-center gap-0.5">
 										{row.kind === "folder" &&
-											(onRevealFolder || onCreateFile || onDeleteFolder) && (
+											(onRevealFolder ||
+												onCreateFile ||
+												onDeleteFolder ||
+												onMoveFolderToCloud ||
+												onShareFolder) && (
 												<FolderActionsMenu
 													id={row.id}
 													label={row.label}
@@ -647,6 +657,8 @@ export function Sidebar({
 													revealLabel={revealLabel}
 													onCreateFile={(id) => void createFile(id)}
 													onDeleteFolder={onDeleteFolder}
+													onMoveFolderToCloud={onMoveFolderToCloud}
+													onShareFolder={onShareFolder}
 												/>
 											)}
 										{canTogglePinnedFile && (
@@ -1239,6 +1251,8 @@ function FolderActionsMenu({
 	revealLabel,
 	onCreateFile,
 	onDeleteFolder,
+	onMoveFolderToCloud,
+	onShareFolder,
 }: {
 	id: string;
 	label: string;
@@ -1248,6 +1262,8 @@ function FolderActionsMenu({
 	revealLabel?: string;
 	onCreateFile?: (id: string) => void;
 	onDeleteFolder?: (id: string) => void;
+	onMoveFolderToCloud?: (id: string) => void;
+	onShareFolder?: (id: string) => void;
 }) {
 	return (
 		<ActionsMenu label={label} open={open} onOpenChange={onOpenChange}>
@@ -1266,6 +1282,22 @@ function FolderActionsMenu({
 					onClick={() => onCreateFile(id)}
 				>
 					New file
+				</ActionItem>
+			)}
+			{onMoveFolderToCloud && (
+				<ActionItem
+					icon={<MingcuteCloudLine />}
+					onClick={() => onMoveFolderToCloud(id)}
+				>
+					Move to Hubble Cloud…
+				</ActionItem>
+			)}
+			{onShareFolder && (
+				<ActionItem
+					icon={<MingcuteShareForwardLine />}
+					onClick={() => onShareFolder(id)}
+				>
+					Share…
 				</ActionItem>
 			)}
 			{onDeleteFolder && (

@@ -1,4 +1,25 @@
 export type {
+	AuthorityManifest,
+	AuthorityManifestExclusion,
+	AuthorityManifestExclusionReason,
+	AuthorityManifestGitState,
+	AuthorityManifestItem,
+	AuthorityManifestItemKind,
+	AuthorityManifestSummary,
+} from "./authorityManifest.js";
+export {
+	buildAuthorityManifest,
+	extractLocalMarkdownReferences,
+	normalizeAuthorityPath,
+} from "./authorityManifest.js";
+export type {
+	AuthorityCloudNode,
+	AuthorityGitEntry,
+	AuthorityPlacementInput,
+	AuthorityTreeNode,
+} from "./authorityTree.js";
+export { composeAuthorityTree } from "./authorityTree.js";
+export type {
 	AgentDocument,
 	AgentPatchIntent,
 	DocumentPatchResult,

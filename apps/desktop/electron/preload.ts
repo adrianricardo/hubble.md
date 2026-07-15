@@ -20,6 +20,18 @@ const desktopApi = {
 	homeDir: os.homedir(),
 	listDirectory: (path) =>
 		ipcRenderer.invoke("desktop:list-directory", { path }),
+	listFolderAuthorityPlacements: () =>
+		ipcRenderer.invoke("desktop:folder-authority:list"),
+	listAuthorityTransferOperations: () =>
+		ipcRenderer.invoke("desktop:authority-transfer:list"),
+	saveAuthorityTransferOperation: (operation) =>
+		ipcRenderer.invoke("desktop:authority-transfer:save", operation),
+	cancelAuthorityTransferOperation: (operationId) =>
+		ipcRenderer.invoke("desktop:authority-transfer:cancel", { operationId }),
+	inspectGitAuthorityFolder: (path) =>
+		ipcRenderer.invoke("desktop:git-authority:inspect-folder", path),
+	inspectGitAuthorityDestination: (input) =>
+		ipcRenderer.invoke("desktop:git-authority:inspect-destination", input),
 	listHtmlAppFiles: (workspacePath, glob) =>
 		ipcRenderer.invoke("desktop:html-app-list-files", { workspacePath, glob }),
 	readWorkspaceConfig: (workspacePath) =>
