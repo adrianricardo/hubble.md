@@ -91,10 +91,16 @@ export type AuthorityTransferOperation = {
 	manifestSummary: AuthorityManifestSummary | null;
 	manifestHash: string | null;
 	previewFingerprint: string | null;
+	destinationPreviewFingerprint?: string | null;
 	cloudTransferId?: string | null;
 	cloudRootFolderId?: string | null;
 	cutoverToken?: string | null;
 	recoveryPath?: string | null;
+	temporaryPath?: string | null;
+	archiveFingerprint?: string | null;
+	destinationWasEmpty?: boolean;
+	completionFingerprint?: string | null;
+	sourcePlacement?: FolderAuthorityPlacement | null;
 	lastError: string | null;
 	createdAt: number;
 	updatedAt: number;
@@ -126,6 +132,7 @@ export type GitDestinationInspection = {
 	destinationPath: string;
 	relativePath: string;
 	collision: "empty" | "occupied";
+	destinationExists: boolean;
 	workingTreeChanges: GitWorkingTreeChange[];
 	workingTreeChangesTruncated: boolean;
 	previewFingerprint: string;
@@ -162,6 +169,55 @@ export type CancelGitToCloudAuthorityMoveInput = {
 	deploymentUrl: string;
 	authToken: string;
 };
+
+export type CloudToGitAuthorityMoveInput = {
+	operationId: string;
+	cloudFolderId: string;
+	repositoryPath: string;
+	relativePath: string;
+	placementId: string | null;
+	deploymentUrl: string;
+	authToken: string;
+	expectedCloudPreviewFingerprint: string;
+	expectedDestinationFingerprint: string;
+};
+
+export type CloudToGitAuthorityMoveResult =
+	| {
+			status: "completed";
+			repoRoot: string;
+			destinationPath: string;
+			archiveFingerprint: string;
+			undoEligible: boolean;
+			workingTreeChanges: GitWorkingTreeChange[];
+	  }
+	| {
+			status: "stale";
+			cloudPreviewFingerprint: string;
+			destination: GitDestinationInspection;
+	  }
+	| {
+			status: "needs-attention";
+			message: string;
+			temporaryPath: string | null;
+	  };
+
+export type CancelCloudToGitAuthorityMoveInput = {
+	operationId: string;
+	deploymentUrl: string;
+	authToken: string;
+};
+
+export type UndoCloudToGitAuthorityMoveInput = {
+	operationId: string;
+	deploymentUrl: string;
+	authToken: string;
+};
+
+export type CloudToGitUndoResult =
+	| { status: "restored"; cloudFolderId: string; recoveryPath: string }
+	| { status: "changed" }
+	| { status: "unavailable"; message: string };
 
 export type HtmlAppFileEntry = {
 	name: string;
@@ -557,6 +613,16 @@ export type DesktopApi = {
 	cancelGitToCloudAuthorityMove(
 		input: CancelGitToCloudAuthorityMoveInput,
 	): Promise<AuthorityTransferOperation>;
+	moveCloudFolderToGit(
+		input: CloudToGitAuthorityMoveInput,
+	): Promise<CloudToGitAuthorityMoveResult>;
+	cancelCloudToGitAuthorityMove(
+		input: CancelCloudToGitAuthorityMoveInput,
+	): Promise<AuthorityTransferOperation>;
+	getCloudToGitUndoEligibility(operationId: string): Promise<boolean>;
+	undoCloudToGitAuthorityMove(
+		input: UndoCloudToGitAuthorityMoveInput,
+	): Promise<CloudToGitUndoResult>;
 	onFolderAuthorityChanged(callback: () => void): Unsubscribe;
 	listHtmlAppFiles(
 		workspacePath: string,

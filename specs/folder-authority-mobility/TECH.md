@@ -416,6 +416,25 @@ Checkpoint: an eligible cloud root moves to a scratch repository with no cloud/w
 access afterward, exact bytes on disk, uncommitted Git changes, recoverable cloud
 history, and safe failure/collision behavior.
 
+**Completed 2026-07-15 (code/test/build scope).** The backend now produces an exact,
+bounded Markdown/asset manifest plus inherited member/share/invite/public-link and
+revision-history consequences, persists the preview and destination fingerprints,
+archives the authority root only after both are revalidated, hides archived roots from
+active web/direct-ID paths, and supports fingerprint-gated restore. The desktop writes
+to a repository-adjacent temporary tree, rejects path escapes/symlinks and unexpected
+or changed bytes, atomically renames only a verified tree, rolls back only while cloud
+authority remains active, and resumes forward after archive. Completion exposes the
+exact Git path/status and unchanged-only Undo; changed bytes require the normal reverse
+journey.
+
+Failure injection covers exact Markdown/assets, stale cloud content, cancel,
+archive-failure rollback, post-archive resume, unchanged Undo, and changed-byte Undo
+refusal. Sync-backend tests pass 85/85, Convex-client tests 3/3, desktop tests 211/211,
+and `pnpm build:desktop` passes. The direct Electron wrapper exited before exposing its
+CDP endpoint on this host, and the session prohibited cloud fixture mutation, so the
+real-renderer/expendable-cloud checkpoint remains part of Milestone 5 packaged
+acceptance. No deployment is required for this local milestone.
+
 ### Milestone 5 — Nested boundaries, sharing intent, and acceptance hardening
 
 1. Exclude and name opposite-authority descendants; move each only through its own

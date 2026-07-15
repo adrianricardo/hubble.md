@@ -124,4 +124,54 @@ describe("authority transfer adapters", () => {
 			{ transferId: "transfer-1" },
 		);
 	});
+
+	it("maps cloud export and archive recovery to Convex function references", async () => {
+		const backend = createConvexBackend("https://fake.convex.cloud", "token");
+		await backend.getCloudFolderMovePreview("folder-1");
+		await backend.prepareCloudFolderMove({
+			operationKey: "operation-cloud-1",
+			folderId: "folder-1",
+			expectedPreviewFingerprint: "preview-1",
+			destinationFingerprint: "destination-1",
+		});
+		await backend.getCloudFolderExportBatch({
+			transferId: "transfer-cloud-1",
+			afterPath: "guide.md",
+		});
+		await backend.archiveAuthorityFolder({
+			transferId: "transfer-cloud-1",
+			expectedPreviewFingerprint: "preview-1",
+			destinationFingerprint: "destination-1",
+		});
+		await backend.restoreArchivedAuthorityFolder({
+			transferId: "transfer-cloud-1",
+			archiveFingerprint: "archive-1",
+		});
+
+		expect(query).toHaveBeenNthCalledWith(
+			1,
+			api.authorityTransfers.getCloudFolderMovePreview,
+			{ folderId: "folder-1" },
+		);
+		expect(mutation).toHaveBeenNthCalledWith(
+			1,
+			api.authorityTransfers.prepareCloudFolderMove,
+			expect.objectContaining({ folderId: "folder-1" }),
+		);
+		expect(query).toHaveBeenNthCalledWith(
+			2,
+			api.authorityTransfers.getCloudFolderExportBatch,
+			{ transferId: "transfer-cloud-1", afterPath: "guide.md" },
+		);
+		expect(mutation).toHaveBeenNthCalledWith(
+			2,
+			api.authorityTransfers.archiveAuthorityFolder,
+			expect.any(Object),
+		);
+		expect(mutation).toHaveBeenNthCalledWith(
+			3,
+			api.authorityTransfers.restoreArchivedAuthorityFolder,
+			expect.any(Object),
+		);
+	});
 });

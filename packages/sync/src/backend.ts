@@ -99,12 +99,64 @@ export type DocumentRelocationResult =
 	  };
 
 export type AuthorityAudienceEntry = {
-	kind: "member" | "invite";
+	kind: "member" | "invite" | "folderShare";
 	id: string;
 	email: string | null;
 	name: string | null;
 	role: string;
 };
+
+export type CloudFolderMovePreview = {
+	root: {
+		folderId: string;
+		workspaceId: string;
+		parentFolderId: string | null;
+		name: string;
+	};
+	manifest: {
+		manifestHash: string;
+		itemCount: number;
+		markdownCount: number;
+		assetCount: number;
+		totalBytes: number;
+		items: Array<{
+			relativePath: string;
+			kind: "markdown" | "asset";
+			contentHash: string;
+			size: number;
+		}>;
+	};
+	audience: {
+		entries: AuthorityAudienceEntry[];
+		publicLinkRole: string | null;
+		fingerprint: string;
+	};
+	history: {
+		documentCount: number;
+		revisionCount: number;
+		becomesGitCommits: false;
+	};
+	recovery: { kind: "cloudArchive"; expiresAt: number | null };
+	previewFingerprint: string;
+};
+
+export type CloudFolderExportItem =
+	| {
+			kind: "markdown";
+			relativePath: string;
+			contentHash: string;
+			size: number;
+			documentId: string;
+			markdown: string;
+	  }
+	| {
+			kind: "asset";
+			relativePath: string;
+			contentHash: string;
+			size: number;
+			storageId: string;
+			downloadUrl: string | null;
+	  };
 
 export type PrepareGitFolderMoveResult = {
 	transferId: string;
@@ -139,6 +191,26 @@ export type AuthorityStageItem =
 
 /** Backend-agnostic interface for sync operations. */
 export interface SyncBackend {
+	getCloudFolderMovePreview(folderId: string): Promise<CloudFolderMovePreview>;
+	prepareCloudFolderMove(args: {
+		operationKey: string;
+		folderId: string;
+		expectedPreviewFingerprint: string;
+		destinationFingerprint: string;
+	}): Promise<CloudFolderMovePreview & { transferId: string }>;
+	getCloudFolderExportBatch(args: {
+		transferId: string;
+		afterPath?: string;
+	}): Promise<{ items: CloudFolderExportItem[]; nextPath: string | null }>;
+	archiveAuthorityFolder(args: {
+		transferId: string;
+		expectedPreviewFingerprint: string;
+		destinationFingerprint: string;
+	}): Promise<{ state: "archivedToGit"; archiveFingerprint: string }>;
+	restoreArchivedAuthorityFolder(args: {
+		transferId: string;
+		archiveFingerprint: string;
+	}): Promise<{ state: "active"; rootFolderId: string }>;
 	prepareGitFolderMove(args: {
 		operationKey: string;
 		workspaceId: string;

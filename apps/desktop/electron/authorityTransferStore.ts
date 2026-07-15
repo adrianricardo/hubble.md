@@ -40,6 +40,20 @@ const summarySchema = z.object({
 	blockingExclusionCount: z.number().int().nonnegative(),
 });
 
+const placementSchema = z.object({
+	id: z.string().min(1),
+	repoRoot: z.string().min(1).refine(path.isAbsolute),
+	relativePath: z.string().min(1),
+	workspaceId: z.string().min(1),
+	cloudFolderId: z.string().min(1),
+	formerGitFingerprint: z.string().min(1),
+	projection: z
+		.object({ scopeKey: z.string().min(1), localPath: z.string().min(1) })
+		.nullable(),
+	createdAt: z.number().finite(),
+	updatedAt: z.number().finite(),
+});
+
 const operationSchema = z
 	.object({
 		id: z.string().min(1),
@@ -62,10 +76,16 @@ const operationSchema = z
 		manifestSummary: summarySchema.nullable(),
 		manifestHash: z.string().min(1).nullable(),
 		previewFingerprint: z.string().min(1).nullable(),
+		destinationPreviewFingerprint: z.string().min(1).nullable().optional(),
 		cloudTransferId: z.string().min(1).nullable().optional(),
 		cloudRootFolderId: z.string().min(1).nullable().optional(),
 		cutoverToken: z.string().min(1).nullable().optional(),
 		recoveryPath: z.string().min(1).nullable().optional(),
+		temporaryPath: z.string().min(1).nullable().optional(),
+		archiveFingerprint: z.string().min(1).nullable().optional(),
+		destinationWasEmpty: z.boolean().optional(),
+		completionFingerprint: z.string().min(1).nullable().optional(),
+		sourcePlacement: placementSchema.nullable().optional(),
 		lastError: z.string().nullable(),
 		createdAt: z.number().finite(),
 		updatedAt: z.number().finite(),

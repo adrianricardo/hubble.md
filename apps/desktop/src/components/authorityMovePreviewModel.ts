@@ -44,3 +44,25 @@ export function canConfirmGitToCloud(input: {
 		!input.busy
 	);
 }
+
+export function canConfirmCloudToGit(input: {
+	online: boolean;
+	journaled: boolean;
+	hasCloudPreview: boolean;
+	hasDestination: boolean;
+	destinationOccupied: boolean;
+	authReady: boolean;
+	stale: boolean;
+	busy: boolean;
+}): boolean {
+	return (
+		input.online &&
+		input.journaled &&
+		input.hasCloudPreview &&
+		input.hasDestination &&
+		!input.destinationOccupied &&
+		input.authReady &&
+		!input.stale &&
+		!input.busy
+	);
+}

@@ -36,8 +36,10 @@ import ignore from "ignore";
 import { z } from "zod/v4";
 import type {
 	AuthorityTransferOperation,
+	CancelCloudToGitAuthorityMoveInput,
 	CancelGitToCloudAuthorityMoveInput,
 	CloudMarkdownImportInput,
+	CloudToGitAuthorityMoveInput,
 	DesktopUpdateState,
 	DirectoryListing,
 	GitDestinationInspectionInput,
@@ -62,6 +64,7 @@ import type {
 	SyncedFolderConnectInput,
 	SyncedFolderEvent,
 	SyncedFolderImportInput,
+	UndoCloudToGitAuthorityMoveInput,
 	WorkspaceConfig,
 } from "../src/desktopApi/types";
 import {
@@ -73,6 +76,10 @@ import {
 import { AuthorityMoveCoordinator } from "./authorityMoveCoordinator";
 import { AuthorityTransferStore } from "./authorityTransferStore";
 import { type CliServer, startCliServer } from "./cliServer";
+import {
+	CloudToGitAuthorityMoveCoordinator,
+	isCloudToGitUndoEligible,
+} from "./cloudToGitAuthorityMoveCoordinator";
 import { FolderAuthorityStore } from "./folderAuthorityStore";
 import { inspectGitDestination, inspectGitFolder } from "./gitFolderInspection";
 import { LiveSyncService } from "./liveSync";
@@ -605,6 +612,27 @@ const gitToCloudAuthorityMoveSchema = z.object({
 	intent: z.enum(["move", "share"]),
 });
 const cancelGitToCloudAuthorityMoveSchema = z.object({
+	operationId: z.string().min(1),
+	deploymentUrl: convexDeploymentUrlSchema,
+	authToken: authTokenSchema,
+});
+const cloudToGitAuthorityMoveSchema = z.object({
+	operationId: z.string().min(1),
+	cloudFolderId: z.string().min(1),
+	repositoryPath: z.string().min(1),
+	relativePath: z.string().min(1),
+	placementId: z.string().min(1).nullable(),
+	deploymentUrl: convexDeploymentUrlSchema,
+	authToken: authTokenSchema,
+	expectedCloudPreviewFingerprint: z.string().min(1),
+	expectedDestinationFingerprint: z.string().min(1),
+});
+const cancelCloudToGitAuthorityMoveSchema = z.object({
+	operationId: z.string().min(1),
+	deploymentUrl: convexDeploymentUrlSchema,
+	authToken: authTokenSchema,
+});
+const undoCloudToGitAuthorityMoveSchema = z.object({
 	operationId: z.string().min(1),
 	deploymentUrl: convexDeploymentUrlSchema,
 	authToken: authTokenSchema,
@@ -2418,6 +2446,72 @@ function registerIpc() {
 					inspectGitFolder(folderPath, await folderAuthorityStore.list()),
 			});
 			return coordinator.cancelGitToCloudMove(parsed.operationId);
+		},
+	);
+	ipcMain.handle(
+		"desktop:cloud-authority:move-to-git",
+		async (_event, input: CloudToGitAuthorityMoveInput) => {
+			const parsed = cloudToGitAuthorityMoveSchema.parse(input);
+			const coordinator = new CloudToGitAuthorityMoveCoordinator({
+				backend: createConvexBackend(parsed.deploymentUrl, parsed.authToken),
+				transferStore: authorityTransferStore,
+				placementStore: folderAuthorityStore,
+				inspectDestination: inspectGitDestination,
+				stopProjection: async (placement) => {
+					if (placement.projection) {
+						await projectionManager.disconnectMount(
+							placement.projection.scopeKey,
+						);
+					}
+				},
+			});
+			const result = await coordinator.move({
+				...parsed,
+				placementId: parsed.placementId ?? null,
+			});
+			if (result.status === "completed") {
+				sendToRenderer("desktop:folder-authority:changed");
+			}
+			return result;
+		},
+	);
+	ipcMain.handle(
+		"desktop:cloud-authority:cancel-move-to-git",
+		async (_event, input: CancelCloudToGitAuthorityMoveInput) => {
+			const parsed = cancelCloudToGitAuthorityMoveSchema.parse(input);
+			const coordinator = new CloudToGitAuthorityMoveCoordinator({
+				backend: createConvexBackend(parsed.deploymentUrl, parsed.authToken),
+				transferStore: authorityTransferStore,
+				placementStore: folderAuthorityStore,
+				inspectDestination: inspectGitDestination,
+			});
+			return coordinator.cancel(parsed.operationId);
+		},
+	);
+	ipcMain.handle(
+		"desktop:cloud-authority:undo-eligibility",
+		(_event, input: unknown) => {
+			const { operationId } = z
+				.object({ operationId: z.string().min(1) })
+				.parse(input);
+			return isCloudToGitUndoEligible(authorityTransferStore, operationId);
+		},
+	);
+	ipcMain.handle(
+		"desktop:cloud-authority:undo-move-to-git",
+		async (_event, input: UndoCloudToGitAuthorityMoveInput) => {
+			const parsed = undoCloudToGitAuthorityMoveSchema.parse(input);
+			const coordinator = new CloudToGitAuthorityMoveCoordinator({
+				backend: createConvexBackend(parsed.deploymentUrl, parsed.authToken),
+				transferStore: authorityTransferStore,
+				placementStore: folderAuthorityStore,
+				inspectDestination: inspectGitDestination,
+			});
+			const result = await coordinator.undo(parsed.operationId);
+			if (result.status === "restored") {
+				sendToRenderer("desktop:folder-authority:changed");
+			}
+			return result;
 		},
 	);
 	ipcMain.handle(

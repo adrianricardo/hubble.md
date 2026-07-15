@@ -272,6 +272,14 @@ async function projectMarkdown(
 	};
 }
 
+/** Current byte projection used by verified authority export snapshots. */
+export async function projectDocumentMarkdownForAuthority(
+	ctx: MutationCtx | QueryCtx,
+	documentId: Id<"documents">,
+) {
+	return projectMarkdown(ctx, documentId);
+}
+
 function appendMarkdown(currentMarkdown: string, markdown: string): string {
 	const base = currentMarkdown.trimEnd();
 	const addition = markdown.trim();

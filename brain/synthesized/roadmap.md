@@ -3,33 +3,31 @@
 Build state and current next step. Track strategy lives in
 `brain/synthesized/track-strategy.md`.
 
-## ➔ CURRENT NEXT STEP (updated 2026-07-15, authority Milestone 3 complete)
+## ➔ CURRENT NEXT STEP (updated 2026-07-15, authority Milestone 4 complete)
 
-Implement `specs/folder-authority-mobility/TECH.md` Milestone 4: the verified
-cloud-to-Git folder move. Start with authoritative cloud manifest, audience, history,
-and archive-fingerprint APIs plus active-only archived recovery semantics. Then export
-Markdown/assets into a guarded repository-adjacent temp tree, verify and atomically
-place exact bytes, archive cloud authority only after current revalidation, update the
-placement journal, and expose safe resume/reverse eligibility. Do not deploy or use
-cloud fixtures without fresh authorization.
+Implement `specs/folder-authority-mobility/TECH.md` Milestone 5: nested authority
+boundaries, Share-recipient intent, interruption/offline/relaunch and recovery-policy
+hardening, reduced-motion/screen-reader behavior, and packaged cross-surface
+acceptance. Start by making opposite-authority descendants explicit exclusions that
+can only move through their own journey; then carry requested Share recipients through
+the authoritative audience review without conflating move permission with export-copy
+permission. Do not deploy or use cloud fixtures without fresh authorization.
 
-Milestone 3 adds hidden, operation-owned staging roots; active-only query, permission,
-asset, and normal-mutation boundaries; authoritative audience revalidation; bounded
-idempotent Markdown/asset ingestion; exact count/byte/storage-hash verification; and
-atomic activation. The desktop keeps recovery bytes outside the repository, restores
-Git authority when activation fails, resumes forward when placement persistence fails
-after activation, and renders one cloud boundary at the former Git path without a
-second editable projection. Production confirmation is gated on online, auth,
-inspection, audience, freshness, and a durable local journal. The first UI targets
-Workspace-root destinations; optional nested destinations remain backend-only.
+Milestone 4 adds authoritative cloud Markdown/asset manifests, inherited access and
+public-link consequences, Hubble revision counts, archive fingerprints, active-only
+archived recovery, and unchanged-only restore. Desktop exports bounded batches into a
+guarded repository-adjacent temp tree, verifies the exact path/hash/size set, rechecks
+cloud and Git immediately before cutover, atomically places Git bytes, and archives
+cloud authority only afterward. Failures before archive return bytes to recovery;
+failures after archive resume forward so two editable authorities cannot appear.
 
-Automated failure injection covers staging invisibility, direct-ID and ordinary-write
-denial, retry, bounded cancellation, assets, stale audiences, rollback, forward
-recovery, and mixed placement. Real Electron/CDP acceptance exercised the production
-Git menu, authoritative read-only audience preview, expected disabled confirmation for
-an excluded-only playground source, cancel, and focus return. The official desktop
-build and focused suites pass. No real cloud cutover, fixture mutation, deployment,
-push, or PR occurred.
+Automated failure injection covers exact Markdown/assets, stale cloud content,
+destination collision, cancellation, archive rollback, post-archive resume, unchanged
+Undo, and changed-byte Undo refusal. Sync-backend tests pass 85/85, Convex-client tests
+3/3, desktop tests 211/211, and `pnpm build:desktop` passes. The direct Electron wrapper
+exited before exposing CDP on this host, so real-renderer and expendable-cloud cutover
+acceptance remain explicitly deferred to Milestone 5; no cloud fixture mutation,
+deployment, push, or PR occurred.
 
 ## Desktop share-role selector stacking fixed (2026-07-14)
 

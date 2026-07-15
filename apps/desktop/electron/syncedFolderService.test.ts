@@ -165,6 +165,11 @@ function fakeBackend(
 		throw new Error("not implemented in fake backend");
 	};
 	return {
+		getCloudFolderMovePreview: notImpl,
+		prepareCloudFolderMove: notImpl,
+		getCloudFolderExportBatch: notImpl,
+		archiveAuthorityFolder: notImpl,
+		restoreArchivedAuthorityFolder: notImpl,
 		prepareGitFolderMove: notImpl,
 		stageAuthorityFolderBatch: notImpl,
 		verifyAuthorityStaging: notImpl,

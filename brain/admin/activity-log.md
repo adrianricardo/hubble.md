@@ -790,3 +790,15 @@ could not be harvested on this host. Soft-removed both named temporary cloud fol
 stopped all projection/dev processes, and deleted the isolated profile and named
 acceptance roots. Desktop tests pass 166/166 and `pnpm build:desktop` passes. Milestone
 4 was not started.
+- 2026-07-15 — Completed selective folder authority TECH Milestone 4 at
+  code/test/build scope. Added exact cloud Markdown/asset, inherited-audience,
+  public-link, revision-history, archive, and restore contracts; guarded bounded
+  cloud-to-Git export; atomic verified placement; cloud-last cutover; forward-only
+  post-archive recovery; exact completion status; and unchanged-only Undo. Failure
+  injection covers stale content, cancellation, archive rollback, interrupted resume,
+  byte equality, and changed-byte Undo refusal. Sync-backend tests pass 85/85,
+  Convex-client tests 3/3, desktop tests 211/211, and `pnpm build:desktop` passes after
+  simplify/comments/review-readiness. The direct Electron wrapper exited before CDP
+  became available, and no expendable cloud fixture was authorized, so real-renderer
+  cutover acceptance moves to Milestone 5. No cloud fixtures, deployment, push, or PR
+  were changed.

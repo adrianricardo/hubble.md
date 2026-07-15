@@ -67,6 +67,38 @@ export function createConvexBackend(
 		client.setAuth(authToken);
 	}
 	return {
+		async getCloudFolderMovePreview(folderId) {
+			return client.query(api.authorityTransfers.getCloudFolderMovePreview, {
+				folderId: folderId as Id<"folders">,
+			});
+		},
+		async prepareCloudFolderMove(args) {
+			return client.mutation(api.authorityTransfers.prepareCloudFolderMove, {
+				...args,
+				folderId: args.folderId as Id<"folders">,
+			});
+		},
+		async getCloudFolderExportBatch(args) {
+			return client.query(api.authorityTransfers.getCloudFolderExportBatch, {
+				transferId: args.transferId as Id<"authorityTransfers">,
+				afterPath: args.afterPath,
+			});
+		},
+		async archiveAuthorityFolder(args) {
+			return client.mutation(api.authorityTransfers.archiveAuthorityFolder, {
+				...args,
+				transferId: args.transferId as Id<"authorityTransfers">,
+			});
+		},
+		async restoreArchivedAuthorityFolder(args) {
+			return client.mutation(
+				api.authorityTransfers.restoreArchivedAuthorityFolder,
+				{
+					transferId: args.transferId as Id<"authorityTransfers">,
+					archiveFingerprint: args.archiveFingerprint,
+				},
+			);
+		},
 		async prepareGitFolderMove(args) {
 			return client.mutation(api.authorityTransfers.prepareGitFolderMove, {
 				...args,

@@ -36,6 +36,16 @@ const desktopApi = {
 		ipcRenderer.invoke("desktop:git-authority:move-to-cloud", input),
 	cancelGitToCloudAuthorityMove: (input) =>
 		ipcRenderer.invoke("desktop:git-authority:cancel-move-to-cloud", input),
+	moveCloudFolderToGit: (input) =>
+		ipcRenderer.invoke("desktop:cloud-authority:move-to-git", input),
+	cancelCloudToGitAuthorityMove: (input) =>
+		ipcRenderer.invoke("desktop:cloud-authority:cancel-move-to-git", input),
+	getCloudToGitUndoEligibility: (operationId) =>
+		ipcRenderer.invoke("desktop:cloud-authority:undo-eligibility", {
+			operationId,
+		}),
+	undoCloudToGitAuthorityMove: (input) =>
+		ipcRenderer.invoke("desktop:cloud-authority:undo-move-to-git", input),
 	onFolderAuthorityChanged: (callback) =>
 		subscribe("desktop:folder-authority:changed", callback),
 	listHtmlAppFiles: (workspacePath, glob) =>

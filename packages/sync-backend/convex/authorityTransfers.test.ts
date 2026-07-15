@@ -331,6 +331,23 @@ describe("Git-to-cloud authority staging", () => {
 				workspaceId,
 			}),
 		).resolves.toHaveLength(1);
+		const cloudPreview = await asUser(t, ownerId).query(
+			api.authorityTransfers.getCloudFolderMovePreview,
+			{ folderId: prepared.rootFolderId as Id<"folders"> },
+		);
+		expect(cloudPreview.manifest).toMatchObject({
+			itemCount: 2,
+			markdownCount: 1,
+			assetCount: 1,
+		});
+		expect(cloudPreview.manifest.items).toContainEqual(
+			expect.objectContaining({
+				kind: "asset",
+				relativePath: "readme.assets/diagram.png",
+				contentHash: assetHash,
+				size: asset.byteLength,
+			}),
+		);
 	});
 
 	test("makes batch retries idempotent and rejects changed bytes", async () => {
@@ -485,5 +502,185 @@ describe("Git-to-cloud authority staging", () => {
 		await expect(
 			asUser(t, ownerId).query(api.folders.list, { workspaceId }),
 		).resolves.toEqual([]);
+	});
+
+	test("previews, exports, archives, and restores an exact cloud folder", async () => {
+		const t = testInstance();
+		const { ownerId, workspaceId } = await setup(t);
+		const user = asUser(t, ownerId);
+		const folderId = await user.mutation(api.folders.create, {
+			workspaceId,
+			name: "Cloud notes",
+		});
+		const nestedId = await user.mutation(api.folders.create, {
+			workspaceId,
+			parentId: folderId,
+			name: "Guide",
+		});
+		const documentId = await user.mutation(api.documents.create, {
+			workspaceId,
+			folderId: nestedId,
+			title: "Read me",
+			path: "Cloud notes/Guide/readme.md",
+			markdown: "# Exact cloud bytes\n",
+		});
+		await t.run(async (ctx) => {
+			await ctx.db.insert("folderShares", {
+				folderId,
+				linkScope: "public",
+				role: "viewer",
+				createdAt: 2,
+				updatedAt: 2,
+			});
+			await ctx.db.insert("revisions", {
+				documentId,
+				createdAt: 2,
+				pmDoc: null,
+				markdown: "# Earlier bytes\n",
+				revision: 1,
+			});
+		});
+
+		const preview = await user.query(
+			api.authorityTransfers.getCloudFolderMovePreview,
+			{ folderId },
+		);
+		expect(preview).toMatchObject({
+			manifest: {
+				itemCount: 1,
+				markdownCount: 1,
+				assetCount: 0,
+			},
+			audience: { publicLinkRole: "viewer" },
+			history: { documentCount: 1, revisionCount: 1 },
+			recovery: { kind: "cloudArchive", expiresAt: null },
+		});
+		expect(preview.manifest.items[0]?.relativePath).toBe("Guide/readme.md");
+
+		const prepared = await user.mutation(
+			api.authorityTransfers.prepareCloudFolderMove,
+			{
+				operationKey: "cloud-to-git-1",
+				folderId,
+				expectedPreviewFingerprint: preview.previewFingerprint,
+				destinationFingerprint: "git-destination-1",
+			},
+		);
+		const exported = await user.query(
+			api.authorityTransfers.getCloudFolderExportBatch,
+			{ transferId: prepared.transferId },
+		);
+		expect(exported).toMatchObject({
+			items: [
+				{
+					kind: "markdown",
+					relativePath: "Guide/readme.md",
+					markdown: "# Exact cloud bytes\n",
+				},
+			],
+			nextPath: null,
+		});
+
+		const archived = await user.mutation(
+			api.authorityTransfers.archiveAuthorityFolder,
+			{
+				transferId: prepared.transferId,
+				expectedPreviewFingerprint: preview.previewFingerprint,
+				destinationFingerprint: "git-destination-1",
+			},
+		);
+		await expect(user.query(api.documents.get, { documentId })).rejects.toThrow(
+			/Unauthorized/,
+		);
+		await expect(
+			user.query(api.folders.list, { workspaceId }),
+		).resolves.toEqual([]);
+
+		await user.mutation(api.authorityTransfers.restoreArchivedAuthorityFolder, {
+			transferId: prepared.transferId,
+			archiveFingerprint: archived.archiveFingerprint,
+		});
+		await expect(
+			user.query(api.documents.getWithMarkdown, { documentId }),
+		).resolves.toMatchObject({ markdown: "# Exact cloud bytes\n" });
+	});
+
+	test("rejects archive when cloud content changes after prepare", async () => {
+		const t = testInstance();
+		const { ownerId, workspaceId } = await setup(t);
+		const user = asUser(t, ownerId);
+		const folderId = await user.mutation(api.folders.create, {
+			workspaceId,
+			name: "Changing cloud folder",
+		});
+		await user.mutation(api.documents.create, {
+			workspaceId,
+			folderId,
+			title: "First",
+			markdown: "First\n",
+		});
+		const preview = await user.query(
+			api.authorityTransfers.getCloudFolderMovePreview,
+			{ folderId },
+		);
+		const prepared = await user.mutation(
+			api.authorityTransfers.prepareCloudFolderMove,
+			{
+				operationKey: "cloud-to-git-stale",
+				folderId,
+				expectedPreviewFingerprint: preview.previewFingerprint,
+				destinationFingerprint: "git-destination-stale",
+			},
+		);
+		await user.mutation(api.documents.create, {
+			workspaceId,
+			folderId,
+			title: "Concurrent",
+			markdown: "Concurrent edit\n",
+		});
+		await expect(
+			user.mutation(api.authorityTransfers.archiveAuthorityFolder, {
+				transferId: prepared.transferId,
+				expectedPreviewFingerprint: preview.previewFingerprint,
+				destinationFingerprint: "git-destination-stale",
+			}),
+		).rejects.toThrow(/stale/);
+		await expect(
+			user.query(api.folders.list, { workspaceId }),
+		).resolves.toHaveLength(1);
+	});
+
+	test("requires folder-manage permission rather than ordinary edit access", async () => {
+		const t = testInstance();
+		const { ownerId, workspaceId } = await setup(t);
+		const folderId = await asUser(t, ownerId).mutation(api.folders.create, {
+			workspaceId,
+			name: "Managed cloud folder",
+		});
+		await asUser(t, ownerId).mutation(api.documents.create, {
+			workspaceId,
+			folderId,
+			title: "Readable",
+			markdown: "Readable\n",
+		});
+		const memberId = await t.run(async (ctx) => {
+			const userId = await ctx.db.insert("users", {
+				email: "member@example.com",
+				name: "Member",
+			});
+			await ctx.db.insert("members", {
+				workspaceId,
+				userId,
+				role: "member",
+				createdAt: 2,
+			});
+			return userId;
+		});
+		await expect(
+			asUser(t, memberId).query(
+				api.authorityTransfers.getCloudFolderMovePreview,
+				{ folderId },
+			),
+		).rejects.toThrow(/Unauthorized/);
 	});
 });

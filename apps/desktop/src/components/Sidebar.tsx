@@ -102,7 +102,6 @@ type RelocationImpact = {
 	}>;
 };
 
-const cloudToGitPreviewsEnabled = import.meta.env.DEV;
 const authorityPreviewMenuSettleMs = 50;
 
 function currentMenuTrigger(): HTMLElement | null {
@@ -701,8 +700,7 @@ function AuthenticatedCloudSidebar({
 				canWriteFolder: () => contextCapabilities.canWrite,
 				canWriteDocument: () => contextCapabilities.canWrite,
 				canShareFolder: () => contextCapabilities.canShare,
-				canMoveFolderToGit: () =>
-					cloudToGitPreviewsEnabled && contextCapabilities.canShare,
+				canMoveFolderToGit: () => contextCapabilities.canShare,
 			};
 		}
 		const writableFolders = new Set<string>(
@@ -719,8 +717,7 @@ function AuthenticatedCloudSidebar({
 			canWriteFolder: (folderId) => writableFolders.has(folderId),
 			canWriteDocument: (documentId) => writableDocuments.has(documentId),
 			canShareFolder: (folderId) => shareableFolders.has(folderId),
-			canMoveFolderToGit: (folderId) =>
-				cloudToGitPreviewsEnabled && shareableFolders.has(folderId),
+			canMoveFolderToGit: (folderId) => shareableFolders.has(folderId),
 		};
 	}, [contextCapabilities]);
 	const openDocument = (documentId: string) => {
@@ -1132,7 +1129,7 @@ function AuthenticatedCloudSidebar({
 						onRequestTrash={setTrashTarget}
 						onRequestShareFolder={setShareTarget}
 						onRequestMoveFolderToGit={
-							cloudToGitPreviewsEnabled && context
+							context
 								? (target) => {
 										if (target.kind !== "folder") return;
 										authorityPreview.open({
@@ -1141,7 +1138,6 @@ function AuthenticatedCloudSidebar({
 											workspaceId: context.workspaceId,
 											folderId: target.id,
 											name: target.name,
-											includeWorkspaceMembers: context.kind === "workspace",
 										});
 									}
 								: undefined

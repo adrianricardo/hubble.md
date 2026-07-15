@@ -11,8 +11,10 @@ import {
 import { currentActorName } from "./authIdentity";
 import {
 	assertLiveDocumentMarkdownWithinCap,
+	projectDocumentMarkdownForAuthority,
 	replaceLiveDocumentMarkdown,
 } from "./documents";
+import { collectFolderSubtree, folderRelativePath } from "./folders";
 import {
 	isFolderAuthorityActive,
 	requireWorkspaceMember,
@@ -700,5 +702,532 @@ export const activateAuthorityFolder = mutation({
 			updatedAt: now,
 		});
 		return { rootFolderId: root._id, state: "active" as const };
+	},
+});
+
+type CloudExportItem =
+	| {
+			kind: "markdown";
+			relativePath: string;
+			contentHash: string;
+			size: number;
+			documentId: Id<"documents">;
+			markdown: string;
+	  }
+	| {
+			kind: "asset";
+			relativePath: string;
+			contentHash: string;
+			size: number;
+			storageId: Id<"_storage">;
+	  };
+
+async function hasCloudMoveManagePermission(
+	ctx: AuthorityCtx,
+	root: Doc<"folders">,
+): Promise<boolean> {
+	const role = await workspaceRole(ctx, root.workspaceId);
+	if (role === "owner" || role === "admin") return true;
+	const userId = await getAuthUserId(ctx);
+	if (!userId) return false;
+	const seen = new Set<Id<"folders">>();
+	let current: Id<"folders"> | undefined = root._id;
+	for (let depth = 0; current && depth < 64; depth++) {
+		if (seen.has(current)) break;
+		seen.add(current);
+		const share = await ctx.db
+			.query("folderShares")
+			.withIndex("by_folder_user", (query) =>
+				query.eq("folderId", current as Id<"folders">).eq("userId", userId),
+			)
+			.unique();
+		if (share?.role === "owner") return true;
+		const folder: Doc<"folders"> | null = await ctx.db.get(current);
+		current = folder?.parentId;
+	}
+	return false;
+}
+
+async function requireCloudMoveManage(
+	ctx: AuthorityCtx,
+	folderId: Id<"folders">,
+	options: { allowArchived?: boolean } = {},
+): Promise<Doc<"folders">> {
+	const root = await ctx.db.get(folderId);
+	if (
+		!root ||
+		root.deletedAt !== undefined ||
+		(!options.allowArchived && !(await isFolderAuthorityActive(ctx, folderId)))
+	) {
+		throw new Error("Folder not found");
+	}
+	if (!(await hasCloudMoveManagePermission(ctx, root))) {
+		throw new Error("Unauthorized");
+	}
+	return root;
+}
+
+function exportDocumentFileName(document: Doc<"documents">): string {
+	const candidate = document.path
+		?.replace(/\\/g, "/")
+		.split("/")
+		.filter(Boolean)
+		.pop();
+	if (candidate && /\.(?:md|markdown|mdown)$/i.test(candidate)) {
+		return candidate;
+	}
+	const title = document.title.trim().replace(/[\\/\0]/g, "-") || "Untitled";
+	return `${title}.md`;
+}
+
+async function cloudFolderAudience(ctx: AuthorityCtx, root: Doc<"folders">) {
+	const workspaceAudience = await currentAudience(ctx, root.workspaceId);
+	const entries: Array<{
+		kind: "member" | "invite" | "folderShare";
+		id: string;
+		email: string | null;
+		name: string | null;
+		role: string;
+	}> = [...workspaceAudience.audience];
+	let publicLinkRole: string | null = null;
+	const seen = new Set<Id<"folders">>();
+	let current: Id<"folders"> | undefined = root._id;
+	for (let depth = 0; current && depth < 64; depth++) {
+		if (seen.has(current)) break;
+		seen.add(current);
+		const shares = await ctx.db
+			.query("folderShares")
+			.withIndex("by_folder", (query) =>
+				query.eq("folderId", current as Id<"folders">),
+			)
+			.take(257);
+		if (shares.length > 256) {
+			throw new Error("Folder audience exceeds the exact preview limit");
+		}
+		for (const share of shares) {
+			if (share.linkScope === "public") {
+				publicLinkRole = share.role;
+				continue;
+			}
+			if (!share.userId) continue;
+			const user = await ctx.db.get(share.userId);
+			entries.push({
+				kind: "folderShare",
+				id: share.userId,
+				email: user?.email ?? null,
+				name: user?.name ?? null,
+				role: share.role,
+			});
+		}
+		const invites = await ctx.db
+			.query("invites")
+			.withIndex("by_folder_email", (query) =>
+				query.eq("folderId", current as Id<"folders">),
+			)
+			.take(257);
+		if (invites.length > 256) {
+			throw new Error("Folder audience exceeds the exact preview limit");
+		}
+		for (const invite of invites) {
+			entries.push({
+				kind: "invite",
+				id: invite._id,
+				email: invite.email,
+				name: null,
+				role: invite.folderRole ?? "viewer",
+			});
+		}
+		const folder: Doc<"folders"> | null = await ctx.db.get(current);
+		current = folder?.parentId;
+	}
+	const deduped = new Map<string, (typeof entries)[number]>();
+	for (const entry of entries) {
+		const key = `${entry.kind}:${entry.id}:${entry.role}`;
+		deduped.set(key, entry);
+	}
+	const audience = [...deduped.values()].sort((left, right) =>
+		`${left.kind}:${left.id}:${left.role}`.localeCompare(
+			`${right.kind}:${right.id}:${right.role}`,
+		),
+	);
+	return {
+		entries: audience,
+		publicLinkRole,
+		fingerprint: await sha256(JSON.stringify({ audience, publicLinkRole })),
+	};
+}
+
+async function cloudFolderSnapshot(
+	ctx: AuthorityCtx,
+	root: Doc<"folders">,
+): Promise<{
+	items: CloudExportItem[];
+	manifestHash: string;
+	markdownCount: number;
+	assetCount: number;
+	totalBytes: number;
+	historyRevisionCount: number;
+}> {
+	const { descendants, documents } = await collectFolderSubtree(ctx, root._id);
+	const folderById = new Map<Id<"folders">, Doc<"folders">>([[root._id, root]]);
+	for (const folder of descendants) folderById.set(folder._id, folder);
+	const items: CloudExportItem[] = [];
+	let historyRevisionCount = 0;
+	for (const document of documents) {
+		if (!document.folderId) continue;
+		const projection = await projectDocumentMarkdownForAuthority(
+			ctx,
+			document._id,
+		);
+		const bytes = new TextEncoder().encode(projection.markdown);
+		const folderPath = folderRelativePath(
+			document.folderId,
+			root._id,
+			folderById,
+		);
+		const relativePath = canonicalPath(
+			[folderPath, exportDocumentFileName(document)].filter(Boolean).join("/"),
+		);
+		items.push({
+			kind: "markdown",
+			relativePath,
+			contentHash: await sha256(bytes.buffer),
+			size: bytes.byteLength,
+			documentId: document._id,
+			markdown: projection.markdown,
+		});
+		historyRevisionCount += (
+			await ctx.db
+				.query("revisions")
+				.withIndex("by_document", (query) =>
+					query.eq("documentId", document._id),
+				)
+				.take(MAX_MANIFEST_ITEMS + 1)
+		).length;
+	}
+	const assetPrefix = `${root.name}/`;
+	const authorityAssets = await ctx.db
+		.query("assets")
+		.withIndex("by_authority_root", (query) =>
+			query.eq("authorityRootId", root._id),
+		)
+		.take(MAX_MANIFEST_ITEMS + 1);
+	const pathAssets = await ctx.db
+		.query("assets")
+		.withIndex("by_workspace_path", (query) =>
+			query
+				.eq("workspaceId", root.workspaceId)
+				.gte("path", assetPrefix)
+				.lt("path", `${assetPrefix}\uffff`),
+		)
+		.take(MAX_MANIFEST_ITEMS + 1);
+	const assets = new Map(
+		[...authorityAssets, ...pathAssets].map((asset) => [asset._id, asset]),
+	);
+	if (assets.size > MAX_MANIFEST_ITEMS) {
+		throw new Error(
+			`Cloud folder export must contain 1-${MAX_MANIFEST_ITEMS} items`,
+		);
+	}
+	for (const asset of assets.values()) {
+		if (asset.deleted) continue;
+		if (
+			asset.authorityRootId !== root._id &&
+			!asset.path.startsWith(assetPrefix)
+		) {
+			continue;
+		}
+		const relativePath = canonicalPath(
+			asset.path.startsWith(assetPrefix)
+				? asset.path.slice(assetPrefix.length)
+				: asset.path,
+		);
+		const metadata = await ctx.db.system.get("_storage", asset.storageId);
+		if (!metadata)
+			throw new Error(`Cloud asset is unavailable: ${relativePath}`);
+		items.push({
+			kind: "asset",
+			relativePath,
+			contentHash: metadata.sha256,
+			size: metadata.size,
+			storageId: asset.storageId,
+		});
+	}
+	items.sort((left, right) =>
+		left.relativePath.localeCompare(right.relativePath),
+	);
+	if (items.length < 1 || items.length > MAX_MANIFEST_ITEMS) {
+		throw new Error(
+			`Cloud folder export must contain 1-${MAX_MANIFEST_ITEMS} items`,
+		);
+	}
+	for (let index = 1; index < items.length; index++) {
+		if (items[index - 1]?.relativePath === items[index]?.relativePath) {
+			throw new Error(
+				`Cloud folder has a duplicate path: ${items[index]?.relativePath}`,
+			);
+		}
+	}
+	const manifestHash = await sha256(
+		items
+			.map(
+				(item) =>
+					`${item.relativePath}:${item.kind}:${item.contentHash}:${item.size}`,
+			)
+			.join("\n"),
+	);
+	return {
+		items,
+		manifestHash,
+		markdownCount: items.filter((item) => item.kind === "markdown").length,
+		assetCount: items.filter((item) => item.kind === "asset").length,
+		totalBytes: items.reduce((total, item) => total + item.size, 0),
+		historyRevisionCount,
+	};
+}
+
+async function buildCloudFolderMovePreview(
+	ctx: AuthorityCtx,
+	folderId: Id<"folders">,
+) {
+	const root = await requireCloudMoveManage(ctx, folderId);
+	const [snapshot, audience] = await Promise.all([
+		cloudFolderSnapshot(ctx, root),
+		cloudFolderAudience(ctx, root),
+	]);
+	const previewFingerprint = await sha256(
+		JSON.stringify({
+			folderId: root._id,
+			workspaceId: root.workspaceId,
+			parentFolderId: root.parentId ?? null,
+			manifestHash: snapshot.manifestHash,
+			audienceFingerprint: audience.fingerprint,
+			historyRevisionCount: snapshot.historyRevisionCount,
+		}),
+	);
+	return {
+		root: {
+			folderId: root._id,
+			workspaceId: root.workspaceId,
+			parentFolderId: root.parentId ?? null,
+			name: root.name,
+		},
+		manifest: {
+			manifestHash: snapshot.manifestHash,
+			itemCount: snapshot.items.length,
+			markdownCount: snapshot.markdownCount,
+			assetCount: snapshot.assetCount,
+			totalBytes: snapshot.totalBytes,
+			items: snapshot.items.map(
+				({ relativePath, kind, contentHash, size }) => ({
+					relativePath,
+					kind,
+					contentHash,
+					size,
+				}),
+			),
+		},
+		audience,
+		history: {
+			documentCount: snapshot.markdownCount,
+			revisionCount: snapshot.historyRevisionCount,
+			becomesGitCommits: false as const,
+		},
+		recovery: { kind: "cloudArchive" as const, expiresAt: null },
+		previewFingerprint,
+	};
+}
+
+export const getCloudFolderMovePreview = query({
+	args: { folderId: v.id("folders") },
+	handler: (ctx, { folderId }) => buildCloudFolderMovePreview(ctx, folderId),
+});
+
+export const prepareCloudFolderMove = mutation({
+	args: {
+		operationKey: v.string(),
+		folderId: v.id("folders"),
+		expectedPreviewFingerprint: v.string(),
+		destinationFingerprint: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const ownerId = await getAuthUserId(ctx);
+		if (!ownerId) throw new Error("Unauthorized");
+		const operationKey = args.operationKey.trim();
+		if (!operationKey) throw new Error("Operation key is required");
+		const preview = await buildCloudFolderMovePreview(ctx, args.folderId);
+		if (preview.previewFingerprint !== args.expectedPreviewFingerprint) {
+			throw new Error("Cloud folder changed; refresh the preview");
+		}
+		const operationFingerprint = await sha256(
+			`${preview.previewFingerprint}\n${args.destinationFingerprint}`,
+		);
+		const existing = await ctx.db
+			.query("authorityTransfers")
+			.withIndex("by_owner_and_operation_key", (query) =>
+				query.eq("ownerId", ownerId).eq("operationKey", operationKey),
+			)
+			.unique();
+		if (existing) {
+			if (
+				existing.direction !== "cloudToGit" ||
+				existing.operationFingerprint !== operationFingerprint
+			) {
+				throw new Error("Operation key already belongs to a different preview");
+			}
+			return { transferId: existing._id, ...preview };
+		}
+		const now = Date.now();
+		const transferId = await ctx.db.insert("authorityTransfers", {
+			operationKey,
+			ownerId,
+			direction: "cloudToGit",
+			workspaceId: preview.root.workspaceId,
+			parentFolderId: preview.root.parentFolderId ?? undefined,
+			rootFolderId: preview.root.folderId,
+			state: "prepared",
+			manifestHash: preview.manifest.manifestHash,
+			manifestItemCount: preview.manifest.itemCount,
+			manifestMarkdownCount: preview.manifest.markdownCount,
+			manifestAssetCount: preview.manifest.assetCount,
+			manifestTotalBytes: preview.manifest.totalBytes,
+			stagedItemCount: 0,
+			sourceFingerprint: preview.previewFingerprint,
+			destinationFingerprint: args.destinationFingerprint,
+			audienceFingerprint: preview.audience.fingerprint,
+			operationFingerprint,
+			recoveryState: "source",
+			createdAt: now,
+			updatedAt: now,
+		});
+		return { transferId, ...preview };
+	},
+});
+
+export const getCloudFolderExportBatch = query({
+	args: {
+		transferId: v.id("authorityTransfers"),
+		afterPath: v.optional(v.string()),
+	},
+	handler: async (ctx, { transferId, afterPath }) => {
+		const transfer = await requireTransferOwner(ctx, transferId);
+		if (transfer.direction !== "cloudToGit" || !transfer.rootFolderId) {
+			throw new Error("Transfer is not a cloud-to-Git export");
+		}
+		const preview = await buildCloudFolderMovePreview(
+			ctx,
+			transfer.rootFolderId,
+		);
+		if (preview.previewFingerprint !== transfer.sourceFingerprint) {
+			throw new Error("Cloud folder changed; refresh the preview");
+		}
+		const root = await ctx.db.get(transfer.rootFolderId);
+		if (!root) throw new Error("Folder not found");
+		const snapshot = await cloudFolderSnapshot(ctx, root);
+		const remaining = afterPath
+			? snapshot.items.filter((item) => item.relativePath > afterPath)
+			: snapshot.items;
+		const batch = remaining.slice(0, MAX_BATCH_ITEMS);
+		return {
+			items: await Promise.all(
+				batch.map(async (item) =>
+					item.kind === "markdown"
+						? item
+						: {
+								...item,
+								downloadUrl: await ctx.storage.getUrl(item.storageId),
+							},
+				),
+			),
+			nextPath:
+				batch.length === MAX_BATCH_ITEMS
+					? (batch[batch.length - 1]?.relativePath ?? null)
+					: null,
+		};
+	},
+});
+
+export const archiveAuthorityFolder = mutation({
+	args: {
+		transferId: v.id("authorityTransfers"),
+		expectedPreviewFingerprint: v.string(),
+		destinationFingerprint: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const transfer = await requireTransferOwner(ctx, args.transferId);
+		if (transfer.direction !== "cloudToGit" || !transfer.rootFolderId) {
+			throw new Error("Transfer is not a cloud-to-Git move");
+		}
+		if (transfer.state === "active" && transfer.archiveFingerprint) {
+			return {
+				state: "archivedToGit" as const,
+				archiveFingerprint: transfer.archiveFingerprint,
+			};
+		}
+		const preview = await buildCloudFolderMovePreview(
+			ctx,
+			transfer.rootFolderId,
+		);
+		if (
+			preview.previewFingerprint !== args.expectedPreviewFingerprint ||
+			preview.previewFingerprint !== transfer.sourceFingerprint ||
+			args.destinationFingerprint !== transfer.destinationFingerprint
+		) {
+			throw new Error("Authority move preview is stale");
+		}
+		const archiveFingerprint = await sha256(
+			`${preview.previewFingerprint}\n${args.destinationFingerprint}`,
+		);
+		const now = Date.now();
+		await ctx.db.patch(transfer.rootFolderId, {
+			authorityState: "archivedToGit",
+			authorityTransferId: transfer._id,
+			updatedAt: now,
+		});
+		await ctx.db.patch(transfer._id, {
+			state: "active",
+			recoveryState: "retained",
+			archiveFingerprint,
+			archivedAt: now,
+			updatedAt: now,
+		});
+		return { state: "archivedToGit" as const, archiveFingerprint };
+	},
+});
+
+export const restoreArchivedAuthorityFolder = mutation({
+	args: {
+		transferId: v.id("authorityTransfers"),
+		archiveFingerprint: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const transfer = await requireTransferOwner(ctx, args.transferId);
+		if (
+			transfer.direction !== "cloudToGit" ||
+			!transfer.rootFolderId ||
+			transfer.archiveFingerprint !== args.archiveFingerprint
+		) {
+			throw new Error("Archived recovery fingerprint changed");
+		}
+		const root = await requireCloudMoveManage(ctx, transfer.rootFolderId, {
+			allowArchived: true,
+		});
+		if (root.authorityState !== "archivedToGit") {
+			return { state: "active" as const, rootFolderId: root._id };
+		}
+		await assertDestinationAvailable(ctx, {
+			workspaceId: root.workspaceId,
+			parentFolderId: root.parentId,
+			rootName: root.name,
+			exceptFolderId: root._id,
+		});
+		const now = Date.now();
+		await ctx.db.patch(root._id, { authorityState: "active", updatedAt: now });
+		await ctx.db.patch(transfer._id, {
+			state: "needsAttention",
+			recoveryState: "restored",
+			updatedAt: now,
+		});
+		return { state: "active" as const, rootFolderId: root._id };
 	},
 });

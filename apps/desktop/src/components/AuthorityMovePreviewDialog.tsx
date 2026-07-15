@@ -8,10 +8,12 @@ import { desktopConvexUrl } from "../convex";
 import { desktopApi } from "../desktopApi";
 import type {
 	AuthorityTransferOperation,
+	CloudToGitAuthorityMoveResult,
 	GitDestinationInspection,
 	GitFolderInspection,
 } from "../desktopApi/types";
 import {
+	canConfirmCloudToGit,
 	canConfirmGitToCloud,
 	previewChanged,
 	safeGitFolderName,
@@ -32,7 +34,6 @@ export type AuthorityPreviewTarget =
 			workspaceId: string;
 			folderId: string;
 			name: string;
-			includeWorkspaceMembers: boolean;
 	  };
 
 function useOnlineState() {
@@ -61,6 +62,11 @@ export function AuthorityMovePreviewDialog({
 	const cancelRef = useRef<HTMLButtonElement>(null);
 	const operationId = useRef(crypto.randomUUID());
 	const journalSaveRef = useRef<Promise<void> | null>(null);
+	const [completion, setCompletion] = useState<Extract<
+		CloudToGitAuthorityMoveResult,
+		{ status: "completed" }
+	> | null>(null);
+	const [undoEligible, setUndoEligible] = useState(false);
 	const destinationInputId = useId();
 	const workspaces = useQuery(
 		api.sync.listWorkspaces,
@@ -70,15 +76,7 @@ export function AuthorityMovePreviewDialog({
 	const selectedWorkspaceId =
 		target.direction === "git-to-cloud"
 			? (workspaceId ?? workspaces?.[0]?._id ?? null)
-			: target.includeWorkspaceMembers
-				? target.workspaceId
-				: null;
-	const members = useQuery(
-		api.sync.listWorkspaceMembers,
-		target.direction === "cloud-to-git" && selectedWorkspaceId
-			? { workspaceId: selectedWorkspaceId as Id<"workspaces"> }
-			: "skip",
-	);
+			: null;
 	const gitAudience = useQuery(
 		api.authorityTransfers.getGitFolderMoveAudience,
 		target.direction === "git-to-cloud" && selectedWorkspaceId
@@ -88,18 +86,13 @@ export function AuthorityMovePreviewDialog({
 				}
 			: "skip",
 	);
-	const subtree = useQuery(
-		api.folders.listSubtree,
-		target.direction === "cloud-to-git"
+	const cloudPreview = useQuery(
+		api.authorityTransfers.getCloudFolderMovePreview,
+		target.direction === "cloud-to-git" && !completion
 			? { folderId: target.folderId as Id<"folders"> }
 			: "skip",
 	);
-	const shares = useQuery(
-		api.folders.listFolderShares,
-		target.direction === "cloud-to-git"
-			? { folderId: target.folderId as Id<"folders"> }
-			: "skip",
-	);
+	const [placementId, setPlacementId] = useState<string | null>(null);
 	const [repositoryPath, setRepositoryPath] = useState<string | null>(null);
 	const [relativePath, setRelativePath] = useState(() =>
 		safeGitFolderName(target.name),
@@ -112,6 +105,9 @@ export function AuthorityMovePreviewDialog({
 	const [error, setError] = useState<string | null>(null);
 	const [stale, setStale] = useState(false);
 	const [journaled, setJournaled] = useState(false);
+	const [reviewedCloudFingerprint, setReviewedCloudFingerprint] = useState<
+		string | null
+	>(null);
 	useEffect(() => {
 		const focusTimer = window.setTimeout(
 			() => cancelRef.current?.focus(),
@@ -119,6 +115,16 @@ export function AuthorityMovePreviewDialog({
 		);
 		return () => window.clearTimeout(focusTimer);
 	}, []);
+	useEffect(() => {
+		if (target.direction !== "cloud-to-git") return;
+		void desktopApi.listFolderAuthorityPlacements().then((placements) => {
+			setPlacementId(
+				placements.find(
+					(placement) => placement.cloudFolderId === target.folderId,
+				)?.id ?? null,
+			);
+		});
+	}, [target]);
 
 	const inspect = async () => {
 		setLoading(true);
@@ -142,6 +148,15 @@ export function AuthorityMovePreviewDialog({
 				if (changed) setJournaled(false);
 				setInspection(next);
 			}
+			if (
+				target.direction === "cloud-to-git" &&
+				cloudPreview &&
+				reviewedCloudFingerprint !== null &&
+				reviewedCloudFingerprint !== cloudPreview.previewFingerprint
+			) {
+				setJournaled(false);
+				setStale(false);
+			}
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : String(cause));
 		} finally {
@@ -158,7 +173,11 @@ export function AuthorityMovePreviewDialog({
 	useEffect(() => {
 		if (!inspection || journaled) return;
 		if (target.direction === "git-to-cloud" && !selectedWorkspaceId) return;
-		if (target.direction === "cloud-to-git" && !repositoryPath) return;
+		if (
+			target.direction === "cloud-to-git" &&
+			(!repositoryPath || !cloudPreview)
+		)
+			return;
 		const now = Date.now();
 		const operation: AuthorityTransferOperation = {
 			id: operationId.current,
@@ -193,24 +212,50 @@ export function AuthorityMovePreviewDialog({
 			manifestSummary:
 				target.direction === "git-to-cloud"
 					? (inspection as GitFolderInspection).manifest.summary
-					: null,
+					: {
+							folderCount: 0,
+							markdownCount: cloudPreview?.manifest.markdownCount ?? 0,
+							assetCount: cloudPreview?.manifest.assetCount ?? 0,
+							totalBytes: cloudPreview?.manifest.totalBytes ?? 0,
+							excludedCount: 0,
+							blockingExclusionCount: 0,
+						},
 			manifestHash:
 				target.direction === "git-to-cloud"
 					? (inspection as GitFolderInspection).manifest.manifestHash
+					: (cloudPreview?.manifest.manifestHash ?? null),
+			previewFingerprint:
+				target.direction === "git-to-cloud"
+					? inspection.previewFingerprint
+					: (cloudPreview?.previewFingerprint ?? null),
+			destinationPreviewFingerprint:
+				target.direction === "cloud-to-git"
+					? inspection.previewFingerprint
 					: null,
-			previewFingerprint: inspection.previewFingerprint,
 			lastError: null,
 			createdAt: now,
 			updatedAt: now,
 		};
 		const save = desktopApi
 			.saveAuthorityTransferOperation(operation)
-			.then(() => setJournaled(true))
+			.then(() => {
+				setJournaled(true);
+				if (target.direction === "cloud-to-git") {
+					setReviewedCloudFingerprint(cloudPreview?.previewFingerprint ?? null);
+				}
+			})
 			.catch((cause) =>
 				setError(cause instanceof Error ? cause.message : String(cause)),
 			);
 		journalSaveRef.current = save;
-	}, [inspection, journaled, repositoryPath, selectedWorkspaceId, target]);
+	}, [
+		cloudPreview,
+		inspection,
+		journaled,
+		repositoryPath,
+		selectedWorkspaceId,
+		target,
+	]);
 
 	const cancel = async () => {
 		if (moving) return;
@@ -219,15 +264,107 @@ export function AuthorityMovePreviewDialog({
 			const save = journalSaveRef.current;
 			if (save) await save;
 			if (journaled && authToken && desktopConvexUrl) {
-				await desktopApi.cancelGitToCloudAuthorityMove({
-					operationId: operationId.current,
-					deploymentUrl: desktopConvexUrl,
-					authToken,
-				});
+				if (target.direction === "git-to-cloud") {
+					await desktopApi.cancelGitToCloudAuthorityMove({
+						operationId: operationId.current,
+						deploymentUrl: desktopConvexUrl,
+						authToken,
+					});
+				} else {
+					await desktopApi.cancelCloudToGitAuthorityMove({
+						operationId: operationId.current,
+						deploymentUrl: desktopConvexUrl,
+						authToken,
+					});
+				}
 			} else if (save) {
 				await desktopApi.cancelAuthorityTransferOperation(operationId.current);
 			}
 			onClose();
+		} catch (cause) {
+			setError(cause instanceof Error ? cause.message : String(cause));
+		} finally {
+			setMoving(false);
+		}
+	};
+	const undoCloudToGit = async () => {
+		if (!completion || !authToken || !desktopConvexUrl || moving) return;
+		setMoving(true);
+		setError(null);
+		try {
+			const eligible = await desktopApi.getCloudToGitUndoEligibility(
+				operationId.current,
+			);
+			if (!eligible) {
+				setUndoEligible(false);
+				setError(
+					"Git files changed after the move. Use Move to Hubble Cloud from the folder menu so new work is reviewed.",
+				);
+				return;
+			}
+			const result = await desktopApi.undoCloudToGitAuthorityMove({
+				operationId: operationId.current,
+				deploymentUrl: desktopConvexUrl,
+				authToken,
+			});
+			if (result.status === "restored") {
+				onClose();
+				return;
+			}
+			if (result.status === "changed") {
+				setUndoEligible(false);
+				setError(
+					"Git files changed after the move. Start Move to Hubble Cloud from the folder menu.",
+				);
+				return;
+			}
+			setError(result.message);
+		} catch (cause) {
+			setError(cause instanceof Error ? cause.message : String(cause));
+		} finally {
+			setMoving(false);
+		}
+	};
+	const confirmCloudToGit = async () => {
+		if (
+			target.direction !== "cloud-to-git" ||
+			!destinationInspection ||
+			!cloudPreview ||
+			!repositoryPath ||
+			!authToken ||
+			!desktopConvexUrl ||
+			moving
+		) {
+			return;
+		}
+		setMoving(true);
+		setError(null);
+		try {
+			if (journalSaveRef.current) await journalSaveRef.current;
+			const result = await desktopApi.moveCloudFolderToGit({
+				operationId: operationId.current,
+				cloudFolderId: target.folderId,
+				repositoryPath,
+				relativePath,
+				placementId,
+				deploymentUrl: desktopConvexUrl,
+				authToken,
+				expectedCloudPreviewFingerprint: cloudPreview.previewFingerprint,
+				expectedDestinationFingerprint:
+					destinationInspection.previewFingerprint,
+			});
+			if (result.status === "stale") {
+				setInspection(result.destination);
+				setStale(true);
+				setJournaled(false);
+				return;
+			}
+			if (result.status === "needs-attention") {
+				setError(result.message);
+				return;
+			}
+			setCompletion(result);
+			setUndoEligible(result.undoEligible);
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : String(cause));
 		} finally {
@@ -297,9 +434,97 @@ export function AuthorityMovePreviewDialog({
 		target.direction === "cloud-to-git"
 			? (inspection as GitDestinationInspection | null)
 			: null;
-	const cloudItemCount = subtree
-		? 1 + subtree.folders.length + subtree.documents.length
-		: null;
+	const cloudPreviewChanged =
+		target.direction === "cloud-to-git" &&
+		journaled &&
+		reviewedCloudFingerprint !== null &&
+		cloudPreview !== undefined &&
+		reviewedCloudFingerprint !== cloudPreview.previewFingerprint;
+	const previewIsStale = stale || cloudPreviewChanged;
+	if (completion) {
+		return (
+			<Modal
+				open
+				onOpenChange={(open) => {
+					if (!open) onClose();
+				}}
+				initialFocus={cancelRef}
+				finalFocus={false}
+				title={`“${target.name}” is now stored in Git`}
+				description="Hubble verified the exported bytes before ending web and realtime access."
+				className="max-w-lg"
+			>
+				<div className="flex flex-col gap-4 text-xs">
+					<output
+						className="rounded-sm border border-border bg-muted/30 p-3"
+						aria-live="polite"
+					>
+						<p className="m-0 font-medium text-foreground">Now stored in Git</p>
+						<p className="m-0 break-all text-muted-foreground">
+							{completion.destinationPath}
+						</p>
+					</output>
+					<div className="flex flex-col gap-1 text-muted-foreground">
+						<p className="m-0">
+							{completion.workingTreeChanges.length} visible working-tree
+							changes. Review and commit with your normal Git tools; Hubble did
+							not commit or push.
+						</p>
+						<p className="m-0">
+							The cloud folder remains as recoverable history, but it is no
+							longer available on the web or through Hubble sharing links.
+						</p>
+						<p className="m-0">
+							{undoEligible
+								? "Undo is available while these Git bytes remain unchanged."
+								: "The Git folder changed; use Move to Hubble Cloud from its folder menu to review the reverse move."}
+						</p>
+					</div>
+					{error ? (
+						<p
+							role="alert"
+							className="m-0 rounded-sm border border-destructive/40 bg-destructive/10 p-3"
+						>
+							{error}
+						</p>
+					) : null}
+					<div className="flex flex-wrap justify-end gap-2 border-t border-border [padding-block-start:0.75rem]">
+						<Button
+							type="button"
+							variant="outline"
+							onClick={() =>
+								void navigator.clipboard.writeText(completion.destinationPath)
+							}
+						>
+							Copy path
+						</Button>
+						<Button
+							type="button"
+							variant="outline"
+							onClick={() =>
+								void desktopApi.revealFile(completion.destinationPath)
+							}
+						>
+							Reveal in Finder
+						</Button>
+						{undoEligible ? (
+							<Button
+								type="button"
+								variant="outline"
+								disabled={moving}
+								onClick={() => void undoCloudToGit()}
+							>
+								{moving ? "Restoring…" : "Undo"}
+							</Button>
+						) : null}
+						<Button ref={cancelRef} type="button" onClick={onClose}>
+							Done
+						</Button>
+					</div>
+				</div>
+			</Modal>
+		);
+	}
 
 	return (
 		<Modal
@@ -317,7 +542,7 @@ export function AuthorityMovePreviewDialog({
 			description={
 				target.direction === "git-to-cloud"
 					? "Review the exact content and audience before a verified authority move."
-					: "Preview only. Nothing is copied, deleted, shared, or made authoritative from this screen."
+					: "Review exact files, access loss, Git state, and recoverable cloud history before moving."
 			}
 			className="max-w-xl"
 		>
@@ -458,78 +683,48 @@ export function AuthorityMovePreviewDialog({
 						) : null}
 						<PreviewCard title="Content and history">
 							<p>
-								{cloudItemCount === null
-									? "Loading the cloud subtree…"
-									: `${cloudItemCount} cloud items are inside this authority boundary.`}
+								{cloudPreview
+									? `${cloudPreview.manifest.markdownCount} Markdown files and ${cloudPreview.manifest.assetCount} assets (${cloudPreview.manifest.totalBytes.toLocaleString()} bytes) will move.`
+									: "Loading the authoritative cloud manifest…"}
 							</p>
 							<p>
-								Cloud revision history remains recoverable in Hubble; exported
-								files begin new Git history when committed.
+								{cloudPreview
+									? `${cloudPreview.history.revisionCount} Hubble revisions remain in the recoverable cloud archive; they do not become Git commits.`
+									: "Cloud revision history does not become Git commits."}
 							</p>
-							{subtree ? (
+							{cloudPreview ? (
 								<PreviewDetails label="Review destination paths">
-									{[
-										...subtree.folders.map(
-											(folder) => `${folder.relativePath}/`,
-										),
-										...subtree.documents.map((document) =>
-											[
-												document.relativePath,
-												(document.path
-													? document.path.split("/").slice(-1)[0]
-													: null) ?? `${document.title}.md`,
-											]
-												.filter(Boolean)
-												.join("/"),
-										),
-									].map((itemPath) => (
-										<li key={itemPath}>{itemPath}</li>
+									{cloudPreview.manifest.items.map((item) => (
+										<li key={item.relativePath}>
+											{item.relativePath} — {item.kind},{" "}
+											{item.size.toLocaleString()} bytes
+										</li>
 									))}
 								</PreviewDetails>
 							) : null}
 						</PreviewCard>
 						<PreviewCard title="Audience consequence">
 							<p>
-								{target.includeWorkspaceMembers
-									? members
-										? `${members.length} Workspace members`
-										: "Loading Workspace members"
-									: "Shared-folder guests"}
-								{shares ? ` and ${shares.length} direct folder shares` : ""}{" "}
-								currently participate in cloud access.
+								{cloudPreview
+									? `${cloudPreview.audience.entries.length} inherited cloud access entries currently apply.`
+									: "Loading inherited members, shares, invites, and links…"}
 							</p>
-							{!target.includeWorkspaceMembers ? (
-								<p>
-									Inherited ancestor access requires Milestone 3’s authoritative
-									prepare check, so confirmation remains blocked.
-								</p>
-							) : null}
 							<p>
-								Git collaborators replace cloud membership, realtime
-								collaboration, and link access after cutover.
+								{cloudPreview?.audience.publicLinkRole
+									? `The public link (${cloudPreview.audience.publicLinkRole}) will stop working.`
+									: "There is no inherited public link on this folder."}
 							</p>
-							{members && members.length > 0 ? (
-								<PreviewDetails label="Review Workspace members">
-									{members.map((member) => (
-										<li key={member._id}>
-											{member.user?.name ??
-												member.user?.email ??
-												"Unknown member"}{" "}
-											— {member.role}
-										</li>
-									))}
-								</PreviewDetails>
-							) : null}
-							{shares && shares.length > 0 ? (
-								<PreviewDetails label="Review direct shares and links">
-									{shares.map((share) => (
-										<li key={share._id}>
-											{share.linkScope === "public"
-												? "Anyone with the public link"
-												: (share.user?.name ??
-													share.user?.email ??
-													"Unknown guest")}{" "}
-											— {share.role}
+							<p>
+								After cutover, repository access and distribution replace Hubble
+								permissions, realtime collaboration, and web editing.
+							</p>
+							{cloudPreview && cloudPreview.audience.entries.length > 0 ? (
+								<PreviewDetails label="Review people and roles">
+									{cloudPreview.audience.entries.map((entry) => (
+										<li key={`${entry.kind}:${entry.id}:${entry.role}`}>
+											{entry.name ?? entry.email ?? "Unknown collaborator"} —{" "}
+											{entry.role}
+											{entry.kind === "invite" ? " (pending invite)" : ""}
 										</li>
 									))}
 								</PreviewDetails>
@@ -568,7 +763,7 @@ export function AuthorityMovePreviewDialog({
 						) : null}
 					</>
 				)}
-				{stale ? (
+				{previewIsStale ? (
 					<output className="rounded-sm border border-warning/40 bg-warning/10 p-3">
 						Preview changed; review again.
 					</output>
@@ -585,7 +780,7 @@ export function AuthorityMovePreviewDialog({
 					<p className="text-muted-foreground">
 						{target.direction === "git-to-cloud"
 							? "Hubble stages and verifies cloud bytes before moving the Git source into retained recovery."
-							: "Cloud-to-Git confirmation remains unavailable until its archive cutover is implemented."}
+							: "Hubble writes and verifies Git bytes first, then ends web and realtime access while retaining cloud recovery."}
 					</p>
 					<div className="flex shrink-0 gap-2">
 						<Button
@@ -633,7 +828,27 @@ export function AuthorityMovePreviewDialog({
 										? "Share in Cloud"
 										: "Move to Cloud"}
 							</Button>
-						) : null}
+						) : (
+							<Button
+								type="button"
+								disabled={
+									!canConfirmCloudToGit({
+										online,
+										journaled,
+										hasCloudPreview: cloudPreview !== undefined,
+										hasDestination: destinationInspection !== null,
+										destinationOccupied:
+											destinationInspection?.collision === "occupied",
+										authReady: Boolean(authToken && desktopConvexUrl),
+										stale: previewIsStale,
+										busy: moving || loading,
+									})
+								}
+								onClick={() => void confirmCloudToGit()}
+							>
+								{moving ? "Moving…" : "Move to Git"}
+							</Button>
+						)}
 					</div>
 				</div>
 			</div>

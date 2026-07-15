@@ -470,6 +470,7 @@ export async function inspectGitDestination(
 		destinationPath,
 		relativePath,
 		collision,
+		destinationExists: destinationStat !== null,
 		workingTreeChanges: workingTree.slice(0, MAX_WORKING_TREE_CHANGES),
 		workingTreeChangesTruncated: workingTree.length > MAX_WORKING_TREE_CHANGES,
 		previewFingerprint,

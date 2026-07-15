@@ -187,6 +187,10 @@ export default defineSchema({
 			v.literal("restored"),
 			v.literal("retained"),
 		),
+		// Cloud-to-Git transfers retain the archived cloud bytes and the exact
+		// cutover fingerprint. Optional fields keep legacy/Git-to-cloud records valid.
+		archiveFingerprint: v.optional(v.string()),
+		archivedAt: v.optional(v.number()),
 		createdAt: v.number(),
 		updatedAt: v.number(),
 	})
@@ -335,6 +339,7 @@ export default defineSchema({
 	})
 		.index("by_workspace", ["workspaceId", "updatedAt"])
 		.index("by_workspace_path", ["workspaceId", "path"])
+		.index("by_authority_root", ["authorityRootId", "path"])
 		.index("by_storage", ["storageId"]),
 
 	livePocUsers: defineTable({

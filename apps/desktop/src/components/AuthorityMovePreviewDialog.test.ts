@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	canConfirmCloudToGit,
 	canConfirmGitToCloud,
 	displayFolderName,
 	previewChanged,
@@ -53,5 +54,33 @@ describe("authority move preview helpers", () => {
 		);
 		expect(canConfirmGitToCloud({ ...ready, stale: true })).toBe(false);
 		expect(canConfirmGitToCloud({ ...ready, busy: true })).toBe(false);
+	});
+
+	it("requires current cloud and Git previews before moving to Git", () => {
+		const ready = {
+			online: true,
+			journaled: true,
+			hasCloudPreview: true,
+			hasDestination: true,
+			destinationOccupied: false,
+			authReady: true,
+			stale: false,
+			busy: false,
+		};
+		expect(canConfirmCloudToGit(ready)).toBe(true);
+		for (const key of [
+			"online",
+			"journaled",
+			"hasCloudPreview",
+			"hasDestination",
+			"authReady",
+		] as const) {
+			expect(canConfirmCloudToGit({ ...ready, [key]: false })).toBe(false);
+		}
+		expect(canConfirmCloudToGit({ ...ready, destinationOccupied: true })).toBe(
+			false,
+		);
+		expect(canConfirmCloudToGit({ ...ready, stale: true })).toBe(false);
+		expect(canConfirmCloudToGit({ ...ready, busy: true })).toBe(false);
 	});
 });

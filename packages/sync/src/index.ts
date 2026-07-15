@@ -24,6 +24,8 @@ export type {
 	AgentPatchIntent,
 	AuthorityAudienceEntry,
 	AuthorityStageItem,
+	CloudFolderExportItem,
+	CloudFolderMovePreview,
 	DocumentPatchResult,
 	DocumentRelocationImpact,
 	DocumentRelocationResult,
