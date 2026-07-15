@@ -1,5 +1,17 @@
 # Brain Activity Log
 
+## 2026-07-15 — Selective folder authority technical plan completed
+
+- Revalidated the Git-default PRODUCT contract against the production desktop shell,
+  filesystem and cloud trees, import path, local-availability/projection lifecycle,
+  Convex permissions, Trash, and recovery code at `f758dde`.
+- Added `specs/folder-authority-mobility/TECH.md`, mapping all 41 invariants to a mixed
+  tree, device-local placement/operation state, read-only Git inspection, hidden cloud
+  staging/archive, lossless cutovers, and explicit verification.
+- Selected Milestone 1 as the first tracer bullet: restore Git as a production content
+  context with one direct-root marker and no upload/transfer mutation. No product code,
+  cloud fixture, backend deployment, push, or PR changed in this planning pass.
+
 ## 2026-07-15 — Local-agent availability Milestone 4 committed
 
 - Audited and revalidated the existing contextual repository-link journey without

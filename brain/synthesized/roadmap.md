@@ -3,20 +3,21 @@
 Build state and current next step. Track strategy lives in
 `brain/synthesized/track-strategy.md`.
 
-## ➔ CURRENT NEXT STEP (updated 2026-07-15, authority correction)
+## ➔ CURRENT NEXT STEP (updated 2026-07-15, technical plan complete)
 
-Hand `specs/folder-authority-mobility/PRODUCT.md` to the separate implementation model.
-That model should write the companion technical plan and reconcile it against the
-current universal-cloud implementation before changing product code or continuing the
-remaining local-agent-availability Milestone 4 packaged acceptance. The
-already-implemented projection safety work remains useful for cloud-authoritative
-folders, but onboarding that assumes every folder must become cloud-authoritative is
-no longer the product direction.
+Implement `specs/folder-authority-mobility/TECH.md` Milestone 1: the Git-default
+direct-root tracer bullet. Add one persisted desktop content context independent of
+Convex configuration; make an opened/launch repository render and edit through the
+existing Git filesystem tree in production-configured builds; provide an explicit
+switch between recent Git roots and cloud contexts; and show one textual Git marker at
+the direct root. Do not expose folder move actions or mutate cloud/authority fixtures
+until their lossless staging/cutover milestone exists.
 
-The Hubble product brain is Git-authoritative again. All 13 active cloud documents were
-restored byte-for-byte under tracked `brain/` paths; the former `brain/cloud/` mount is
-retired locally with a rollback copy retained outside the repo. Source:
-`brain/sources/2026-07-15-git-default-folder-authority.md`.
+The TECH plan reconciles the 41 PRODUCT invariants with the current universal-cloud
+shell, local-authority paths, cloud tree, import, projection, permission, Trash, and
+recovery code. It reuses guarded projection/fingerprint/recovery machinery but requires
+a new mixed-tree placement model, durable authority-transfer journal, read-only Git
+inspection, and hidden cloud staging/archive protocol before a real authority cutover.
 
 ## Desktop share-role selector stacking fixed (2026-07-14)
 
