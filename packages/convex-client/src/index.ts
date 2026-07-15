@@ -67,6 +67,51 @@ export function createConvexBackend(
 		client.setAuth(authToken);
 	}
 	return {
+		async prepareGitFolderMove(args) {
+			return client.mutation(api.authorityTransfers.prepareGitFolderMove, {
+				...args,
+				workspaceId: args.workspaceId as Id<"workspaces">,
+				parentFolderId: args.parentFolderId
+					? (args.parentFolderId as Id<"folders">)
+					: undefined,
+			});
+		},
+		async stageAuthorityFolderBatch(args) {
+			return client.mutation(api.authorityTransfers.stageAuthorityFolderBatch, {
+				transferId: args.transferId as Id<"authorityTransfers">,
+				items: args.items.map((item) =>
+					item.kind === "asset"
+						? {
+								...item,
+								storageId: item.storageId as Id<"_storage">,
+							}
+						: item,
+				),
+			});
+		},
+		async verifyAuthorityStaging(args) {
+			return client.mutation(api.authorityTransfers.verifyAuthorityStaging, {
+				transferId: args.transferId as Id<"authorityTransfers">,
+				manifestHash: args.manifestHash,
+			});
+		},
+		async activateAuthorityFolder(args) {
+			return client.mutation(api.authorityTransfers.activateAuthorityFolder, {
+				...args,
+				transferId: args.transferId as Id<"authorityTransfers">,
+			});
+		},
+		async getAuthorityTransferStatus(transferId) {
+			return client.query(api.authorityTransfers.getAuthorityTransferStatus, {
+				transferId: transferId as Id<"authorityTransfers">,
+			});
+		},
+		async cancelAuthorityTransferBatch(transferId) {
+			return client.mutation(
+				api.authorityTransfers.cancelAuthorityTransferBatch,
+				{ transferId: transferId as Id<"authorityTransfers"> },
+			);
+		},
 		async getWorkspace(name) {
 			const workspace = await client.query(api.sync.getWorkspace, { name });
 			return workspace?._id ?? null;

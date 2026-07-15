@@ -10,6 +10,7 @@
 
 import type * as auth from "../auth.js";
 import type * as authIdentity from "../authIdentity.js";
+import type * as authorityTransfers from "../authorityTransfers.js";
 import type * as crons from "../crons.js";
 import type * as deviceAuth from "../deviceAuth.js";
 import type * as documents from "../documents.js";
@@ -32,6 +33,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   authIdentity: typeof authIdentity;
+  authorityTransfers: typeof authorityTransfers;
   crons: typeof crons;
   deviceAuth: typeof deviceAuth;
   documents: typeof documents;

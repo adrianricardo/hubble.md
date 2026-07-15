@@ -22,10 +22,13 @@ export { composeAuthorityTree } from "./authorityTree.js";
 export type {
 	AgentDocument,
 	AgentPatchIntent,
+	AuthorityAudienceEntry,
+	AuthorityStageItem,
 	DocumentPatchResult,
 	DocumentRelocationImpact,
 	DocumentRelocationResult,
 	Folder,
+	PrepareGitFolderMoveResult,
 	ReplaceRangeIntent,
 	SyncBackend,
 	Workspace,

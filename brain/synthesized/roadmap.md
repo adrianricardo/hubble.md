@@ -3,35 +3,33 @@
 Build state and current next step. Track strategy lives in
 `brain/synthesized/track-strategy.md`.
 
-## ➔ CURRENT NEXT STEP (updated 2026-07-15, authority Milestone 2 complete)
+## ➔ CURRENT NEXT STEP (updated 2026-07-15, authority Milestone 3 complete)
 
-Implement `specs/folder-authority-mobility/TECH.md` Milestone 3: the verified
-Git-to-cloud folder move. Revalidate the Convex boundary and read
-`convex/_generated/ai/guidelines.md`, then add hidden staging/active-only schema and
-queries, idempotent bounded topology/Markdown/asset ingestion, complete hash/count
-verification, local recovery rename, atomic activation/placement insertion, and
-restart-safe rollback or needs-attention behavior. Enable confirmation only after the
-whole lossless cutover gate exists. Do not deploy or use cloud fixtures without fresh
-authorization.
+Implement `specs/folder-authority-mobility/TECH.md` Milestone 4: the verified
+cloud-to-Git folder move. Start with authoritative cloud manifest, audience, history,
+and archive-fingerprint APIs plus active-only archived recovery semantics. Then export
+Markdown/assets into a guarded repository-adjacent temp tree, verify and atomically
+place exact bytes, archive cloud authority only after current revalidation, update the
+placement journal, and expose safe resume/reverse eligibility. Do not deploy or use
+cloud fixtures without fresh authorization.
 
-Milestone 2 adds crash-safe versioned placement/transfer state, pure mixed-tree
-composition, deterministic Markdown/asset manifests, a fixed read-only Git command
-boundary, repository/destination inspection, and development-only Git/cloud folder
-preview actions. The previews name source/destination paths, exclusions, members and
-roles, direct shares/links, history and collaboration consequences, dirty/collision/
-offline/stale states, and retain keyboard focus. Inherited shared-folder audience and
-nested cloud destinations remain visibly blocked for Milestone 3's authoritative
-prepare API; there is no confirmation action in development and no production entry
-point.
+Milestone 3 adds hidden, operation-owned staging roots; active-only query, permission,
+asset, and normal-mutation boundaries; authoritative audience revalidation; bounded
+idempotent Markdown/asset ingestion; exact count/byte/storage-hash verification; and
+atomic activation. The desktop keeps recovery bytes outside the repository, restores
+Git authority when activation fails, resumes forward when placement persistence fails
+after activation, and renders one cloud boundary at the former Git path without a
+second editable projection. Production confirmation is gated on online, auth,
+inspection, audience, freshness, and a durable local journal. The first UI targets
+Workspace-root destinations; optional nested destinations remain backend-only.
 
-Real Electron/CDP acceptance inspected the tracked `specs/` subtree as 75 Markdown
-files and 16 folders, detected a temporary 76th file plus working-tree change as
-**Preview changed; review again**, cancelled without source/cloud changes, and
-returned focus to **Actions for specs**. The isolated profile was signed out, so the
-Cloud-to-Git live entry point was not exercised; capability/menu and preview models
-remain automated. The official desktop build passes, as do sync 58/58, cloud UI
-10/10, sync-backend 75/75, and desktop 194/194 tests. No cloud fixture, deployment,
-push, PR, availability root, source authority, or repository content remained changed.
+Automated failure injection covers staging invisibility, direct-ID and ordinary-write
+denial, retry, bounded cancellation, assets, stale audiences, rollback, forward
+recovery, and mixed placement. Real Electron/CDP acceptance exercised the production
+Git menu, authoritative read-only audience preview, expected disabled confirmation for
+an excluded-only playground source, cancel, and focus return. The official desktop
+build and focused suites pass. No real cloud cutover, fixture mutation, deployment,
+push, or PR occurred.
 
 ## Desktop share-role selector stacking fixed (2026-07-14)
 

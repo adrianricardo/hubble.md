@@ -4,13 +4,18 @@ import { Button, Input, Modal } from "@hubble.md/ui";
 import { useQuery } from "convex/react";
 import { useEffect, useId, useRef, useState } from "react";
 import MingcuteFolderOpenLine from "~icons/mingcute/folder-open-line";
+import { desktopConvexUrl } from "../convex";
 import { desktopApi } from "../desktopApi";
 import type {
 	AuthorityTransferOperation,
 	GitDestinationInspection,
 	GitFolderInspection,
 } from "../desktopApi/types";
-import { previewChanged, safeGitFolderName } from "./authorityMovePreviewModel";
+import {
+	canConfirmGitToCloud,
+	previewChanged,
+	safeGitFolderName,
+} from "./authorityMovePreviewModel";
 
 const authorityPreviewFocusDelayMs = 100;
 
@@ -52,6 +57,7 @@ export function AuthorityMovePreviewDialog({
 	onClose: () => void;
 }) {
 	const online = useOnlineState();
+	const authToken = useAuthToken();
 	const cancelRef = useRef<HTMLButtonElement>(null);
 	const operationId = useRef(crypto.randomUUID());
 	const journalSaveRef = useRef<Promise<void> | null>(null);
@@ -69,8 +75,17 @@ export function AuthorityMovePreviewDialog({
 				: null;
 	const members = useQuery(
 		api.sync.listWorkspaceMembers,
-		selectedWorkspaceId
+		target.direction === "cloud-to-git" && selectedWorkspaceId
 			? { workspaceId: selectedWorkspaceId as Id<"workspaces"> }
+			: "skip",
+	);
+	const gitAudience = useQuery(
+		api.authorityTransfers.getGitFolderMoveAudience,
+		target.direction === "git-to-cloud" && selectedWorkspaceId
+			? {
+					workspaceId: selectedWorkspaceId as Id<"workspaces">,
+					rootName: target.name,
+				}
 			: "skip",
 	);
 	const subtree = useQuery(
@@ -93,6 +108,7 @@ export function AuthorityMovePreviewDialog({
 		GitFolderInspection | GitDestinationInspection | null
 	>(null);
 	const [loading, setLoading] = useState(false);
+	const [moving, setMoving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [stale, setStale] = useState(false);
 	const [journaled, setJournaled] = useState(false);
@@ -118,14 +134,12 @@ export function AuthorityMovePreviewDialog({
 							})
 						: null;
 			if (next) {
-				setStale(
-					(wasStale) =>
-						wasStale ||
-						previewChanged(
-							inspection?.previewFingerprint ?? null,
-							next.previewFingerprint,
-						),
+				const changed = previewChanged(
+					inspection?.previewFingerprint ?? null,
+					next.previewFingerprint,
 				);
+				setStale(changed);
+				if (changed) setJournaled(false);
 				setInspection(next);
 			}
 		} catch (cause) {
@@ -198,16 +212,71 @@ export function AuthorityMovePreviewDialog({
 		journalSaveRef.current = save;
 	}, [inspection, journaled, repositoryPath, selectedWorkspaceId, target]);
 
-	const cancel = () => {
-		const save = journalSaveRef.current;
-		if (save) {
-			void save
-				.then(() =>
-					desktopApi.cancelAuthorityTransferOperation(operationId.current),
-				)
-				.catch(() => undefined);
+	const cancel = async () => {
+		if (moving) return;
+		setMoving(true);
+		try {
+			const save = journalSaveRef.current;
+			if (save) await save;
+			if (journaled && authToken && desktopConvexUrl) {
+				await desktopApi.cancelGitToCloudAuthorityMove({
+					operationId: operationId.current,
+					deploymentUrl: desktopConvexUrl,
+					authToken,
+				});
+			} else if (save) {
+				await desktopApi.cancelAuthorityTransferOperation(operationId.current);
+			}
+			onClose();
+		} catch (cause) {
+			setError(cause instanceof Error ? cause.message : String(cause));
+		} finally {
+			setMoving(false);
 		}
-		onClose();
+	};
+	const confirmGitToCloud = async () => {
+		if (
+			target.direction !== "git-to-cloud" ||
+			!sourceInspection ||
+			!selectedWorkspaceId ||
+			!gitAudience ||
+			!authToken ||
+			!desktopConvexUrl ||
+			moving
+		) {
+			return;
+		}
+		setMoving(true);
+		setError(null);
+		try {
+			if (journalSaveRef.current) await journalSaveRef.current;
+			const result = await desktopApi.moveGitFolderToCloud({
+				operationId: operationId.current,
+				folderPath: target.folderPath,
+				workspaceId: selectedWorkspaceId,
+				parentFolderId: null,
+				deploymentUrl: desktopConvexUrl,
+				authToken,
+				expectedPreviewFingerprint: sourceInspection.previewFingerprint,
+				expectedAudienceFingerprint: gitAudience.fingerprint,
+				intent: target.intent,
+			});
+			if (result.status === "stale") {
+				setInspection(result.inspection);
+				setStale(true);
+				setJournaled(false);
+				return;
+			}
+			if (result.status === "needs-attention") {
+				setError(result.message);
+				return;
+			}
+			onClose();
+		} catch (cause) {
+			setError(cause instanceof Error ? cause.message : String(cause));
+		} finally {
+			setMoving(false);
+		}
 	};
 	const chooseRepository = async () => {
 		const selected = await desktopApi.createFolderPicker({
@@ -236,7 +305,7 @@ export function AuthorityMovePreviewDialog({
 		<Modal
 			open
 			onOpenChange={(open) => {
-				if (!open) cancel();
+				if (!open) void cancel();
 			}}
 			initialFocus={cancelRef}
 			finalFocus={false}
@@ -245,7 +314,11 @@ export function AuthorityMovePreviewDialog({
 					? `${target.intent === "share" ? "Share" : "Move"} “${target.name}” in Hubble Cloud`
 					: `Move “${target.name}” to Git`
 			}
-			description="Preview only. Nothing is copied, deleted, shared, or made authoritative from this screen."
+			description={
+				target.direction === "git-to-cloud"
+					? "Review the exact content and audience before a verified authority move."
+					: "Preview only. Nothing is copied, deleted, shared, or made authoritative from this screen."
+			}
 			className="max-w-xl"
 		>
 			<div className="flex flex-col gap-4 text-xs">
@@ -274,8 +347,8 @@ export function AuthorityMovePreviewDialog({
 								))}
 							</select>
 							<span className="font-normal text-muted-foreground">
-								The transactional prepare API will add nested cloud destinations
-								in Milestone 3.
+								This first verified move targets the Workspace root; nested
+								cloud destination selection remains a later UI slice.
 							</span>
 						</label>
 						<PreviewCard title="Content">
@@ -316,19 +389,18 @@ export function AuthorityMovePreviewDialog({
 						</PreviewCard>
 						<PreviewCard title="Audience">
 							<p>
-								{members
-									? `${members.length} Workspace members will have inherited access at the root.`
+								{gitAudience
+									? `${gitAudience.audience.length} people and pending invitees will have inherited Workspace access at the root.`
 									: "Loading the exact Workspace member list…"}
 							</p>
 							<p>No public link is introduced by this preview.</p>
-							{members && members.length > 0 ? (
+							{gitAudience && gitAudience.audience.length > 0 ? (
 								<PreviewDetails label="Review people and roles">
-									{members.map((member) => (
-										<li key={member._id}>
-											{member.user?.name ??
-												member.user?.email ??
-												"Unknown member"}{" "}
-											— {member.role}
+									{gitAudience.audience.map((entry) => (
+										<li key={`${entry.kind}:${entry.id}`}>
+											{entry.name ?? entry.email ?? "Unknown member"} —{" "}
+											{entry.role}
+											{entry.kind === "invite" ? " (pending invite)" : ""}
 										</li>
 									))}
 								</PreviewDetails>
@@ -346,9 +418,8 @@ export function AuthorityMovePreviewDialog({
 								erase prior Git history.
 							</p>
 							<p>
-								No replacement local path is selected in this inert preview; the
-								transactional flow must offer an outside-repository projection
-								before confirmation.
+								Recovery bytes are retained outside the repository. This first
+								cutover does not create an editable local cloud projection.
 							</p>
 						</PreviewCard>
 					</>
@@ -404,7 +475,9 @@ export function AuthorityMovePreviewDialog({
 										...subtree.documents.map((document) =>
 											[
 												document.relativePath,
-												document.path ?? `${document.title}.md`,
+												(document.path
+													? document.path.split("/").slice(-1)[0]
+													: null) ?? `${document.title}.md`,
 											]
 												.filter(Boolean)
 												.join("/"),
@@ -510,29 +583,57 @@ export function AuthorityMovePreviewDialog({
 				) : null}
 				<div className="flex items-center justify-between gap-3 border-t border-border [padding-block-start:0.75rem]">
 					<p className="text-muted-foreground">
-						Confirmation becomes available after Milestone 3 adds prepare,
-						verify, and atomic cutover.
+						{target.direction === "git-to-cloud"
+							? "Hubble stages and verifies cloud bytes before moving the Git source into retained recovery."
+							: "Cloud-to-Git confirmation remains unavailable until its archive cutover is implemented."}
 					</p>
 					<div className="flex shrink-0 gap-2">
 						<Button
 							ref={cancelRef}
 							type="button"
 							variant="ghost"
-							onClick={cancel}
+							onClick={() => void cancel()}
 						>
-							Cancel
+							{moving ? "Working…" : "Cancel"}
 						</Button>
 						<Button
 							type="button"
 							variant="outline"
 							disabled={
 								loading ||
+								moving ||
 								(target.direction === "cloud-to-git" && !repositoryPath)
 							}
 							onClick={() => void inspect()}
 						>
 							{loading ? "Inspecting…" : "Refresh preview"}
 						</Button>
+						{target.direction === "git-to-cloud" ? (
+							<Button
+								type="button"
+								disabled={
+									!canConfirmGitToCloud({
+										online,
+										journaled,
+										hasInspection: sourceInspection !== null,
+										confirmationBlocked:
+											sourceInspection?.confirmationBlocked ?? true,
+										hasWorkspace: selectedWorkspaceId !== null,
+										membersLoaded: gitAudience !== undefined,
+										authReady: Boolean(authToken && desktopConvexUrl),
+										stale,
+										busy: moving || loading,
+									})
+								}
+								onClick={() => void confirmGitToCloud()}
+							>
+								{moving
+									? "Moving…"
+									: target.intent === "share"
+										? "Share in Cloud"
+										: "Move to Cloud"}
+							</Button>
+						) : null}
 					</div>
 				</div>
 			</div>
@@ -575,3 +676,5 @@ function PreviewDetails({
 		</details>
 	);
 }
+
+import { useAuthToken } from "@convex-dev/auth/react";

@@ -674,6 +674,19 @@ could not be harvested on this host. Soft-removed both named temporary cloud fol
 stopped all projection/dev processes, and deleted the isolated profile and named
 acceptance roots. Desktop tests pass 166/166 and `pnpm build:desktop` passes. Milestone
 4 was not started.
+- 2026-07-15 — Completed folder-authority mobility TECH Milestone 3 locally. Added
+hidden operation-owned cloud staging, active-only read/write/share/asset boundaries,
+authoritative audience and collision revalidation, bounded idempotent Markdown/asset
+ingestion, exact verification, atomic activation, and bounded cancellation. The
+desktop now performs recovery-first Git-to-cloud cutover with rollback before
+activation, forward recovery afterward, a durable transfer journal, and one mixed-tree
+cloud boundary at the former Git path. Production confirmation is enabled only behind
+the complete online/auth/inspection/audience/freshness/journal gate. Automated suites
+and the official desktop build pass; a non-mutating Electron/CDP pass verified the
+production menu, read-only audience preview, disabled invalid-source confirmation,
+cancel, and focus return. No real cloud cutover, fixture mutation, deployment, push,
+or PR occurred. Next: Milestone 4's authoritative cloud manifest/archive APIs and
+verified cloud-to-Git cutover.
 - 2026-07-14 — Completed selected upstream improvements TECH Milestone 3 in local
 commit `edd2f71`. The cloud-ID current-context sidebar now has capability-gated root
 New folder and folder-row New document/New folder controls, preserves the existing

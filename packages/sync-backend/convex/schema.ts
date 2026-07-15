@@ -136,9 +136,77 @@ export default defineSchema({
 		createdAt: v.number(),
 		updatedAt: v.number(),
 		deletedAt: v.optional(v.number()),
+		// Missing means active for every legacy folder. Authority moves create a
+		// hidden staging root, then activate it with one root-row patch.
+		authorityState: v.optional(
+			v.union(
+				v.literal("staging"),
+				v.literal("active"),
+				v.literal("archivedToGit"),
+			),
+		),
+		authorityTransferId: v.optional(v.id("authorityTransfers")),
+		authorityStagingPath: v.optional(v.string()),
 	})
 		.index("by_workspace", ["workspaceId", "updatedAt"])
-		.index("by_workspace_parent", ["workspaceId", "parentId"]),
+		.index("by_workspace_parent", ["workspaceId", "parentId"])
+		.index("by_authority_transfer_and_staging_path", [
+			"authorityTransferId",
+			"authorityStagingPath",
+		]),
+
+	authorityTransfers: defineTable({
+		operationKey: v.string(),
+		ownerId: v.id("users"),
+		direction: v.union(v.literal("gitToCloud"), v.literal("cloudToGit")),
+		workspaceId: v.id("workspaces"),
+		parentFolderId: v.optional(v.id("folders")),
+		rootFolderId: v.optional(v.id("folders")),
+		state: v.union(
+			v.literal("prepared"),
+			v.literal("staging"),
+			v.literal("verified"),
+			v.literal("active"),
+			v.literal("cancelled"),
+			v.literal("needsAttention"),
+		),
+		manifestHash: v.string(),
+		manifestItemCount: v.number(),
+		manifestMarkdownCount: v.number(),
+		manifestAssetCount: v.number(),
+		manifestTotalBytes: v.number(),
+		stagedItemCount: v.number(),
+		sourceFingerprint: v.string(),
+		destinationFingerprint: v.string(),
+		audienceFingerprint: v.string(),
+		operationFingerprint: v.string(),
+		cutoverToken: v.optional(v.string()),
+		recoveryState: v.union(
+			v.literal("source"),
+			v.literal("recovery"),
+			v.literal("restored"),
+			v.literal("retained"),
+		),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_owner_and_operation_key", ["ownerId", "operationKey"])
+		.index("by_workspace_and_state", ["workspaceId", "state"]),
+
+	authorityTransferItems: defineTable({
+		transferId: v.id("authorityTransfers"),
+		relativePath: v.string(),
+		kind: v.union(v.literal("markdown"), v.literal("asset")),
+		contentHash: v.string(),
+		size: v.number(),
+		stagedDocumentId: v.optional(v.id("documents")),
+		stagedAssetId: v.optional(v.id("assets")),
+		verified: v.boolean(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_transfer", ["transferId"])
+		.index("by_transfer_and_relative_path", ["transferId", "relativePath"]),
 
 	// Folder-level ACL entries (D12, Google Drive semantics). A folder share is
 	// NOT a workspace membership; a role on a folder inherits down its subtree,
@@ -261,6 +329,9 @@ export default defineSchema({
 		orphanedAt: v.optional(v.number()),
 		deviceId: v.string(),
 		deleted: v.boolean(),
+		// A staged asset inherits visibility from this authority root. Legacy
+		// assets omit it and remain active.
+		authorityRootId: v.optional(v.id("folders")),
 	})
 		.index("by_workspace", ["workspaceId", "updatedAt"])
 		.index("by_workspace_path", ["workspaceId", "path"])

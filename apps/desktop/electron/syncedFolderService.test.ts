@@ -165,6 +165,12 @@ function fakeBackend(
 		throw new Error("not implemented in fake backend");
 	};
 	return {
+		prepareGitFolderMove: notImpl,
+		stageAuthorityFolderBatch: notImpl,
+		verifyAuthorityStaging: notImpl,
+		activateAuthorityFolder: notImpl,
+		getAuthorityTransferStatus: notImpl,
+		cancelAuthorityTransferBatch: notImpl,
 		async listWorkspaces() {
 			return [{ _id: "ws", name: "WS" }];
 		},

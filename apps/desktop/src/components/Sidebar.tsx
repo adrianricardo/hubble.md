@@ -24,6 +24,7 @@ import {
 	AuthLoading,
 	Unauthenticated,
 	useMutation,
+	useQueries,
 	useQuery,
 } from "convex/react";
 import {
@@ -40,7 +41,10 @@ import MingcuteCloudLine from "~icons/mingcute/cloud-line";
 import MingcuteFolderLine from "~icons/mingcute/folder-line";
 import { desktopConvexUrl } from "../convex";
 import { desktopApi } from "../desktopApi";
-import type { LocalAvailabilityRecord } from "../desktopApi/types";
+import type {
+	FolderAuthorityPlacement,
+	LocalAvailabilityRecord,
+} from "../desktopApi/types";
 import { revealFileLabel } from "../lib/revealFile";
 import {
 	createMarkdownFileInFolder,
@@ -98,7 +102,7 @@ type RelocationImpact = {
 	}>;
 };
 
-const authorityPreviewsEnabled = import.meta.env.DEV;
+const cloudToGitPreviewsEnabled = import.meta.env.DEV;
 const authorityPreviewMenuSettleMs = 50;
 
 function currentMenuTrigger(): HTMLElement | null {
@@ -129,6 +133,123 @@ function useAuthorityPreview() {
 		window.setTimeout(() => returnFocusRef.current?.focus(), 0);
 	};
 	return { target, open, close };
+}
+
+type MixedAuthorityEntries = {
+	files: Array<{ path: string; modifiedAt?: number; pinned?: boolean }>;
+	folders: Array<{ path: string; modifiedAt?: number }>;
+	cloudFolderIds: Set<string>;
+	cloudBoundaryFolderIds: Set<string>;
+	cloudFilePaths: Set<string>;
+	cloudDocumentByPath: Map<string, string>;
+};
+
+function joinAuthorityPath(root: string, relativePath: string) {
+	return `${root.replace(/\/+$/, "")}/${relativePath.replace(/^\/+/, "")}`;
+}
+
+function MixedAuthorityEntriesProvider({
+	workspacePath,
+	localFiles,
+	localFolders,
+	children,
+}: {
+	workspacePath: string;
+	localFiles: MixedAuthorityEntries["files"];
+	localFolders: MixedAuthorityEntries["folders"];
+	children: (entries: MixedAuthorityEntries) => ReactNode;
+}) {
+	const [placements, setPlacements] = useState<FolderAuthorityPlacement[]>([]);
+	const refresh = useCallback(() => {
+		void desktopApi.listFolderAuthorityPlacements().then(setPlacements);
+	}, []);
+	useEffect(() => {
+		refresh();
+		return desktopApi.onFolderAuthorityChanged(refresh);
+	}, [refresh]);
+	const workspacePlacements = useMemo(
+		() =>
+			placements.filter(
+				(placement) =>
+					placement.repoRoot.replace(/\/+$/, "") ===
+					workspacePath.replace(/\/+$/, ""),
+			),
+		[placements, workspacePath],
+	);
+	const requests = useMemo(
+		() =>
+			Object.fromEntries(
+				workspacePlacements.map((placement) => [
+					placement.id,
+					{
+						query: api.folders.listSubtree,
+						args: { folderId: placement.cloudFolderId as Id<"folders"> },
+					},
+				]),
+			),
+		[workspacePlacements],
+	);
+	const subtrees = useQueries(requests);
+	const entries = useMemo<MixedAuthorityEntries>(() => {
+		const files = [...localFiles];
+		const folders = [...localFolders];
+		const cloudFolderIds = new Set<string>();
+		const cloudBoundaryFolderIds = new Set<string>();
+		const cloudFilePaths = new Set<string>();
+		const cloudDocumentByPath = new Map<string, string>();
+		for (const placement of workspacePlacements) {
+			const boundaryPath = joinAuthorityPath(
+				workspacePath,
+				placement.relativePath,
+			);
+			folders.push({ path: boundaryPath });
+			cloudFolderIds.add(placement.relativePath);
+			cloudBoundaryFolderIds.add(placement.relativePath);
+			const subtree = subtrees[placement.id];
+			if (!subtree || subtree instanceof Error) continue;
+			for (const folder of subtree.folders as Array<{
+				relativePath: string;
+			}>) {
+				const absolutePath = joinAuthorityPath(
+					boundaryPath,
+					folder.relativePath,
+				);
+				folders.push({ path: absolutePath });
+				cloudFolderIds.add(`${placement.relativePath}/${folder.relativePath}`);
+			}
+			for (const document of subtree.documents as Array<{
+				_id: string;
+				relativePath: string;
+				path: string | null;
+				title: string;
+				updatedAt: number;
+			}>) {
+				const relativeDocumentPath = [
+					document.relativePath,
+					(document.path ? document.path.split("/").slice(-1)[0] : null) ??
+						`${document.title}.md`,
+				]
+					.filter(Boolean)
+					.join("/");
+				const absolutePath = joinAuthorityPath(
+					boundaryPath,
+					relativeDocumentPath,
+				);
+				files.push({ path: absolutePath, modifiedAt: document.updatedAt });
+				cloudFilePaths.add(absolutePath);
+				cloudDocumentByPath.set(absolutePath, document._id);
+			}
+		}
+		return {
+			files,
+			folders,
+			cloudFolderIds,
+			cloudBoundaryFolderIds,
+			cloudFilePaths,
+			cloudDocumentByPath,
+		};
+	}, [localFiles, localFolders, subtrees, workspacePath, workspacePlacements]);
+	return children(entries);
 }
 
 export function Sidebar({
@@ -226,19 +347,29 @@ export function Sidebar({
 		}
 	};
 
-	return (
-		<>
+	const localFiles = files.map((file) => ({
+		path: file.path,
+		modifiedAt: file.modified_at,
+		pinned: pinnedSet.has(file.path),
+	}));
+	const localFolders = folders.map((folder) => ({
+		path: folder.path,
+		modifiedAt: folder.modified_at,
+	}));
+	const renderTree = (entries: MixedAuthorityEntries) => {
+		const activeCloudPath = activeLiveDocumentId
+			? [...entries.cloudDocumentByPath.entries()].find(
+					([, documentId]) => documentId === activeLiveDocumentId,
+				)?.[0]
+			: null;
+		return (
 			<SharedSidebar
-				files={files.map((file) => ({
-					path: file.path,
-					modifiedAt: file.modified_at,
-					pinned: pinnedSet.has(file.path),
-				}))}
-				folders={folders.map((folder) => ({
-					path: folder.path,
-					modifiedAt: folder.modified_at,
-				}))}
-				currentPath={currentPath ?? null}
+				files={entries.files}
+				folders={entries.folders}
+				cloudFolderIds={entries.cloudFolderIds}
+				cloudBoundaryFolderIds={entries.cloudBoundaryFolderIds}
+				cloudFilePaths={entries.cloudFilePaths}
+				currentPath={activeCloudPath ?? currentPath ?? null}
 				sortMode={sortMode}
 				storageScope={workspacePath}
 				header={
@@ -256,7 +387,11 @@ export function Sidebar({
 				getDisplayPath={relativePath}
 				onCollapse={collapseSidebar}
 				onSortModeChange={setSortMode}
-				onSelectFile={(path) => void loadPath(path)}
+				onSelectFile={(path) => {
+					const cloudDocumentId = entries.cloudDocumentByPath.get(path);
+					if (cloudDocumentId) onOpenLiveDocument?.(cloudDocumentId);
+					else void loadPath(path);
+				}}
 				onRevealFile={(path) => void desktopApi.revealFile(path)}
 				onCopyFilePath={(path) => void copyFilePath(path)}
 				onRevealFolder={(folderId) =>
@@ -282,7 +417,7 @@ export function Sidebar({
 				}
 				onDeleteFolder={(folderId) => void deleteFolder(absolutePath(folderId))}
 				onMoveFolderToCloud={
-					authorityPreviewsEnabled && cloudEnabled
+					cloudEnabled
 						? (folderId) =>
 								authorityPreview.open({
 									direction: "git-to-cloud",
@@ -293,7 +428,7 @@ export function Sidebar({
 						: undefined
 				}
 				onShareFolder={
-					authorityPreviewsEnabled && cloudEnabled
+					cloudEnabled
 						? (folderId) =>
 								authorityPreview.open({
 									direction: "git-to-cloud",
@@ -307,6 +442,30 @@ export function Sidebar({
 					void moveSidebarItem(item, absolutePath(targetFolderId))
 				}
 			/>
+		);
+	};
+	const localOnlyEntries: MixedAuthorityEntries = {
+		files: localFiles,
+		folders: localFolders,
+		cloudFolderIds: new Set(),
+		cloudBoundaryFolderIds: new Set(),
+		cloudFilePaths: new Set(),
+		cloudDocumentByPath: new Map(),
+	};
+
+	return (
+		<>
+			{cloudEnabled ? (
+				<MixedAuthorityEntriesProvider
+					workspacePath={workspacePath}
+					localFiles={localFiles}
+					localFolders={localFolders}
+				>
+					{renderTree}
+				</MixedAuthorityEntriesProvider>
+			) : (
+				renderTree(localOnlyEntries)
+			)}
 			{authorityPreview.target ? (
 				<AuthorityMovePreviewDialog
 					target={authorityPreview.target}
@@ -543,7 +702,7 @@ function AuthenticatedCloudSidebar({
 				canWriteDocument: () => contextCapabilities.canWrite,
 				canShareFolder: () => contextCapabilities.canShare,
 				canMoveFolderToGit: () =>
-					authorityPreviewsEnabled && contextCapabilities.canShare,
+					cloudToGitPreviewsEnabled && contextCapabilities.canShare,
 			};
 		}
 		const writableFolders = new Set<string>(
@@ -561,7 +720,7 @@ function AuthenticatedCloudSidebar({
 			canWriteDocument: (documentId) => writableDocuments.has(documentId),
 			canShareFolder: (folderId) => shareableFolders.has(folderId),
 			canMoveFolderToGit: (folderId) =>
-				authorityPreviewsEnabled && shareableFolders.has(folderId),
+				cloudToGitPreviewsEnabled && shareableFolders.has(folderId),
 		};
 	}, [contextCapabilities]);
 	const openDocument = (documentId: string) => {
@@ -973,7 +1132,7 @@ function AuthenticatedCloudSidebar({
 						onRequestTrash={setTrashTarget}
 						onRequestShareFolder={setShareTarget}
 						onRequestMoveFolderToGit={
-							authorityPreviewsEnabled && context
+							cloudToGitPreviewsEnabled && context
 								? (target) => {
 										if (target.kind !== "folder") return;
 										authorityPreview.open({

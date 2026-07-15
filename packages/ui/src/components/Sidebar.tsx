@@ -142,6 +142,9 @@ export function Sidebar({
 	onMoveFolderToCloud,
 	onShareFolder,
 	onMoveItem,
+	cloudFolderIds,
+	cloudFilePaths,
+	cloudBoundaryFolderIds,
 }: {
 	files: SidebarFile[];
 	folders?: SidebarFolder[];
@@ -171,6 +174,12 @@ export function Sidebar({
 	onMoveFolderToCloud?: (folderId: string) => void;
 	onShareFolder?: (folderId: string) => void;
 	onMoveItem?: (input: SidebarMoveItemInput) => Promise<void> | void;
+	/** Display folder IDs backed by cloud authority; local mutation actions are disabled. */
+	cloudFolderIds?: ReadonlySet<string>;
+	/** Absolute file paths backed by cloud authority; local mutation actions are disabled. */
+	cloudFilePaths?: ReadonlySet<string>;
+	/** Direct authority roots that receive the single Cloud marker. */
+	cloudBoundaryFolderIds?: ReadonlySet<string>;
 }) {
 	const navRef = useRef<HTMLDivElement>(null);
 	const renameInputRef = useRef<HTMLInputElement | null>(null);
@@ -459,6 +468,15 @@ export function Sidebar({
 			>
 				{rows.length === 0 && emptyState}
 				{rows.map((row, index) => {
+					const isCloudAuthority =
+						row.kind === "folder"
+							? cloudFolderIds?.has(row.id) === true
+							: row.kind === "file"
+								? cloudFilePaths?.has(row.file.path) === true
+								: false;
+					const isCloudBoundary =
+						row.kind === "folder" &&
+						cloudBoundaryFolderIds?.has(row.id) === true;
 					const isActive =
 						row.kind === "file" && row.file.path === highlightPath;
 					const isFocused = focusedIndex === index;
@@ -507,7 +525,7 @@ export function Sidebar({
 					return (
 						<DraggableSidebarRow
 							key={row.kind === "folder" ? row.id : row.file.path}
-							enabled={Boolean(onMoveItem) && !isRenaming}
+							enabled={Boolean(onMoveItem) && !isRenaming && !isCloudAuthority}
 							row={row}
 							getDisplayPath={getDisplayPath}
 						>
@@ -543,6 +561,7 @@ export function Sidebar({
 									onPointerEnter={() => setFocusedIndex(index)}
 									onPointerLeave={() => setFocusedIndex(null)}
 									onContextMenu={(event) => {
+										if (isCloudAuthority) return;
 										if (
 											row.kind === "file" &&
 											!onRevealFile &&
@@ -591,7 +610,7 @@ export function Sidebar({
 										<DroppableRowButton
 											row={row}
 											getDisplayPath={getDisplayPath}
-											enabled={Boolean(onMoveItem)}
+											enabled={Boolean(onMoveItem) && !isCloudAuthority}
 											className={cn(
 												sidebarRowContentClass,
 												"truncate border-none bg-transparent",
@@ -603,7 +622,12 @@ export function Sidebar({
 												requestAnimationFrame(() => navRef.current?.focus());
 											}}
 											onDoubleClick={(event) => {
-												if (row.kind !== "file" || !onRenameFile) return;
+												if (
+													row.kind !== "file" ||
+													!onRenameFile ||
+													isCloudAuthority
+												)
+													return;
 												event.preventDefault();
 												beginRename(row.file, row.label);
 											}}
@@ -611,6 +635,12 @@ export function Sidebar({
 											dragListeners={listeners}
 										>
 											{chevron}
+											{isCloudBoundary ? (
+												<MingcuteCloudLine
+													className="size-3 shrink-0 text-muted-foreground"
+													aria-label="Cloud authority"
+												/>
+											) : null}
 											{row.kind === "folder" ? (
 												<FolderSegmentLabel
 													dropTarget={dropTarget}
@@ -640,7 +670,8 @@ export function Sidebar({
 										/>
 									)}
 									<div className="absolute inset-y-0 end-0.5 flex items-center gap-0.5">
-										{row.kind === "folder" &&
+										{!isCloudAuthority &&
+											row.kind === "folder" &&
 											(onRevealFolder ||
 												onCreateFile ||
 												onDeleteFolder ||
@@ -675,7 +706,8 @@ export function Sidebar({
 												<MingcutePinFill className="size-3.5" />
 											</button>
 										)}
-										{row.kind === "file" &&
+										{!isCloudAuthority &&
+											row.kind === "file" &&
 											(onRevealFile ||
 												onCopyFilePath ||
 												onRenameFile ||

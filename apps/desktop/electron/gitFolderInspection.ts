@@ -37,6 +37,7 @@ const GENERATED_DIRECTORIES = new Set([
 ]);
 const MARKDOWN_EXTENSIONS = new Set([".md", ".markdown", ".mdown"]);
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_LIVE_MARKDOWN_BYTES = 256 * 1024;
 const MAX_MANIFEST_FILES = 5000;
 const MAX_GIT_OUTPUT_BYTES = 16 * 1024 * 1024;
 const MAX_WORKING_TREE_CHANGES = 100;
@@ -335,6 +336,10 @@ export async function inspectGitFolder(
 				: null;
 		if (!kind) {
 			exclusions.push(exclusion(normalizedRelative, "unsupported"));
+			continue;
+		}
+		if (kind === "markdown" && file.size > MAX_LIVE_MARKDOWN_BYTES) {
+			exclusions.push(exclusion(normalizedRelative, "oversized", true));
 			continue;
 		}
 		const bytes = await fs.readFile(file.absolutePath);

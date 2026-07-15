@@ -62,6 +62,10 @@ const operationSchema = z
 		manifestSummary: summarySchema.nullable(),
 		manifestHash: z.string().min(1).nullable(),
 		previewFingerprint: z.string().min(1).nullable(),
+		cloudTransferId: z.string().min(1).nullable().optional(),
+		cloudRootFolderId: z.string().min(1).nullable().optional(),
+		cutoverToken: z.string().min(1).nullable().optional(),
+		recoveryPath: z.string().min(1).nullable().optional(),
 		lastError: z.string().nullable(),
 		createdAt: z.number().finite(),
 		updatedAt: z.number().finite(),
@@ -86,6 +90,8 @@ const envelopeSchema = z.object({
 const cancellablePhases = new Set<AuthorityTransferPhase>([
 	"draft",
 	"validating",
+	"staging",
+	"verifying",
 	"needs-attention",
 ]);
 

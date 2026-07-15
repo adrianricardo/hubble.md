@@ -377,6 +377,32 @@ the repo stays Git, staging is never visible on web, source bytes survive inject
 failures at every phase, Git shows reviewable deletions, and the tree retains one
 selected cloud boundary.
 
+**Completed 2026-07-15.** Legacy folders remain implicitly active, while new transfer
+roots carry explicit staging/active state and operation identity. Every normal read,
+search, share, asset, create, move, import, and relocation path now treats an inactive
+ancestor as inaccessible. The transfer API reauthorizes an authoritative destination
+audience fingerprint, rejects collisions and stale cutovers, ingests deterministic
+Markdown/assets in bounded idempotent batches, verifies exact counts/bytes/storage
+hashes, and activates the root atomically. Cancellation deletes only operation-owned
+staging data in bounded batches.
+
+The desktop coordinator keeps recovery bytes outside the repository, renames the Git
+source only after cloud verification, restores it on activation failure, and resumes
+forward after a successful activation if placement persistence was interrupted. The
+mixed sidebar renders one cloud boundary at the former Git path and opens its cloud
+descendants without creating a second editable local projection. Production now
+enables the Git-to-cloud confirmation only after online, authentication, inspection,
+audience, freshness, and journal gates pass. The first UI supports Workspace-root
+destinations; optional nested destinations remain a backend capability for later UX.
+
+Automated failure injection proves hidden staging, direct-ID denial, ordinary-mutation
+denial, retry, cancellation, asset verification, stale audience rejection, rollback,
+forward recovery, and mixed-boundary placement. Real Electron acceptance exercised
+the production menu, authoritative read-only audience preview, disabled confirmation
+for an excluded-only source, cancel, and focus return. A real cloud cutover was
+intentionally not performed because this implementation session prohibited cloud
+fixture mutation; no deployment is required for the local milestone commit.
+
 ### Milestone 4 — Verified cloud-to-Git folder move
 
 1. Add cloud manifest/audience/history preview and archive fingerprint APIs.

@@ -27,6 +27,7 @@ import {
 	documentRole,
 	type FolderRoleCache,
 	folderRole,
+	isFolderAuthorityActive,
 	requireDocumentComment,
 	requireDocumentOwner,
 	requireDocumentRead,
@@ -107,7 +108,7 @@ function markdownByteLength(markdown: string): number {
 	return textEncoder.encode(markdown).byteLength;
 }
 
-function assertLiveDocumentMarkdownWithinCap(markdown: string) {
+export function assertLiveDocumentMarkdownWithinCap(markdown: string) {
 	const bytes = markdownByteLength(markdown);
 	if (bytes > LIVE_DOCUMENT_MARKDOWN_MAX_BYTES) {
 		throw new Error(
@@ -202,7 +203,7 @@ async function logActivity(
 	});
 }
 
-async function replaceLiveDocumentMarkdown(
+export async function replaceLiveDocumentMarkdown(
 	ctx: MutationCtx,
 	documentId: string,
 	markdown: string,
@@ -1477,9 +1478,10 @@ export const listFolderWithMarkdown = query({
 			// the folder's own workspace member (the dev), who has no folderShares
 			// row — same pattern as `searchFolder` below.
 			const folder = await ctx.db.get(folderId);
-			const membership = folder
-				? await workspaceRole(ctx, folder.workspaceId)
-				: null;
+			const membership =
+				folder && (await isFolderAuthorityActive(ctx, folderId))
+					? await workspaceRole(ctx, folder.workspaceId)
+					: null;
 			rootRole = membership ? "editor" : null;
 		}
 		if (!rootRole) throw new Error("Unauthorized");
@@ -1530,9 +1532,10 @@ export const searchFolder = query({
 			// Workspace-membership fallback (RB2): a member opening a folder invite
 			// link to their own workspace has no folderShares row but may search.
 			const folder = await ctx.db.get(folderId);
-			const membership = folder
-				? await workspaceRole(ctx, folder.workspaceId)
-				: null;
+			const membership =
+				folder && (await isFolderAuthorityActive(ctx, folderId))
+					? await workspaceRole(ctx, folder.workspaceId)
+					: null;
 			rootRole = membership ? "editor" : null;
 		}
 		if (!rootRole) throw new Error("Unauthorized");
@@ -1801,7 +1804,8 @@ export const create = mutation({
 			if (
 				!folder ||
 				folder.deletedAt !== undefined ||
-				folder.workspaceId !== workspaceId
+				folder.workspaceId !== workspaceId ||
+				!(await isFolderAuthorityActive(ctx, folderId))
 			) {
 				throw new Error("Folder not found");
 			}
@@ -1866,7 +1870,8 @@ export const importMarkdown = mutation({
 			if (
 				!folder ||
 				folder.deletedAt !== undefined ||
-				folder.workspaceId !== workspaceId
+				folder.workspaceId !== workspaceId ||
+				!(await isFolderAuthorityActive(ctx, folderId))
 			) {
 				throw new Error("Folder not found");
 			}

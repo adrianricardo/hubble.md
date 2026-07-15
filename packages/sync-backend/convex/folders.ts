@@ -18,6 +18,8 @@ import {
 	documentRole,
 	FOLDER_INHERITANCE_DEPTH_CAP,
 	folderRole,
+	isFolderAuthorityActive,
+	requireActiveFolder,
 	requireDocumentWrite,
 	requireWorkspaceMember,
 	workspaceRole,
@@ -69,6 +71,7 @@ async function subtreeReadRole(
 	ctx: AnyCtx,
 	folder: Doc<"folders">,
 ): Promise<DocumentRole | null> {
+	if (!(await isFolderAuthorityActive(ctx, folder._id))) return null;
 	const shared = await folderRole(ctx, folder._id);
 	if (shared) return shared;
 	const membership = await workspaceRole(ctx, folder.workspaceId);
@@ -79,6 +82,7 @@ async function subtreeReadRole(
 
 /** Workspace owner/admin, or an inherited folder `owner`, may manage shares. */
 async function requireFolderManage(ctx: AnyCtx, folder: Doc<"folders">) {
+	await requireActiveFolder(ctx, folder._id);
 	const wsRole = await workspaceRole(ctx, folder.workspaceId);
 	if (wsRole === "owner" || wsRole === "admin") return;
 	if ((await folderRole(ctx, folder._id)) === "owner") return;
@@ -87,6 +91,7 @@ async function requireFolderManage(ctx: AnyCtx, folder: Doc<"folders">) {
 
 /** Any workspace member, or an inherited folder `editor`+, may write. */
 async function requireFolderWrite(ctx: AnyCtx, folder: Doc<"folders">) {
+	await requireActiveFolder(ctx, folder._id);
 	if (await isWorkspaceMember(ctx, folder.workspaceId)) return;
 	const role = await folderRole(ctx, folder._id);
 	if (role === "editor" || role === "owner") return;
@@ -111,7 +116,9 @@ export async function collectFolderSubtree(
 	documents: Array<Doc<"documents">>;
 }> {
 	const root = await ctx.db.get(rootFolderId);
-	if (!root) return { root: null, descendants: [], documents: [] };
+	if (!root || !(await isFolderAuthorityActive(ctx, rootFolderId))) {
+		return { root: null, descendants: [], documents: [] };
+	}
 
 	const allFolders = await ctx.db
 		.query("folders")
@@ -120,6 +127,7 @@ export async function collectFolderSubtree(
 	const childrenByParent = new Map<string, Array<Doc<"folders">>>();
 	for (const folder of allFolders) {
 		if (folder.deletedAt !== undefined) continue;
+		if (!(await isFolderAuthorityActive(ctx, folder._id))) continue;
 		const key = folder.parentId ?? "__root__";
 		const list = childrenByParent.get(key);
 		if (list) list.push(folder);
@@ -236,9 +244,16 @@ export const list = query({
 			.query("folders")
 			.withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
 			.collect();
-		return folders
-			.filter((folder) => folder.deletedAt === undefined)
-			.sort((a, b) => a.name.localeCompare(b.name));
+		const visible: Array<Doc<"folders">> = [];
+		for (const folder of folders) {
+			if (
+				folder.deletedAt === undefined &&
+				(await isFolderAuthorityActive(ctx, folder._id))
+			) {
+				visible.push(folder);
+			}
+		}
+		return visible.sort((a, b) => a.name.localeCompare(b.name));
 	},
 });
 
@@ -250,9 +265,16 @@ export const listTrash = query({
 			.query("folders")
 			.withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
 			.collect();
-		return folders
-			.filter((folder) => folder.deletedAt !== undefined)
-			.sort((a, b) => (b.deletedAt ?? 0) - (a.deletedAt ?? 0));
+		const visible = [];
+		for (const folder of folders) {
+			if (
+				folder.deletedAt !== undefined &&
+				(await isFolderAuthorityActive(ctx, folder._id))
+			) {
+				visible.push(folder);
+			}
+		}
+		return visible.sort((a, b) => (b.deletedAt ?? 0) - (a.deletedAt ?? 0));
 	},
 });
 
@@ -335,6 +357,7 @@ export const getContextCapabilities = query({
 		if (
 			!folder ||
 			folder.deletedAt !== undefined ||
+			!(await isFolderAuthorityActive(ctx, folderId)) ||
 			folder.workspaceId !== workspaceId
 		) {
 			throw new Error("Unauthorized");
@@ -472,7 +495,8 @@ export const move = mutation({
 			if (
 				!parent ||
 				parent.deletedAt !== undefined ||
-				parent.workspaceId !== folder.workspaceId
+				parent.workspaceId !== folder.workspaceId ||
+				!(await isFolderAuthorityActive(ctx, parentId))
 			) {
 				throw new Error("Parent folder not found");
 			}
@@ -538,7 +562,8 @@ export const moveDocument = mutation({
 			if (
 				!folder ||
 				folder.deletedAt !== undefined ||
-				folder.workspaceId !== document.workspaceId
+				folder.workspaceId !== document.workspaceId ||
+				!(await isFolderAuthorityActive(ctx, folderId))
 			) {
 				throw new Error("Folder not found");
 			}
@@ -732,7 +757,8 @@ export const prepareDocumentRelocation = mutation({
 			if (
 				!destination ||
 				destination.deletedAt !== undefined ||
-				destination.workspaceId !== document.workspaceId
+				destination.workspaceId !== document.workspaceId ||
+				!(await isFolderAuthorityActive(ctx, args.folderId))
 			)
 				throw new Error("Folder not found");
 		}
@@ -787,7 +813,8 @@ export const confirmDocumentRelocation = mutation({
 			if (
 				!destination ||
 				destination.deletedAt !== undefined ||
-				destination.workspaceId !== document.workspaceId
+				destination.workspaceId !== document.workspaceId ||
+				!(await isFolderAuthorityActive(ctx, args.folderId))
 			)
 				throw new Error("Folder not found");
 		}

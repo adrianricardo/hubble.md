@@ -98,8 +98,101 @@ export type DocumentRelocationResult =
 			impact: DocumentRelocationImpact;
 	  };
 
+export type AuthorityAudienceEntry = {
+	kind: "member" | "invite";
+	id: string;
+	email: string | null;
+	name: string | null;
+	role: string;
+};
+
+export type PrepareGitFolderMoveResult = {
+	transferId: string;
+	rootFolderId?: string;
+	operationFingerprint: string;
+	audience: AuthorityAudienceEntry[];
+	state:
+		| "prepared"
+		| "staging"
+		| "verified"
+		| "active"
+		| "cancelled"
+		| "needsAttention";
+};
+
+export type AuthorityStageItem =
+	| {
+			kind: "markdown";
+			relativePath: string;
+			contentHash: string;
+			size: number;
+			markdown: string;
+			title?: string;
+	  }
+	| {
+			kind: "asset";
+			relativePath: string;
+			contentHash: string;
+			size: number;
+			storageId: string;
+	  };
+
 /** Backend-agnostic interface for sync operations. */
 export interface SyncBackend {
+	prepareGitFolderMove(args: {
+		operationKey: string;
+		workspaceId: string;
+		parentFolderId?: string;
+		rootName: string;
+		manifestHash: string;
+		manifestItemCount: number;
+		manifestMarkdownCount: number;
+		manifestAssetCount: number;
+		manifestTotalBytes: number;
+		sourceFingerprint: string;
+		destinationFingerprint: string;
+		expectedAudienceFingerprint: string;
+	}): Promise<PrepareGitFolderMoveResult>;
+	stageAuthorityFolderBatch(args: {
+		transferId: string;
+		items: AuthorityStageItem[];
+	}): Promise<{
+		created: number;
+		stagedItemCount: number;
+		expectedItemCount: number;
+	}>;
+	verifyAuthorityStaging(args: {
+		transferId: string;
+		manifestHash: string;
+	}): Promise<{ cutoverToken: string }>;
+	activateAuthorityFolder(args: {
+		transferId: string;
+		cutoverToken: string;
+		sourceFingerprint: string;
+		destinationFingerprint: string;
+	}): Promise<{ rootFolderId?: string; state: "active" }>;
+	getAuthorityTransferStatus(transferId: string): Promise<{
+		state:
+			| "prepared"
+			| "staging"
+			| "verified"
+			| "active"
+			| "cancelled"
+			| "needsAttention";
+		rootFolderId?: string;
+		cutoverToken?: string;
+		items: Array<{
+			relativePath: string;
+			kind: "markdown" | "asset";
+			contentHash: string;
+			size: number;
+			verified: boolean;
+		}>;
+	}>;
+	cancelAuthorityTransferBatch(transferId: string): Promise<{
+		done: boolean;
+		removed: number;
+	}>;
 	getWorkspace(name: string): Promise<string | null>;
 	createWorkspace(name: string): Promise<string>;
 	/** Workspaces the signed-in user belongs to (drives the synced-folder mirror). */

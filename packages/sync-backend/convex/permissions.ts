@@ -66,6 +66,47 @@ export const FOLDER_INHERITANCE_DEPTH_CAP = 64;
 // the same subtree pass one shared cache to avoid re-walking ancestors.
 export type FolderRoleCache = Map<Id<"folders">, DocumentRole | null>;
 
+/**
+ * Whether a folder is under an active authority root. Legacy folders omit the
+ * field and are active. Checking every ancestor also protects direct document
+ * IDs inside a staged or archived subtree.
+ */
+export async function isFolderAuthorityActive(
+	ctx: PermissionCtx,
+	folderId: Id<"folders">,
+): Promise<boolean> {
+	const seen = new Set<Id<"folders">>();
+	let current: Id<"folders"> | undefined = folderId;
+	let depth = 0;
+	while (current && depth < FOLDER_INHERITANCE_DEPTH_CAP) {
+		// Preserve the existing cycle-safe authorization behavior. A cycle is not
+		// itself an inactive authority boundary; any staging/archive marker met
+		// before the loop is still denied.
+		if (seen.has(current)) return true;
+		seen.add(current);
+		const folder: Doc<"folders"> | null = await ctx.db.get(current);
+		if (!folder) return false;
+		if (
+			folder.authorityState === "staging" ||
+			folder.authorityState === "archivedToGit"
+		) {
+			return false;
+		}
+		current = folder.parentId;
+		depth++;
+	}
+	return true;
+}
+
+export async function requireActiveFolder(
+	ctx: PermissionCtx,
+	folderId: Id<"folders">,
+): Promise<void> {
+	if (!(await isFolderAuthorityActive(ctx, folderId))) {
+		throw new Error("Unauthorized");
+	}
+}
+
 function combineRole(
 	current: DocumentRole | null,
 	candidate: DocumentRole | null | undefined,
@@ -109,6 +150,7 @@ export async function folderRole(
 	folderId: Id<"folders">,
 	options: { cache?: FolderRoleCache } = {},
 ): Promise<DocumentRole | null> {
+	if (!(await isFolderAuthorityActive(ctx, folderId))) return null;
 	const cache = options.cache;
 	if (cache?.has(folderId)) return cache.get(folderId) ?? null;
 
@@ -146,6 +188,12 @@ export async function documentRole(
 	if (
 		!document ||
 		(document.deletedAt !== undefined && !options.includeDeleted)
+	) {
+		return null;
+	}
+	if (
+		document.folderId &&
+		!(await isFolderAuthorityActive(ctx, document.folderId))
 	) {
 		return null;
 	}

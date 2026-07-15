@@ -36,10 +36,12 @@ import ignore from "ignore";
 import { z } from "zod/v4";
 import type {
 	AuthorityTransferOperation,
+	CancelGitToCloudAuthorityMoveInput,
 	CloudMarkdownImportInput,
 	DesktopUpdateState,
 	DirectoryListing,
 	GitDestinationInspectionInput,
+	GitToCloudAuthorityMoveInput,
 	LiveSyncConnectInput,
 	LiveSyncReconcileInput,
 	LocalAvailabilityCreateInput,
@@ -68,6 +70,7 @@ import {
 	markdownAssetFolderPath,
 	withMarkdownExtension,
 } from "../src/lib/filePath";
+import { AuthorityMoveCoordinator } from "./authorityMoveCoordinator";
 import { AuthorityTransferStore } from "./authorityTransferStore";
 import { type CliServer, startCliServer } from "./cliServer";
 import { FolderAuthorityStore } from "./folderAuthorityStore";
@@ -588,6 +591,23 @@ const cloudMarkdownImportSchema = z.object({
 	folderId: z.string().min(1).optional(),
 	idempotencyKey: z.string().min(1),
 	mode: z.enum(["copy", "move"]),
+});
+
+const gitToCloudAuthorityMoveSchema = z.object({
+	operationId: z.string().min(1),
+	folderPath: z.string().min(1),
+	workspaceId: z.string().min(1),
+	parentFolderId: z.string().min(1).nullable(),
+	deploymentUrl: convexDeploymentUrlSchema,
+	authToken: authTokenSchema,
+	expectedPreviewFingerprint: z.string().min(1),
+	expectedAudienceFingerprint: z.string().min(1),
+	intent: z.enum(["move", "share"]),
+});
+const cancelGitToCloudAuthorityMoveSchema = z.object({
+	operationId: z.string().min(1),
+	deploymentUrl: convexDeploymentUrlSchema,
+	authToken: authTokenSchema,
 });
 
 function repoMountsPath(): string {
@@ -2364,6 +2384,41 @@ function registerIpc() {
 					})
 					.parse(input),
 			),
+	);
+	ipcMain.handle(
+		"desktop:git-authority:move-to-cloud",
+		async (_event, input: GitToCloudAuthorityMoveInput) => {
+			const parsed = gitToCloudAuthorityMoveSchema.parse(input);
+			const coordinator = new AuthorityMoveCoordinator({
+				backend: createConvexBackend(parsed.deploymentUrl, parsed.authToken),
+				transferStore: authorityTransferStore,
+				placementStore: folderAuthorityStore,
+				inspectFolder: async (folderPath) =>
+					inspectGitFolder(folderPath, await folderAuthorityStore.list()),
+			});
+			const result = await coordinator.moveGitFolderToCloud({
+				...parsed,
+				parentFolderId: parsed.parentFolderId ?? null,
+			});
+			if (result.status === "completed") {
+				sendToRenderer("desktop:folder-authority:changed");
+			}
+			return result;
+		},
+	);
+	ipcMain.handle(
+		"desktop:git-authority:cancel-move-to-cloud",
+		async (_event, input: CancelGitToCloudAuthorityMoveInput) => {
+			const parsed = cancelGitToCloudAuthorityMoveSchema.parse(input);
+			const coordinator = new AuthorityMoveCoordinator({
+				backend: createConvexBackend(parsed.deploymentUrl, parsed.authToken),
+				transferStore: authorityTransferStore,
+				placementStore: folderAuthorityStore,
+				inspectFolder: async (folderPath) =>
+					inspectGitFolder(folderPath, await folderAuthorityStore.list()),
+			});
+			return coordinator.cancelGitToCloudMove(parsed.operationId);
+		},
 	);
 	ipcMain.handle(
 		"desktop:list-directory",

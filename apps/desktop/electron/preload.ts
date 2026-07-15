@@ -32,6 +32,12 @@ const desktopApi = {
 		ipcRenderer.invoke("desktop:git-authority:inspect-folder", path),
 	inspectGitAuthorityDestination: (input) =>
 		ipcRenderer.invoke("desktop:git-authority:inspect-destination", input),
+	moveGitFolderToCloud: (input) =>
+		ipcRenderer.invoke("desktop:git-authority:move-to-cloud", input),
+	cancelGitToCloudAuthorityMove: (input) =>
+		ipcRenderer.invoke("desktop:git-authority:cancel-move-to-cloud", input),
+	onFolderAuthorityChanged: (callback) =>
+		subscribe("desktop:folder-authority:changed", callback),
 	listHtmlAppFiles: (workspacePath, glob) =>
 		ipcRenderer.invoke("desktop:html-app-list-files", { workspacePath, glob }),
 	readWorkspaceConfig: (workspacePath) =>

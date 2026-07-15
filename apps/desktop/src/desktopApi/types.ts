@@ -91,6 +91,10 @@ export type AuthorityTransferOperation = {
 	manifestSummary: AuthorityManifestSummary | null;
 	manifestHash: string | null;
 	previewFingerprint: string | null;
+	cloudTransferId?: string | null;
+	cloudRootFolderId?: string | null;
+	cutoverToken?: string | null;
+	recoveryPath?: string | null;
 	lastError: string | null;
 	createdAt: number;
 	updatedAt: number;
@@ -130,6 +134,33 @@ export type GitDestinationInspection = {
 export type GitDestinationInspectionInput = {
 	repositoryPath: string;
 	relativePath: string;
+};
+
+export type GitToCloudAuthorityMoveInput = {
+	operationId: string;
+	folderPath: string;
+	workspaceId: string;
+	parentFolderId: string | null;
+	deploymentUrl: string;
+	authToken: string;
+	expectedPreviewFingerprint: string;
+	expectedAudienceFingerprint: string;
+	intent: "move" | "share";
+};
+
+export type GitToCloudAuthorityMoveResult =
+	| {
+			status: "completed";
+			cloudFolderId: string;
+			recoveryPath: string;
+	  }
+	| { status: "stale"; inspection: GitFolderInspection }
+	| { status: "needs-attention"; message: string; recoveryPath: string | null };
+
+export type CancelGitToCloudAuthorityMoveInput = {
+	operationId: string;
+	deploymentUrl: string;
+	authToken: string;
 };
 
 export type HtmlAppFileEntry = {
@@ -520,6 +551,13 @@ export type DesktopApi = {
 	inspectGitAuthorityDestination(
 		input: GitDestinationInspectionInput,
 	): Promise<GitDestinationInspection>;
+	moveGitFolderToCloud(
+		input: GitToCloudAuthorityMoveInput,
+	): Promise<GitToCloudAuthorityMoveResult>;
+	cancelGitToCloudAuthorityMove(
+		input: CancelGitToCloudAuthorityMoveInput,
+	): Promise<AuthorityTransferOperation>;
+	onFolderAuthorityChanged(callback: () => void): Unsubscribe;
 	listHtmlAppFiles(
 		workspacePath: string,
 		glob: string,
