@@ -10,6 +10,7 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 ### Fixed
 - Local availability setup rejects occupied folders before writing Hubble files
 - Documents created from a folder row now receive keyboard focus in the cloud tree
+- Share-dialog role and link-access menus now open above the dialog
 
 ### Added
 - `hubble ensure-desktop` can install, open, and sign in the verified macOS development app for live mounts

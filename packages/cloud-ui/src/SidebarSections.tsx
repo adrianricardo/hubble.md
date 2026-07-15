@@ -15,6 +15,9 @@ import MingcuteShareForwardLine from "~icons/mingcute/share-forward-line";
 type ShareRole = "owner" | "editor" | "commenter" | "viewer";
 type LinkAccess = "off" | "viewer" | "commenter" | "editor";
 
+// Select portals need their own root stacking layer above Modal's z-50 popup.
+const MODAL_SELECT_POSITIONER_STYLE = { zIndex: 60 };
+
 type NameDialogState =
 	| { kind: "create-folder"; parentId?: Id<"folders"> }
 	| { kind: "rename-folder"; folder: Doc<"folders"> }
@@ -1016,7 +1019,12 @@ function RoleSelect({
 				<Select.Value />
 			</Select.Trigger>
 			<Select.Portal>
-				<Select.Positioner align="end" side="bottom" sideOffset={4}>
+				<Select.Positioner
+					align="end"
+					side="bottom"
+					sideOffset={4}
+					style={MODAL_SELECT_POSITIONER_STYLE}
+				>
 					<Select.Popup className="z-50 w-32 origin-(--transform-origin) rounded-sm border border-border bg-popover p-1 text-xs text-popover-foreground shadow-overlay outline-hidden">
 						{roles.map((role) => (
 							<Select.Item
@@ -1063,7 +1071,12 @@ function LinkAccessSelect({
 				<Select.Value />
 			</Select.Trigger>
 			<Select.Portal>
-				<Select.Positioner align="end" side="bottom" sideOffset={4}>
+				<Select.Positioner
+					align="end"
+					side="bottom"
+					sideOffset={4}
+					style={MODAL_SELECT_POSITIONER_STYLE}
+				>
 					<Select.Popup className="z-50 w-32 origin-(--transform-origin) rounded-sm border border-border bg-popover p-1 text-xs text-popover-foreground shadow-overlay outline-hidden">
 						{options.map((option) => (
 							<Select.Item
