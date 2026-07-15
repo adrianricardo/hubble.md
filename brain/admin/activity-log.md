@@ -1,5 +1,24 @@
 # Brain Activity Log
 
+## 2026-07-15 — Selective folder authority Milestone 1 completed
+
+- Added a persisted Git/cloud desktop content discriminator while retaining the
+  existing local-root path and cloud Workspace/shared-folder IDs as canonical state.
+  Legacy state with a restored folder migrates to Git without erasing either choice.
+- Opening a folder now selects the direct Git filesystem tree in cloud-configured
+  builds. Sidebar, create/open commands, toolbar, home, editor selection, and import
+  interception use the active content context rather than Convex availability.
+- Added one two-way switcher path between recent Git roots and cloud contexts plus one
+  textual Git marker at the direct root. Move actions, placement/authority registries,
+  and cloud/local-availability mutation remain outside this milestone.
+- Verification: 182 desktop tests, changed-file Biome, diff checks, desktop production
+  build, and an isolated real Electron run covering one root/marker, a direct Markdown
+  save and cleanup, Git → Cloud → Git switching, and Git relaunch persistence.
+- The first acceptance command mistakenly used the recursive workspace dev script,
+  which started the configured Convex dev watcher and reported unchanged functions
+  ready before shutdown. It did not mutate fixtures; all subsequent acceptance ran
+  from the isolated desktop package with no backend watcher.
+
 ## 2026-07-15 — Selective folder authority technical plan completed
 
 - Revalidated the Git-default PRODUCT contract against the production desktop shell,

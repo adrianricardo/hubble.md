@@ -21,6 +21,34 @@ describe("desktop cloud context persistence", () => {
 		});
 	});
 
+	it("migrates a restored local workspace to the Git content context", async () => {
+		vi.stubGlobal("localStorage", {
+			getItem: vi.fn(() =>
+				JSON.stringify({ workspace: { workspacePath: "/repo" } }),
+			),
+			setItem: vi.fn(),
+		});
+		const { appStore } = await import("./state");
+
+		expect(appStore.get().content.context).toEqual({ kind: "git" });
+	});
+
+	it("honors an explicit cloud choice without deleting the local workspace", async () => {
+		vi.stubGlobal("localStorage", {
+			getItem: vi.fn(() =>
+				JSON.stringify({
+					workspace: { workspacePath: "/repo" },
+					content: { context: { kind: "cloud" } },
+				}),
+			),
+			setItem: vi.fn(),
+		});
+		const { appStore } = await import("./state");
+
+		expect(appStore.get().workspace.workspacePath).toBe("/repo");
+		expect(appStore.get().content.context).toEqual({ kind: "cloud" });
+	});
+
 	it("persists the discriminated context without the legacy field", async () => {
 		const setItem = vi.fn();
 		vi.stubGlobal("localStorage", {
@@ -52,6 +80,7 @@ describe("desktop cloud context persistence", () => {
 		const { appStore } = await import("./state");
 
 		expect(appStore.get().cloud.context).toBeNull();
+		expect(appStore.get().content.context).toEqual({ kind: "cloud" });
 	});
 
 	it("keeps in-memory updates when browser storage writes throw", async () => {

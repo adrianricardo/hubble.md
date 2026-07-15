@@ -32,7 +32,7 @@ import {
 	applyFileAction,
 	appStore,
 	cleanFileState,
-	cloudContextStore,
+	contentContextStore,
 	emptyDoc,
 	type FileEntry,
 	type FolderEntry,
@@ -334,11 +334,29 @@ export function setWorkspaceSwitcherOpen(isOpen: boolean) {
 }
 
 export function setSelectedSpace(spaceId: string) {
-	cloudContextStore.set({ kind: "workspace", workspaceId: spaceId });
+	setCloudContext({ kind: "workspace", workspaceId: spaceId });
 }
 
 export function setCloudContext(context: CloudContext) {
-	cloudContextStore.set(context);
+	appStore.set((state) => ({
+		...state,
+		cloud: { context },
+		content: { context: { kind: "cloud" } },
+	}));
+}
+
+export function activateCloudContent() {
+	appStore.set((state) => ({
+		...state,
+		content: { context: { kind: "cloud" } },
+		document: emptyDoc(state.document.lastOpenedPath),
+	}));
+	switcherOpenStore.set(false);
+}
+
+export function activateGitContent() {
+	contentContextStore.set({ kind: "git" });
+	switcherOpenStore.set(false);
 }
 
 export function setSidebarOpen(isOpen: boolean) {
@@ -380,14 +398,20 @@ export async function openWorkspace(path?: string) {
 		nextPath = selected;
 	}
 
-	workspaceStore.set((state) => {
-		const filtered = state.recentWorkspaces.filter((p) => p !== nextPath);
+	appStore.set((state) => {
+		const filtered = state.workspace.recentWorkspaces.filter(
+			(candidate) => candidate !== nextPath,
+		);
 		return {
 			...state,
-			workspacePath: nextPath,
-			recentWorkspaces: [nextPath, ...filtered].slice(0, MAX_RECENT),
-			files: [],
-			pinnedNotes: [],
+			workspace: {
+				...state.workspace,
+				workspacePath: nextPath,
+				recentWorkspaces: [nextPath, ...filtered].slice(0, MAX_RECENT),
+				files: [],
+				pinnedNotes: [],
+			},
+			content: { context: { kind: "git" } },
 		};
 	});
 	switcherOpenStore.set(false);

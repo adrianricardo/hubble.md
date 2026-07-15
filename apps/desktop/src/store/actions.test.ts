@@ -879,3 +879,59 @@ describe("desktop pinned notes", () => {
 		});
 	});
 });
+
+describe("desktop content authority", () => {
+	beforeEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	it("activates Git when a folder opens and keeps the cloud selection", async () => {
+		const api = createDesktopApi();
+		const { appStore, openWorkspace } = await loadStoreActions(api);
+		appStore.set((state) => ({
+			...state,
+			cloud: {
+				context: { kind: "workspace", workspaceId: "workspace-1" },
+			},
+			content: { context: { kind: "cloud" } },
+		}));
+
+		await openWorkspace("/repo");
+
+		expect(appStore.get().content.context).toEqual({ kind: "git" });
+		expect(appStore.get().workspace.workspacePath).toBe("/repo");
+		expect(appStore.get().cloud.context).toEqual({
+			kind: "workspace",
+			workspaceId: "workspace-1",
+		});
+	});
+
+	it("activates Cloud without deleting the Git root or its last document", async () => {
+		const api = createDesktopApi();
+		const { activateCloudContent, appStore } = await loadStoreActions(api);
+		appStore.set((state) => ({
+			...state,
+			workspace: {
+				...state.workspace,
+				workspacePath: "/repo",
+				lastOpenedPaths: { "/repo": "/repo/note.md" },
+			},
+			document: {
+				...state.document,
+				currentPath: "/repo/note.md",
+				lastOpenedPath: "/repo/note.md",
+			},
+			content: { context: { kind: "git" } },
+		}));
+
+		activateCloudContent();
+
+		expect(appStore.get().content.context).toEqual({ kind: "cloud" });
+		expect(appStore.get().workspace.workspacePath).toBe("/repo");
+		expect(appStore.get().workspace.lastOpenedPaths["/repo"]).toBe(
+			"/repo/note.md",
+		);
+		expect(appStore.get().document.currentPath).toBeNull();
+		expect(appStore.get().document.lastOpenedPath).toBe("/repo/note.md");
+	});
+});

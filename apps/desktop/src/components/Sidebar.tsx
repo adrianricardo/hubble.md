@@ -55,6 +55,7 @@ import {
 	togglePinnedNote,
 } from "../store/actions";
 import {
+	contentContextStore,
 	currentPathStore,
 	sidebarOpenStore,
 	workspaceStore,
@@ -112,6 +113,7 @@ export function Sidebar({
 	) => void;
 }) {
 	const workspace = useStoreValue(workspaceStore);
+	const contentContext = useStoreValue(contentContextStore);
 	const sidebarOpen = useStoreValue(sidebarOpenStore);
 	const currentPath = useStoreValue(currentPathStore);
 	const { workspacePath, files, folders, pinnedNotes, sortMode } = workspace;
@@ -119,7 +121,7 @@ export function Sidebar({
 
 	if (!sidebarOpen) return null;
 	const collapseSidebar = () => setSidebarOpen(false);
-	if (cloudEnabled) {
+	if (cloudEnabled && contentContext.kind === "cloud") {
 		return (
 			<SidebarFrame onCollapse={collapseSidebar}>
 				<CloudSidebarSection
@@ -199,7 +201,17 @@ export function Sidebar({
 			currentPath={currentPath ?? null}
 			sortMode={sortMode}
 			storageScope={workspacePath}
-			header={<WorkspaceSwitcher />}
+			header={
+				<div className="flex min-w-0 items-center gap-2">
+					<WorkspaceSwitcher cloudAvailable={Boolean(cloudEnabled)} />
+					<span
+						className="shrink-0 rounded-sm border border-sidebar-border [padding-block:0.0625rem] [padding-inline:0.3rem] text-[9px] font-semibold uppercase tracking-wide text-sidebar-foreground/60"
+						title="Stored directly in Git"
+					>
+						Git
+					</span>
+				</div>
+			}
 			footer={footer}
 			getDisplayPath={relativePath}
 			onCollapse={collapseSidebar}

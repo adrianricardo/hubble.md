@@ -122,15 +122,18 @@ Add a persisted desktop content context:
 
 ```ts
 type DesktopContentContext =
-  | { kind: "git"; rootPath: string }
-  | { kind: "cloud-workspace"; workspaceId: string }
-  | { kind: "cloud-shared-folder"; workspaceId: string; folderId: string };
+  | { kind: "git" }
+  | { kind: "cloud" };
 ```
 
-Opening a folder selects `git`; selecting a Space/shared root selects its cloud
-variant. Hydration selects the last valid explicit context, but an opened/launch
-repository always remains Git and never enters import implicitly. Convex availability
-controls whether cloud contexts can load, not whether Git content is legal.
+The discriminator owns only which content system is active. The existing workspace
+state remains canonical for the Git root path, and the existing discriminated cloud
+context remains canonical for Workspace/shared-folder IDs. This avoids duplicating
+identifiers across persisted slices. Opening a folder selects `git`; selecting a
+Space/shared root selects `cloud`. Hydration selects the last valid explicit context,
+but an opened/launch repository always remains Git and never enters import implicitly.
+Convex availability controls whether cloud contexts can load, not whether Git content
+is legal.
 
 The desktop context switcher lists recent Git roots, member Spaces, and top-most shared
 cloud roots. It renders one tree for the selected context. The toolbar, create/open
@@ -305,6 +308,12 @@ Change for Git-default authority:
 ## Detailed milestone plan
 
 ### Milestone 1 — Git-default direct-root tracer bullet
+
+**Completed 2026-07-15.** Desktop now persists the active Git/cloud discriminator,
+migrates a restored local root to Git without erasing either selection, routes shell
+surfaces and local import interception from that context, and exposes both directions
+through the existing switcher primitive. The direct Git root has one textual marker;
+folder move actions and authority/availability registries remain untouched.
 
 1. Add and persist `DesktopContentContext`; migrate existing state without deleting
    `workspacePath` or cloud selection.

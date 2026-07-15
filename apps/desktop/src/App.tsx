@@ -83,6 +83,7 @@ import { hasHubbleSkillsInstalled } from "./lib/hubbleSkills";
 import { resolveWikiPath } from "./lib/wikiPath";
 import { SIDEBAR_NAV_SELECTOR } from "./selectors";
 import {
+	activateGitContent,
 	createWorkspaceWithSidebar,
 	forceKeepLocalEdits,
 	getPendingRenameTarget,
@@ -100,7 +101,9 @@ import {
 	updateEditorContent,
 } from "./store/actions";
 import {
+	contentContextStore,
 	emptyDoc,
+	isInWorkspace,
 	sidebarOpenStore,
 	uiStore,
 	viewerStore,
@@ -183,6 +186,7 @@ function App() {
 function AppContent() {
 	const state = useStoreValue(viewerStore);
 	const workspacePath = useStoreValue(workspacePathStore);
+	const contentContext = useStoreValue(contentContextStore);
 	const sidebarOpen = useStoreValue(sidebarOpenStore);
 	const hasWorkspace = workspacePath !== null;
 	const [scrollContainerEl, setScrollContainerEl] =
@@ -209,6 +213,9 @@ function AppContent() {
 		PendingProjectionOperation[]
 	>([]);
 	const cloudEnabled = Boolean(desktopConvexUrl);
+	const cloudActive = cloudEnabled && contentContext.kind === "cloud";
+	const gitActive = !cloudActive;
+	const activeCloudDocumentId = cloudActive ? activeLiveDocumentId : null;
 
 	const refreshPendingOperations = useCallback(async () => {
 		const operations = await desktopApi.listPendingProjectionOperations();
@@ -291,8 +298,15 @@ function AppContent() {
 
 	const openOrImportPath = useCallback(
 		async (path: string) => {
+			if (isInWorkspace(path, workspaceStore.get().workspacePath)) {
+				activateGitContent();
+				await openLocalPath(path);
+				return;
+			}
+			const cloudContentActive =
+				cloudEnabled && contentContextStore.get().kind === "cloud";
 			if (
-				cloudEnabled &&
+				cloudContentActive &&
 				hasMarkdownExtension(path) &&
 				!(await desktopApi.isSyncedFolderDocument(path))
 			) {
@@ -382,9 +396,16 @@ function AppContent() {
 
 	useEffect(() => {
 		void desktopApi.setMenuState({
-			hasWorkspace: !cloudEnabled && hasWorkspace,
+			hasWorkspace: gitActive && hasWorkspace,
 		});
-	}, [cloudEnabled, hasWorkspace]);
+	}, [gitActive, hasWorkspace]);
+
+	useEffect(() => {
+		if (cloudActive) return;
+		setActiveLiveDocumentId(null);
+		setLocalAgentAvailability(null);
+		setHtmlAppsCalloutVisible(false);
+	}, [cloudActive]);
 
 	useEffect(() => {
 		if (!sidebarOpen) setFocusedSidebarPath(null);
@@ -394,22 +415,21 @@ function AppContent() {
 		const onKeyDown = async (event: KeyboardEvent) => {
 			if (keymatch(event, "CmdOrCtrl+N")) {
 				event.preventDefault();
-				if (!triggerCreateAction() && !cloudEnabled) {
+				if (!triggerCreateAction() && gitActive) {
 					await createMarkdownFile();
 				}
 			} else if (keymatch(event, "CmdOrCtrl+,")) {
 				event.preventDefault();
 				openSettings();
 			} else if (keymatch(event, "CmdOrCtrl+Shift+O")) {
-				if (!workspaceStore.get().workspacePath) return;
+				if (!workspaceStore.get().workspacePath && !cloudEnabled) return;
 				event.preventDefault();
 				setWorkspaceSwitcherOpen(true);
 			} else if (keymatch(event, "CmdOrCtrl+Shift+N")) {
-				if (cloudEnabled) return;
 				event.preventDefault();
 				await openWorkspaceWithSidebar();
 			} else if (keymatch(event, "CmdOrCtrl+O")) {
-				if (cloudEnabled) return;
+				if (!gitActive) return;
 				event.preventDefault();
 				await openFilePicker();
 			} else if (keymatch(event, "CmdOrCtrl+Shift+C")) {
@@ -433,7 +453,13 @@ function AppContent() {
 		};
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
-	}, [cloudEnabled, focusedSidebarPath, openFilePicker, openSettings]);
+	}, [
+		cloudEnabled,
+		focusedSidebarPath,
+		gitActive,
+		openFilePicker,
+		openSettings,
+	]);
 
 	useEffect(() => {
 		let active = true;
@@ -459,7 +485,7 @@ function AppContent() {
 	}, [openOrImportPath]);
 
 	useEffect(() => {
-		if (!cloudEnabled) return;
+		if (!cloudActive) return;
 		const onDragOver = (event: DragEvent) => {
 			if (
 				![...(event.dataTransfer?.files ?? [])].some((file) =>
@@ -486,19 +512,19 @@ function AppContent() {
 			window.removeEventListener("dragover", onDragOver);
 			window.removeEventListener("drop", onDropEvent, true);
 		};
-	}, [cloudEnabled, openOrImportPath]);
+	}, [cloudActive, openOrImportPath]);
 
 	useEffect(() => {
 		const disposers = [
 			desktopApi.onMenuCreateMarkdownFile(() => {
-				if (cloudEnabled) triggerCreateAction();
+				if (cloudActive) triggerCreateAction();
 				else void createMarkdownFile();
 			}),
 			desktopApi.onMenuOpenFile(() => {
-				if (!cloudEnabled) void openFilePicker();
+				if (gitActive) void openFilePicker();
 			}),
 			desktopApi.onMenuOpenFolder(() => {
-				if (!cloudEnabled) void openWorkspaceWithSidebar();
+				void openWorkspaceWithSidebar();
 			}),
 			desktopApi.onMenuOpenSettings(() => openSettings()),
 			desktopApi.onMenuShowWorkspaceSwitcher(() =>
@@ -509,7 +535,7 @@ function AppContent() {
 		return () => {
 			for (const dispose of disposers) dispose();
 		};
-	}, [cloudEnabled, openFilePicker, openSettings]);
+	}, [cloudActive, gitActive, openFilePicker, openSettings]);
 
 	useEffect(() => {
 		// Window focus can fire in bursts when switching apps, so debounce the
@@ -600,7 +626,7 @@ function AppContent() {
 				scrollContainer={scrollContainerEl}
 				showSidebarBadge={!sidebarOpen && showUpdateCallout}
 				leftSlot={
-					cloudEnabled ? (
+					cloudActive ? (
 						<CloudCreateButton onOpenLiveDocument={openLiveDocument} />
 					) : (
 						<LocalFileCreateButton
@@ -613,7 +639,7 @@ function AppContent() {
 			<div className="flex min-h-0 flex-1 overflow-hidden">
 				<Sidebar
 					cloudEnabled={cloudEnabled}
-					activeLiveDocumentId={activeLiveDocumentId}
+					activeLiveDocumentId={activeCloudDocumentId}
 					onOpenLiveDocument={openLiveDocument}
 					onOpenSettings={openSettings}
 					onFocusedPathChange={setFocusedSidebarPath}
@@ -642,8 +668,8 @@ function AppContent() {
 					{state.status !== "loading" &&
 						state.status !== "error" &&
 						!state.currentPath &&
-						!activeLiveDocumentId &&
-						(cloudEnabled ? (
+						!activeCloudDocumentId &&
+						(cloudActive ? (
 							<CloudWorkspaceHome
 								onOpenSettings={openSettings}
 								onOpenLiveDocument={openLiveDocument}
@@ -661,10 +687,10 @@ function AppContent() {
 								/>
 							</div>
 						))}
-					{activeLiveDocumentId && (
-						<LiveDocumentErrorBoundary key={activeLiveDocumentId}>
+					{activeCloudDocumentId && (
+						<LiveDocumentErrorBoundary key={activeCloudDocumentId}>
 							<LiveDocumentView
-								documentId={activeLiveDocumentId}
+								documentId={activeCloudDocumentId}
 								onOpenLocalPath={openLocalPath}
 								onScrollContainerChange={setScrollContainerEl}
 							/>

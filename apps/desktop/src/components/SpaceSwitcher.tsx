@@ -8,9 +8,23 @@ import { toast } from "sonner";
 import MingcuteAddLine from "~icons/mingcute/add-line";
 import MingcuteFolderLine from "~icons/mingcute/folder-line";
 import { resolveCloudContext, type SharedFolderContext } from "../cloudContext";
-import { setCloudContext, setSelectedSpace } from "../store/actions";
+import {
+	openWorkspace,
+	setCloudContext,
+	setSelectedSpace,
+	setWorkspaceSwitcherOpen,
+} from "../store/actions";
 import type { CloudContext } from "../store/persistence";
-import { cloudContextStore, selectedWorkspaceId } from "../store/state";
+import {
+	cloudContextStore,
+	recentWorkspacesStore,
+	selectedWorkspaceId,
+	switcherOpenStore,
+} from "../store/state";
+
+function folderName(path: string): string {
+	return path.split("/").pop() ?? path.split("\\").pop() ?? path;
+}
 
 // Resolves the cloud space the desktop app is scoped to: the persisted pick if
 // it still exists, else the auto-provisioned personal space, else any member
@@ -181,7 +195,8 @@ export function CloudContextSwitcher({
 	sharedFolders: SharedFolderContext[];
 	context: CloudContext | null;
 }) {
-	const [open, setOpen] = useState(false);
+	const open = useStoreValue(switcherOpenStore);
+	const recentWorkspaces = useStoreValue(recentWorkspacesStore);
 	const selectedSpace =
 		context?.kind === "workspace"
 			? spaces.find((space) => space._id === context.workspaceId)
@@ -197,7 +212,7 @@ export function CloudContextSwitcher({
 			label={label}
 			title={label}
 			open={open}
-			onOpenChange={setOpen}
+			onOpenChange={setWorkspaceSwitcherOpen}
 		>
 			{spaces.map((space) => (
 				<WorkspaceSwitcherMenu.Item
@@ -206,7 +221,7 @@ export function CloudContextSwitcher({
 						context?.kind === "workspace" && context.workspaceId === space._id
 					}
 					onClick={() => {
-						setOpen(false);
+						setWorkspaceSwitcherOpen(false);
 						setCloudContext({ kind: "workspace", workspaceId: space._id });
 					}}
 				>
@@ -230,7 +245,7 @@ export function CloudContextSwitcher({
 						context.folderId === folder.folderId
 					}
 					onClick={() => {
-						setOpen(false);
+						setWorkspaceSwitcherOpen(false);
 						setCloudContext({
 							kind: "shared-folder",
 							folderId: folder.folderId,
@@ -246,6 +261,26 @@ export function CloudContextSwitcher({
 					</span>
 				</WorkspaceSwitcherMenu.Item>
 			))}
+			<WorkspaceSwitcherMenu.Separator />
+			<span className="block text-[10px] font-medium uppercase tracking-wide text-muted-foreground [padding-block:0.25rem] [padding-inline:0.5rem]">
+				Git folders
+			</span>
+			{recentWorkspaces.map((path) => (
+				<WorkspaceSwitcherMenu.Item
+					key={path}
+					icon={<MingcuteFolderLine className="size-3 shrink-0" />}
+					title={path}
+					onClick={() => void openWorkspace(path)}
+				>
+					<span className="truncate">{folderName(path)}</span>
+				</WorkspaceSwitcherMenu.Item>
+			))}
+			<WorkspaceSwitcherMenu.Item
+				icon={<MingcuteAddLine className="size-3 shrink-0" />}
+				onClick={() => void openWorkspace()}
+			>
+				Open Git folder…
+			</WorkspaceSwitcherMenu.Item>
 		</WorkspaceSwitcherMenu>
 	);
 }

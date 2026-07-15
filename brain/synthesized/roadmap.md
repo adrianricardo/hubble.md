@@ -3,21 +3,21 @@
 Build state and current next step. Track strategy lives in
 `brain/synthesized/track-strategy.md`.
 
-## ➔ CURRENT NEXT STEP (updated 2026-07-15, technical plan complete)
+## ➔ CURRENT NEXT STEP (updated 2026-07-15, authority Milestone 1 complete)
 
-Implement `specs/folder-authority-mobility/TECH.md` Milestone 1: the Git-default
-direct-root tracer bullet. Add one persisted desktop content context independent of
-Convex configuration; make an opened/launch repository render and edit through the
-existing Git filesystem tree in production-configured builds; provide an explicit
-switch between recent Git roots and cloud contexts; and show one textual Git marker at
-the direct root. Do not expose folder move actions or mutate cloud/authority fixtures
-until their lossless staging/cutover milestone exists.
+Implement `specs/folder-authority-mobility/TECH.md` Milestone 2: the placement model
+and inert authority-move previews. Add atomic device-local placement/operation state,
+pure mixed-tree composition, read-only Git/folder inspection, and exact consequence
+previews for eligible Git/cloud folder actions. Confirmation must remain unavailable
+until the matching lossless cutover exists; preview/cancel must perform zero source,
+cloud, availability, or authority mutation.
 
-The TECH plan reconciles the 41 PRODUCT invariants with the current universal-cloud
-shell, local-authority paths, cloud tree, import, projection, permission, Trash, and
-recovery code. It reuses guarded projection/fingerprint/recovery machinery but requires
-a new mixed-tree placement model, durable authority-transfer journal, read-only Git
-inspection, and hidden cloud staging/archive protocol before a real authority cutover.
+Milestone 1 made Git/cloud an explicit persisted desktop content choice independent of
+Convex configuration. A cloud-configured real Electron run verified one direct Git
+root/marker, direct Markdown save, Git → Cloud → Git switching, and Git relaunch while
+preserving both selections. All 182 desktop tests, changed-file Biome/diff checks, and
+the desktop production build pass. No import, transfer, authority-registry,
+local-availability, or cloud-fixture mutation was used for the tracer bullet.
 
 ## Desktop share-role selector stacking fixed (2026-07-14)
 

@@ -25,11 +25,18 @@ type CloudState = {
 	context: CloudContext | null;
 };
 
+export type DesktopContentContext = { kind: "git" } | { kind: "cloud" };
+
+type ContentState = {
+	context: DesktopContentContext;
+};
+
 export type DesktopState = {
 	workspace: WorkspaceState;
 	document: DocumentState;
 	ui: UiState;
 	cloud: CloudState;
+	content: ContentState;
 };
 
 type Persisted = {
@@ -44,6 +51,9 @@ type Persisted = {
 	cloud?: {
 		context?: CloudContext | null;
 		selectedSpaceId?: string | null;
+	};
+	content?: {
+		context?: DesktopContentContext;
 	};
 };
 
@@ -100,13 +110,29 @@ function hydrateWorkspace(ws: Persisted["workspace"]): WorkspaceState {
 	};
 }
 
+function hydrateContentContext(
+	content: Persisted["content"],
+	workspacePath: string | null,
+): DesktopContentContext {
+	if (content?.context?.kind === "git") return { kind: "git" };
+	if (content?.context?.kind === "cloud") return { kind: "cloud" };
+	// Before content authority was explicit, configured desktop builds always
+	// showed Cloud even when a local workspace had been restored. Prefer that
+	// existing folder as the safe, direct Git root during migration.
+	return workspacePath ? { kind: "git" } : { kind: "cloud" };
+}
+
 export function getInitialState(): DesktopState {
 	const p = readStorage<Persisted>(STORAGE_KEY);
+	const workspace = hydrateWorkspace(p?.workspace);
 	return {
-		workspace: hydrateWorkspace(p?.workspace),
+		workspace,
 		document: emptyDoc(p?.document?.lastOpenedPath ?? null),
 		ui: { sidebarOpen: p?.ui?.sidebarOpen ?? false, isSwitcherOpen: false },
 		cloud: { context: hydrateCloudContext(p?.cloud) },
+		content: {
+			context: hydrateContentContext(p?.content, workspace.workspacePath),
+		},
 	};
 }
 
@@ -126,6 +152,9 @@ export function serialize(state: DesktopState): Persisted {
 		},
 		cloud: {
 			context: state.cloud.context,
+		},
+		content: {
+			context: state.content.context,
 		},
 	};
 }
