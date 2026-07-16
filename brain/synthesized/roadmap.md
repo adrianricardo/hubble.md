@@ -3,12 +3,13 @@
 Build state and current next step. Track strategy lives in
 `brain/synthesized/track-strategy.md`.
 
-## ⟳ RESUME HERE — public launch, Phase 1 landing (2026-07-16)
+## ⟳ RESUME HERE — hosted trial infrastructure (2026-07-16)
 
 Implementation of the public "try it today" launch is underway (plan:
 `specs/public-try-it-today-launch/PLAN.md`; contract: same dir `PRODUCT.md`). The
-Phase 1 in-repo rename, brand boundary, and Phase 2 deployment-guide draft are landing
-as one verified commit. No push, deployment, or release has occurred.
+Phase 1 identity work is complete and production hosted-trial infrastructure is now
+live at `https://tubble.nopalstudio.com`. No push, desktop release, external test
+account, or announcement has occurred.
 
 **Done & verified (Phase 1 steps 1–6, in-repo):**
 - Brand boundary built: `config/brand.json` (source of truth), `config/compatibility.json`
@@ -17,8 +18,8 @@ as one verified commit. No push, deployment, or release has occurred.
 - In-repo rename APPLIED across README (full front-door rewrite w/ lineage + trial
   warning), SECURITY.md, both HTML titles, desktop `productName`/`appName`/publish/
   protocol label, www auth+guest copy, and all 13 package.json (repo/bugs/homepage/desc).
-- `pnpm check:brand` → **0 divergent public values** (only the intentional UNRESOLVED
-  hosted web URL remains). `pnpm build:desktop` passes. Biome clean.
+- `pnpm check:brand --strict` → **0 divergent and 0 unresolved public values**.
+  `pnpm build:desktop` passes. Biome clean.
 - Phase 2 guide DRAFTED: `specs/public-try-it-today-launch/DEPLOY.md` (managed-Convex
   clean-clone deployment), linked from README as a draft.
 - GitHub repository is `adrianricardo/tubble.md`; local `origin` now targets it, the old
@@ -35,24 +36,35 @@ as one verified commit. No push, deployment, or release has occurred.
   `LAUNCH_SIGNUPS_DISABLED` pauses new accounts without blocking existing sign-in.
   The deployment guide documents pause/reopen. Production deployment evidence remains
   pending. Sync-backend tests pass 89/89, web tests pass 7/7, www typecheck passes,
-  `pnpm check:brand` remains at 0 divergent + 1 unresolved URL, and
+  `pnpm check:brand --strict` passes, and
   `pnpm build:desktop` passes.
 - The milestone's complete evidence and dependency matrix now lives in
   `specs/public-try-it-today-launch/READINESS.md`.
+- Production Convex `rugged-mastiff-510` is cleanly separate from dev
+  `strong-setter-709`; no fixtures were copied or seeded. Backend commit `c40f963` is
+  deployed with schema + `prosemirrorSync`, production Auth has `SITE_URL`,
+  `JWT_PRIVATE_KEY`, and `JWKS`, and the first production `users` check is empty.
+- The production www artifact builds against `rugged-mastiff-510` and contains no dev
+  deployment, test-variable, or private-key markers. Cloudflare static-assets + SPA +
+  one-custom-domain configuration is committed in `apps/www/wrangler.jsonc`.
+- Cloudflare hosting is live at `https://tubble.nopalstudio.com`: DNS A/AAAA, valid
+  wildcard TLS, root + SPA 200 responses, production-backend targeting, and signed-out
+  trial-boundary rendering are verified. Frontend commit `181935a` is Worker version
+  `566d2f8b-a60c-4240-958c-3718900a7bfb` at 100%.
 
 **Immediate open items (pick any; none block the others except where noted):**
-1. **Stand up and verify the selected staging URL** (Phase 1 step 7): Adrian selected
-   `https://tubble.adriantavares.com` as the temporary hosted-trial front door, with a
-   custom domain later. Configure DNS/TLS/hosting and the Tubble deployment first;
-   then set `config/brand.json` → `web.url`, update README hosted-trial link +
-   `homepage` fields, and verify control. Clears the last `check:brand` flag.
+1. **Run the first-account persistence smoke with Adrian's action-time approval**
+   (Phase 3): create the first production account from signed out at
+   `https://tubble.nopalstudio.com`, verify its private starter Workspace/document,
+   reload, sign out/in, and recover the same content. Do not invent or create a test
+   identity without approval.
 2. **Clean-browser public-link audit** (Phase 1 step 6); HTTP fallback is complete.
 3. **Phase 2 DEPLOY-5**: a second operator follows `DEPLOY.md` from a clean clone and
    fills its verification record (needs a real Convex account + web host).
 4. **Internal CLEANUP** (non-launch-blocking): agent docs / `CLAUDE.md` / `docs/agents/*`
    / `.agents/skills/*` still reference `bholmesdev/hubble.md` issue tracker.
-5. **Phase 3**: stand up the production hosted deployment and complete the remaining
-   first-use/operational gates; signup trial-boundary copy is done.
+5. **Phase 3**: production Convex/Auth/hosting and signed-out boundary are verified;
+   finish first-use, isolation, sharing, failure-state, and operational gates.
 
 Other previously-pending work (selective-authority acceptance, Phase 6 recovery,
 cross-device matrix, Adrian's todos 1–5) remains tracked in its own sections below and
@@ -93,19 +105,19 @@ to backlog unless the failure risks data loss or exposure.
 **Implementation is now underway** — see the **⟳ RESUME HERE** block at the top of this
 file for the current pickup point. Phase 1 planning items (brand manifest, compatibility
 map, rename inventory) are built and the in-repo rename is applied in the working tree.
-The GitHub rename is authorized and authentication is healthy. Adrian selected
-`https://tubble.adriantavares.com` as the temporary staging URL, but the manifest
-remains unresolved until DNS, TLS, hosting, and application control are verified.
+The GitHub rename is authorized and authentication is healthy. Adrian replaced the
+initial staging selection with `https://tubble.nopalstudio.com`; DNS, TLS, hosting,
+application control, and the manifest-driven public URL boundary are verified.
 
 Source: `brain/sources/2026-07-15-public-launch-milestone.md`. Observable contract:
 `/specs/public-try-it-today-launch/PRODUCT.md`.
 
-### Phase 1 identity applied; hosted URL and clean-browser audit pending (2026-07-16)
+### Phase 1 identity and hosted URL applied; full link audit pending (2026-07-16)
 
 The brand boundary is in place AND the in-repo rename is applied. `pnpm check:brand`
-now reports **0 divergent public values** (down from 24); the only remaining flag is the
-intentional `UNRESOLVED` hosted web URL. `pnpm build:desktop` passes; biome clean; all
-touched package.json valid. No external resource has been touched.
+now reports **0 divergent and 0 unresolved public values** (down from 24 + 1).
+`pnpm build:desktop` passes; biome clean; all touched package.json valid. The hosted
+trial is controlled and live at `https://tubble.nopalstudio.com`.
 
 Applied this pass (Phase 1 steps 5–6, in-repo): all 13 package.json `repository`/`bugs`
 URLs, `homepage` (→ fork repo as honest interim until web URL resolves), and
@@ -118,15 +130,12 @@ box). Compatibility map corrected: `productName`/`appName`/userData follow the r
 (no public installs to migrate); appId + `hubble://` scheme + `@hubble.md/*` namespace +
 `hubble` CLI bin + upstream `hubble-skills` remain retained/documented.
 
-**Remaining (Phase 1 steps 6–7):**
+**Remaining (Phase 1 step 6):**
 
-- Stand up and verify `https://tubble.adriantavares.com`, the selected temporary
-  staging URL, then set `config/brand.json` → `web.url` (+ update README hosted-trial
-  link and root/package `homepage`). A dedicated custom domain is deferred until after
-  staging acceptance.
 - Complete the literal clean-browser audit of every public link (README, download,
   security, www copy). The signed-out HTTP audit passes, but browser automation is
-  locally blocked by an invalid native-module signature.
+  locally blocked by an invalid native-module signature. The real hosted-trial page
+  itself passed in a fresh isolated Chrome profile.
 
 Internal CLEANUP still stale (non-launch-blocking): agent docs / `CLAUDE.md` /
 `docs/agents/*` / `.agents/skills/*` still say `bholmesdev/hubble.md` for the issue
@@ -166,16 +175,17 @@ The reviewable brand boundary (built earlier this session):
   CLEANUP, with the fixed migration rule (no rename may strand an existing account,
   installed app, on-disk files, or deep links).
 - **Brand manifest (single source of truth):** `config/brand.json` — mutable public
-  values for `Tubble.md` / product `Tubble` / repo `adrianricardo/tubble.md`. The
-  hosted web URL is deliberately `UNRESOLVED` pending Phase 1 step 7. `@bholmesdev` and
-  the upstream repo are retained under `attribution` as labeled original-author credit.
+  values for `Tubble.md` / product `Tubble` / repo `adrianricardo/tubble.md`. At this
+  earlier stage the hosted URL was deliberately unresolved pending Phase 1 step 7;
+  it is now resolved above. `@bholmesdev` and the upstream repo are retained under
+  `attribution` as labeled original-author credit.
 - **Compatibility map:** `config/compatibility.json` — 5 intentionally-retained
   identifiers (appId `com.benholmes.hubblemd.desktop`, `hubble://` scheme, `@hubble.md/*`
   npm namespace, `Hubble` userData/Safe Storage identity, upstream `hubble-skills`).
   Note: `productName`/`appName` ARE public-rename; the first public packaged release
   ships the new name so no public user ever migrates Keychain/userData.
 - **Validation check:** `scripts/check-brand.mjs` (`pnpm check:brand`). Report-only by
-  default (exit 0); `--strict` gates. Current punch list: **24 divergent public values**
+  default (exit 0); `--strict` gates. The initial punch list was **24 divergent public values**
   (11 package.json link pairs, README, both HTML titles, desktop productName/appName/
   publish owner/protocol label, SECURITY.md, two www copy surfaces) + **1 unresolved**
   (web URL). Not yet wired into `pnpm check`/`build:desktop` so it doesn't fail existing

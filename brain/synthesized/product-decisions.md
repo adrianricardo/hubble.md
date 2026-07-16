@@ -3,6 +3,24 @@
 Newest first. Product and strategy decisions live here; engineering and build
 decisions live in `decision-log.md`.
 
+## 2026-07-16 — Nopal Studio subdomain is the temporary hosted-trial front door
+
+**Decision:** Use `https://tubble.nopalstudio.com` as Tubble.md's temporary public
+staging and hosted-trial URL. It supersedes the earlier same-day selection of
+`https://tubble.adriantavares.com`. A dedicated product domain remains deferred.
+
+**Rationale:** The Nopal Studio Cloudflare account is already authenticated and owns
+the zone, allowing the trial to use one controlled hosting, DNS, and TLS boundary
+without a purchase or unrelated DNS change.
+
+**Consequences:** The URL is now controlled and operational, so it is the resolved
+`config/brand.json` web URL and the checked README/package homepage destination. A
+later dedicated-domain move must follow the same brand-boundary validation and should
+preserve or redirect this address if it has been published.
+
+**Source:** `../sources/2026-07-16-public-staging-url.md`; live deployment evidence:
+`/specs/public-try-it-today-launch/READINESS.md`.
+
 ## 2026-07-15 — Tubble.md is the launch name, not a permanent identity constraint
 
 **Decision:** Launch the fork as **Tubble.md**, a playful reference to Hubble.md. Treat
@@ -51,6 +69,8 @@ launch. Tubble.md is fixed by the follow-up decision above.
 and plan: `/specs/public-try-it-today-launch/{PRODUCT,PLAN}.md`.
 
 ## 2026-07-16 — Temporary public staging URL
+
+**Superseded later the same day** by the Nopal Studio subdomain decision above.
 
 **Decision:** Use `https://tubble.adriantavares.com` as the temporary public staging
 URL for Tubble.md. It may become the hosted-trial front door while the launch path is

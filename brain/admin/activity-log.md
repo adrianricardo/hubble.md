@@ -960,3 +960,31 @@ acceptance roots. Desktop tests pass 166/166 and `pnpm build:desktop` passes. Mi
   roadmap, and launch-readiness matrix while leaving `config/brand.json` unresolved
   until DNS, TLS, hosting, and application control are actually verified. No DNS,
   hosting, deployment, public link, push, or release changed.
+- 2026-07-16 — Began the real hosted-trial deployment. Proved Convex production
+  `rugged-mastiff-510` is separate from dev and empty, deployed backend commit
+  `c40f963` with schema + `prosemirrorSync`, and configured production-only
+  `SITE_URL`, `JWT_PRIVATE_KEY`, and `JWKS` without exposing their values. Added typed
+  signup-pause env handling and a minimal Cloudflare static-assets/SPA/custom-domain
+  config; the www production artifact builds against the production Convex endpoint
+  with no dev/test/secret markers. Custom-domain activation stopped before DNS change
+  because the existing Wrangler profile is scoped to `Nopal Studio`, not the account
+  owning `adriantavares.com`; the resulting unreachable Worker was deleted. The exact
+  resume gate is Wrangler re-auth to the zone-owning account, then DNS/TLS/app-control
+  proof before resolving `config/brand.json`. No push, account creation, fixture seed,
+  desktop release, public announcement, or repository URL resolution occurred.
+- 2026-07-16 — Adrian replaced the temporary destination with
+  `https://tubble.nopalstudio.com`; refreshed Wrangler OAuth to the Nopal Studio
+  account and completed the hosted-trial front door. Cloudflare Worker
+  `tubble-trial` version `566d2f8b-a60c-4240-958c-3718900a7bfb` serves frontend
+  commit `181935a` on the single custom domain; DNS A/AAAA, wildcard TLS, root and SPA
+  200 responses, production Convex targeting, and artifact secret/dev-target scans
+  pass. A fresh isolated Chrome profile rendered the signed-out Tubble page and full
+  best-effort trial boundary; production signup availability returned `available`.
+  `config/brand.json`, README, and all package homepages
+  now use the proven URL; strict brand validation passes 0 divergent/0 unresolved.
+  Backend commit `c40f963` remains deployed to empty production
+  `rugged-mastiff-510` with Auth keys and the updated Nopal Studio `SITE_URL`.
+  Sync-backend tests pass 89/89, web tests 7/7, www typecheck and
+  `pnpm build:desktop` pass. The next gate is the first-account persistence smoke,
+  awaiting Adrian's action-time approval/test identity; no account, push, release,
+  announcement, or unrelated DNS change occurred.

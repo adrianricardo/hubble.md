@@ -19,28 +19,60 @@ recorded as progress, not promoted into launch proof.
   `LAUNCH_SIGNUPS_DISABLED` without blocking existing sign-in.
 - All public links pass the signed-out HTTP audit and all relative repository targets
   exist.
+- The hosted-trial URL is resolved through the brand boundary: `config/brand.json`,
+  README, and all 13 package homepages use `https://tubble.nopalstudio.com`.
 
 These results still need to be included in the exact revision deployed and released.
+
+## Production infrastructure evidence
+
+- Managed Convex production deployment `rugged-mastiff-510` is separate from the
+  development deployment `strong-setter-709`. Before the first production push it
+  reported no tables; after deployment its `users` table reported no documents. No
+  development fixtures were copied or seeded.
+- Backend revision `c40f963ea4abb65b7ede7e74028c59c6b2f118a7` is deployed at
+  `https://rugged-mastiff-510.convex.cloud`, including the `prosemirrorSync`
+  component. The deploy completed schema validation and installed the component.
+- Production Convex Auth has `SITE_URL`, `JWT_PRIVATE_KEY`, and `JWKS` configured.
+  Values were set directly through authenticated CLI flows and were neither printed
+  nor committed. `SITE_URL` targets `https://tubble.nopalstudio.com`.
+- The production web artifact built successfully against
+  `https://rugged-mastiff-510.convex.cloud`; an artifact scan found the production
+  URL and no development deployment, test-variable, or private-key markers.
+- Frontend revision `181935a2a44ab8439838b3a4d9ced5133360d1f0` is active as
+  Cloudflare Worker version `566d2f8b-a60c-4240-958c-3718900a7bfb` at
+  `https://tubble.nopalstudio.com`. Wrangler reports that version at 100% with one
+  custom-domain route.
+- Public DNS returns Cloudflare A/AAAA addresses. HTTPS returns HTTP/2 200 through
+  Cloudflare with a valid `*.nopalstudio.com` certificate; an unknown path also returns
+  the SPA document with 200. The page title is `tubble.md`.
+- A fresh isolated Chrome profile reached the real URL signed out and rendered “Sign
+  in to Tubble,” the complete best-effort/no-guarantee warning, the independent-copy
+  recommendation, the self-deployment link, and both sign-in/account-creation paths.
+  The production `auth:signupAvailability` query returned `available`.
+  The in-app browser plugin remains locally unavailable because its bundled native
+  module has an invalid signature; this acceptance used Chrome DevTools from a new
+  profile with no saved cookies or local app configuration.
 
 ## Pending before launch
 
 | Area | Required evidence | Status / dependency |
 | --- | --- | --- |
-| Public destination | Configure DNS/TLS/hosting for the selected temporary URL `https://tubble.adriantavares.com`, deploy Tubble there, verify control, then set it in `config/brand.json`, README, and package homepages. A dedicated custom domain comes later. | **URL selected; infrastructure and verification pending.** |
+| Public destination | Configure DNS/TLS/hosting for the selected temporary URL, deploy Tubble there, verify control, then set it in `config/brand.json`, README, and package homepages. A dedicated custom domain comes later. | **Complete at `https://tubble.nopalstudio.com`; DNS, TLS, SPA hosting, app control, and brand boundary verified.** |
 | Fresh-browser links | Open every README, download, security, and www public destination in a clean browser. | **Pending.** HTTP fallback passes; the in-app browser cannot currently start because its native module has an invalid local signature. |
 | Independent deployment | A second operator follows `DEPLOY.md` from a clean clone, records corrections, and proves web create/edit/reload plus macOS sign-in/local-agent edit on their deployment. | **Needs a second operator, Convex account, host, and Mac.** |
-| Production trial | Create a production Convex project separate from development, configure auth/secrets, deploy the backend, host `apps/www` against it, and record backend/frontend revisions. | **Not started; needs production accounts and destination.** |
-| Trial first use | From signed out on the real URL: see the trial boundary and availability, create an account/private Workspace/document, reload, sign out/in, and recover the same content. | **Pending production deployment.** |
+| Production trial | Create a production Convex project separate from development, configure auth/secrets, deploy the backend, host `apps/www` against it, and record backend/frontend revisions. | **Infrastructure complete: backend `c40f963`, frontend `181935a`, production empty, auth and real URL verified.** |
+| Trial first use | From signed out on the real URL: see the trial boundary and availability, create an account/private Workspace/document, reload, sign out/in, and recover the same content. | **Signed-out boundary passes. First external account + persistence smoke is prepared and awaits Adrian's action-time approval/test identity.** |
 | Trial failure states | Verify reached-cap, operator-pause, outage, deployment mismatch, and unavailable-account copy on the production configuration. | **Implementation exists for cap/pause; production evidence pending.** |
 | Operational floor | Name deployment ownership; prove secret rotation/revocation, error visibility, pause/reopen signups, backup/export, and a service/retirement notice path. | **Partially documented; operator choices and production drills pending.** |
-| Production configuration | Audit production environment, build output, repository history, and release assets for leaked secrets or unintended development/test targets and fixtures. | **Pending production deployment.** |
+| Production configuration | Audit production environment, build output, repository history, and release assets for leaked secrets or unintended development/test targets and fixtures. | **Backend/frontend environment and web artifact pass: production endpoint present; no dev deployment, test-variable, or private-key markers; production users empty. Desktop release assets remain a later gate.** |
 | Private Workspace isolation | With two production accounts, prove account B cannot discover or read account A's private Workspace/document. | **Pending production deployment and two accounts.** |
 | Realtime sharing | With two production accounts, prove share, simultaneous edit, revoke, and post-revocation denial. | **Pending production deployment and two accounts.** |
 | Public macOS release | Build the exact tested revision, sign and notarize it under the fork identity, publish it to a fork-owned release, publish integrity information, and verify download/install/update destinations. | **Pending signing credentials, release revision/tag, and publication.** |
 | macOS first run | From a clean profile, verify pre-prompt Safe Storage context, expected Tubble identity, sign-in handoff, and no unexplained startup-file prompt. | **Pending signed production build and clean profile.** |
 | Hosted agent round trip | Web create → same account/content on macOS → make exact scope locally available → external Markdown edit → observe on web → relaunch desktop → confirm same scope/path reconnects. | **Pending production web, signed desktop, and two-device acceptance.** |
 | Independent desktop identity | Build macOS against the second operator's deployment, verify the target is visible, and prove it never falls back to the public trial. | **Pending independent deployment gate.** |
-| Launch packet | Finalize README/landing links, proven fork-change summary, trial disclaimer, credits/license, known limitations, and deployment guide status. | **Pending the evidence above and final URL.** |
+| Launch packet | Finalize README/landing links, proven fork-change summary, trial disclaimer, credits/license, known limitations, and deployment guide status. | **URL, README trial link, disclaimer, credits, and deployment-guide status are current; remaining claim evidence still gates finalization.** |
 | Announcement and publication | Draft the announcement only from passing claims; rerun its actual links in a fresh browser; tag the tested revision; record deployed revisions; publish. | **Final gate; no tag, production release, announcement, or launch publication yet.** |
 
 ## Explicitly not launch-blocking
