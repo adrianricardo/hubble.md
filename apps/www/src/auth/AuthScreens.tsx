@@ -1,11 +1,20 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { api } from "@hubble.md/sync-backend";
-import { useQuery } from "convex/react";
-import { useState } from "react";
+import { useConvex } from "convex/react";
+import { useEffect, useState } from "react";
 import { categorizeError, describeError } from "../connection/convex-error";
 
 const DEPLOY_GUIDE_URL =
 	"https://github.com/adrianricardo/tubble.md/blob/main/specs/public-try-it-today-launch/DEPLOY.md";
+const SIGNUP_AVAILABILITY_TIMEOUT_MS = 10_000;
+
+type SignupAvailability =
+	| { status: "loading" }
+	| { status: "available" }
+	| {
+			status: "blocked";
+			message: string;
+	  };
 
 // Root-level auth surface. Lifted out of AppShell (P2/A1b) so the auth gate can
 // live at the router root instead of inside a per-workspace shell.
@@ -24,19 +33,69 @@ export function SignInScreen({
 	defaultMode?: "signIn" | "signUp";
 }) {
 	const { signIn } = useAuthActions();
+	const convex = useConvex();
 	const [mode, setMode] = useState<"signIn" | "signUp">(defaultMode);
 	const [error, setError] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
-	const signupAvailability = useQuery(
-		api.auth.signupAvailability,
-		mode === "signUp" ? {} : "skip",
-	);
+	const [signupAvailability, setSignupAvailability] =
+		useState<SignupAvailability>({ status: "loading" });
+
+	useEffect(() => {
+		if (mode !== "signUp") return;
+		let settled = false;
+		setSignupAvailability({ status: "loading" });
+		// Convex retries transient disconnects, so fail closed instead of leaving
+		// signup on "Checking" forever when the hosted backend is unavailable.
+		const timeout = window.setTimeout(() => {
+			settled = true;
+			setSignupAvailability({
+				status: "blocked",
+				message: describeSignupAvailabilityError(
+					new TypeError("Failed to fetch"),
+				),
+			});
+		}, SIGNUP_AVAILABILITY_TIMEOUT_MS);
+
+		void convex
+			.query(api.auth.signupAvailability, {})
+			.then((availability) => {
+				if (settled) return;
+				settled = true;
+				window.clearTimeout(timeout);
+				setSignupAvailability(
+					availability.status === "available"
+						? { status: "available" }
+						: {
+								status: "blocked",
+								message:
+									availability.message ?? "Signups are unavailable right now.",
+							},
+				);
+			})
+			.catch((queryError: unknown) => {
+				if (settled) return;
+				settled = true;
+				window.clearTimeout(timeout);
+				setSignupAvailability({
+					status: "blocked",
+					message: describeSignupAvailabilityError(queryError),
+				});
+			});
+
+		return () => {
+			settled = true;
+			window.clearTimeout(timeout);
+		};
+	}, [convex, mode]);
+
 	const signupBlocked =
-		mode === "signUp" && signupAvailability?.status !== "available";
+		mode === "signUp" && signupAvailability.status !== "available";
 	const signupStatusMessage =
-		mode !== "signUp" || signupAvailability?.status === "available"
+		mode !== "signUp" || signupAvailability.status === "available"
 			? null
-			: (signupAvailability?.message ?? "Checking signup availability…");
+			: signupAvailability.status === "loading"
+				? "Checking signup availability…"
+				: signupAvailability.message;
 
 	const submit = async (event: React.FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
@@ -199,7 +258,18 @@ export function HostedTrialNotice({ visible }: { visible: boolean }) {
 	);
 }
 
-function describeAuthError(err: unknown, mode: "signIn" | "signUp"): string {
+export function describeSignupAvailabilityError(err: unknown): string {
+	const kind = categorizeError(err);
+	if (kind.kind === "missing-function" || kind.kind === "validator") {
+		return "The hosted trial is temporarily misconfigured. Signups remain closed. Existing users can still try signing in.";
+	}
+	return "The hosted trial is unavailable right now. Signups remain closed. Existing users can still try signing in.";
+}
+
+export function describeAuthError(
+	err: unknown,
+	mode: "signIn" | "signUp",
+): string {
 	const message = err instanceof Error ? err.message : String(err);
 	const lower = message.toLowerCase();
 	if (lower.includes("invalid") || lower.includes("password")) {
@@ -216,7 +286,11 @@ function describeAuthError(err: unknown, mode: "signIn" | "signUp"): string {
 	if (lower.includes("signups are temporarily paused")) {
 		return "New signups are temporarily paused. Existing accounts can still sign in.";
 	}
-	return describeError(categorizeError(err));
+	const kind = categorizeError(err);
+	if (mode === "signIn" && kind.kind === "unknown") {
+		return "Email or password didn't match.";
+	}
+	return describeError(kind);
 }
 
 export function SignOutButton() {
